@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { getContrastInk } from '@/lib/contrast';
 import type { Settings, ThemeTokens } from '@/lib/types';
 
 /** Paletas prontas: a maioria dos donos de loja não quer escolher RGB. */
@@ -27,6 +28,20 @@ const LAYOUT_LABELS: Record<string, string> = {
   grid: 'Grade',
   compact: 'Compacto',
 };
+
+const FONT_FAMILIES: Record<string, string> = {
+  inter: "'Inter', sans-serif",
+  manrope: "'Manrope', sans-serif",
+  sora: "'Sora', sans-serif",
+  'space-grotesk': "'Space Grotesk', sans-serif",
+  playfair: "'Playfair Display', serif",
+  'dm-serif': "'DM Serif Display', serif",
+};
+
+function getRadiusPx(radiusStr: string, factor = 1): string {
+  const num = parseInt(radiusStr, 10) || 16;
+  return `${Math.round(num * factor)}px`;
+}
 
 export function AppearancePage() {
   const queryClient = useQueryClient();
@@ -202,14 +217,20 @@ export function AppearancePage() {
           quem não é técnico.
         */}
         <aside className="lg:sticky lg:top-32 lg:self-start">
-          <p className="mb-2 text-xs font-medium text-muted">Prévia</p>
+          <link
+            rel="stylesheet"
+            href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600&family=Playfair+Display:wght@400;600&family=Sora:wght@400;600&family=Space+Grotesk:wght@400;600&display=swap"
+          />
+
+          <p className="mb-2 text-xs font-medium text-muted">Prévia ao vivo</p>
 
           <div
-            className="overflow-hidden border border-line"
+            className="overflow-hidden border border-line transition-all duration-200"
             style={{
               borderRadius: theme.radius,
               background: `rgb(${theme.surface})`,
               color: `rgb(${theme.ink})`,
+              fontFamily: FONT_FAMILIES[theme.font] ?? FONT_FAMILIES.inter,
             }}
           >
             <div
@@ -227,11 +248,11 @@ export function AppearancePage() {
 
               <div className="mt-3 flex gap-1.5">
                 <span
-                  className="rounded-md px-2.5 py-1 text-[11px] font-medium"
+                  className="px-2.5 py-1 text-[11px] font-medium transition-all"
                   style={{
                     background: `rgb(${theme.brandSoft})`,
                     color: `rgb(${theme.brand})`,
-                    borderRadius: `calc(${theme.radius} * 0.6)`,
+                    borderRadius: getRadiusPx(theme.radius, 0.6),
                   }}
                 >
                   Entradas
@@ -241,26 +262,95 @@ export function AppearancePage() {
                 </span>
               </div>
 
-              <div
-                className="mt-3 border p-3"
-                style={{
-                  borderRadius: theme.radius,
-                  borderColor: `rgb(${theme.ink} / 0.09)`,
-                }}
-              >
-                <p className="text-sm font-medium">Prato do dia</p>
-                <p className="mt-0.5 text-xs" style={{ opacity: 0.62 }}>
-                  Descrição curta do item
-                </p>
-                <p className="mt-2 text-sm font-semibold">R$ 42,00</p>
-              </div>
+              {theme.layout === 'grid' ? (
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div
+                    className="border p-2 text-left transition-all"
+                    style={{
+                      borderRadius: theme.radius,
+                      borderColor: `rgb(${theme.ink} / 0.09)`,
+                    }}
+                  >
+                    <div
+                      className="mb-1.5 h-12 w-full"
+                      style={{
+                        background: `rgb(${theme.brandSoft})`,
+                        borderRadius: getRadiusPx(theme.radius, 0.5),
+                      }}
+                    />
+                    <p className="text-xs font-medium truncate">Prato do dia</p>
+                    <p className="mt-1 text-xs font-semibold">R$ 42,00</p>
+                  </div>
+                  <div
+                    className="border p-2 text-left transition-all"
+                    style={{
+                      borderRadius: theme.radius,
+                      borderColor: `rgb(${theme.ink} / 0.09)`,
+                    }}
+                  >
+                    <div
+                      className="mb-1.5 h-12 w-full"
+                      style={{
+                        background: `rgb(${theme.brandSoft})`,
+                        borderRadius: getRadiusPx(theme.radius, 0.5),
+                      }}
+                    />
+                    <p className="text-xs font-medium truncate">Bebida gelada</p>
+                    <p className="mt-1 text-xs font-semibold">R$ 8,00</p>
+                  </div>
+                </div>
+              ) : theme.layout === 'compact' ? (
+                <div className="mt-3 grid gap-1.5">
+                  <div
+                    className="flex items-center justify-between border px-2.5 py-1.5 transition-all"
+                    style={{
+                      borderRadius: getRadiusPx(theme.radius, 0.5),
+                      borderColor: `rgb(${theme.ink} / 0.09)`,
+                    }}
+                  >
+                    <div>
+                      <p className="text-xs font-medium">Prato do dia</p>
+                      <p className="text-[10px]" style={{ opacity: 0.6 }}>Descrição curta</p>
+                    </div>
+                    <p className="text-xs font-semibold">R$ 42,00</p>
+                  </div>
+                  <div
+                    className="flex items-center justify-between border px-2.5 py-2 transition-all"
+                    style={{
+                      borderRadius: getRadiusPx(theme.radius, 0.5),
+                      borderColor: `rgb(${theme.ink} / 0.09)`,
+                    }}
+                  >
+                    <div>
+                      <p className="text-xs font-medium">Bebida gelada</p>
+                      <p className="text-[10px]" style={{ opacity: 0.6 }}>Lata 350ml</p>
+                    </div>
+                    <p className="text-xs font-semibold">R$ 8,00</p>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="mt-3 border p-3 transition-all"
+                  style={{
+                    borderRadius: theme.radius,
+                    borderColor: `rgb(${theme.ink} / 0.09)`,
+                  }}
+                >
+                  <p className="text-sm font-medium">Prato do dia</p>
+                  <p className="mt-0.5 text-xs" style={{ opacity: 0.62 }}>
+                    Descrição curta do item
+                  </p>
+                  <p className="mt-2 text-sm font-semibold">R$ 42,00</p>
+                </div>
+              )}
 
               <button
                 type="button"
-                className="mt-3 w-full py-2.5 text-xs font-semibold text-white"
+                className="mt-3 w-full py-2.5 text-xs font-semibold transition-all"
                 style={{
                   background: `rgb(${theme.brand})`,
-                  borderRadius: `calc(${theme.radius} * 0.6)`,
+                  color: `rgb(${theme.brandInk ?? getContrastInk(theme.brand)})`,
+                  borderRadius: getRadiusPx(theme.radius, 0.6),
                 }}
               >
                 Ver carrinho

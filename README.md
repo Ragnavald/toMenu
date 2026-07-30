@@ -53,8 +53,16 @@ http://localhost:3000/forno-di-napoli   mesma loja, via path (fallback)
 ```
 
 O `apps/storefront/proxy.ts` reescreve host → rota interna; o Laravel resolve o
-tenant pelo `Host` (ou `custom_domain`, que tem precedência). Em produção isso
-exige DNS wildcard `*.dominio` e certificado wildcard.
+tenant pelo `Host`.
+
+**Cada loja é sempre um subdomínio — domínio próprio não é suportado.** Em
+produção isso exige, no Cloudflare, um registro DNS `*` e o SSL/TLS em modo
+"Full". O certificado é o universal do Cloudflare, que cobre `dominio` e
+`*.dominio` e é renovado por eles: não há certbot nem ACME na stack.
+
+O wildcard cobre **um** nível de subdomínio. `loja.dominio` é válido;
+`loja.staging.dominio` não teria certificado, e por isso `IdentifyTenant` e o
+`proxy.ts` recusam subdomínio com ponto em vez de tratá-lo como slug.
 
 ### Criar uma loja pelo cadastro público
 
@@ -183,6 +191,26 @@ painel; o WhatsApp é redundância.
 - **`TENANCY_TRUST_HEADER=false`.** O header `X-Tenant` existe apenas para
   desenvolvimento, onde não há wildcard DNS. Em produção ele permitiria a
   qualquer visitante escolher a loja.
+- **DNS e TLS no Cloudflare.** Em Zero Trust > Networks > Tunnels, cadastre dois
+  *public hostnames* no túnel, ambos para `http://nginx:80`: `dominio` e
+  `*.dominio` (o apex não cobre subdomínio). Cada um cria o CNAME sozinho — não
+  se cria registro DNS à mão. SSL/TLS em **Full**; "Full (strict)" exigiria um
+  Origin Certificate no nginx. Sem certbot: o certificado universal cobre
+  `dominio` e `*.dominio`. Defina `CLOUDFLARE_TUNNEL_TOKEN` no `.env` de
+  produção.
+- **Cache Rule para o cardápio no Cloudflare.** O `s-maxage=60` de
+  `MenuController` só vale se o edge tratar a resposta como cacheável — e o
+  padrão do Cloudflare ignora `application/json`, tratando `/api/*` como
+  dinâmico. Sem uma Cache Rule (hostname `*.dominio` + URI `/api/`, "Eligible
+  for cache", Edge TTL = "Use cache-control header"), todo acesso ao cardápio
+  atravessa até a origem. Como o droplet fica nos EUA (a DO não tem região no
+  Brasil), é esta regra que mantém a leitura no edge de São Paulo em vez de
+  ~120 ms de ida e volta.
+- **HTTPS atrás do túnel não depende do painel.** O nginx força
+  `X-Forwarded-Proto: https` e o `trustProxies` em `bootstrap/app.php` confia na
+  faixa interna do Docker. Sem esse par o Laravel gera URLs `http://` e o
+  navegador barra o conteúdo misto — ajustar só o modo do Cloudflare não
+  resolveria.
 - **Octane**: se ativar, o reset de contexto por request é obrigatório —
   `TenancyServiceProvider::registerOctaneReset()` já trata, mas o worker
   persistente é a origem mais provável de vazamento entre tenants.

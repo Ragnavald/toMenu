@@ -1,20 +1,111 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiFetch } from '@/lib/api';
 import type { Settings } from '@/lib/types';
 import { Field, PageHeader, SaveBar, Section } from '@/components/ui';
+import {
+  buildAddressString,
+  fetchViaCep,
+  formatCep,
+  formatPhone,
+  parseAddressString,
+  type AddressFields,
+} from '@/lib/masks';
+import { SEGMENT_OPTIONS } from '@/lib/templates';
+
+function LogoUploader({
+  logoUrl,
+  onUploaded,
+}: {
+  logoUrl: string | null;
+  onUploaded: (url: string) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('logo', file);
+
+    setUploading(true);
+    try {
+      const res = await apiFetch<{ url: string }>('/admin/settings/logo', {
+        method: 'POST',
+        body: formData,
+      });
+      onUploaded(res.url);
+    } catch {
+      alert('Erro ao enviar a imagem do logo.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-4">
+      <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-line bg-line/20 flex items-center justify-center">
+        {logoUrl ? (
+          <img
+            src={logoUrl}
+            alt="Logo da loja"
+            className="size-full object-cover"
+          />
+        ) : (
+          <span className="text-xs text-muted">Sem logo</span>
+        )}
+      </div>
+
+      <div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <button
+          type="button"
+          disabled={uploading}
+          onClick={() => fileInputRef.current?.click()}
+          className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold hover:bg-line/40 transition-colors disabled:opacity-50"
+        >
+          {uploading ? 'Enviando...' : logoUrl ? 'Alterar logo' : 'Enviar logo'}
+        </button>
+        <p className="mt-1 text-[11px] text-muted">
+          PNG, JPG, WEBP ou SVG (máx. 5MB)
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export function StorePage() {
   const queryClient = useQueryClient();
+  const numberInputRef = useRef<HTMLInputElement>(null);
+  const [loadingCep, setLoadingCep] = useState(false);
   const [form, setForm] = useState({
     name: '',
+    segment: '',
     phone: '',
     whatsapp: '',
-    address: '',
     description: '',
     logoUrl: '',
     coverUrl: '',
   });
+
+  const [addressFields, setAddressFields] = useState<AddressFields>({
+    zip: '',
+    street: '',
+    number: '',
+    complement: '',
+    district: '',
+    city: '',
+    state: '',
+  });
+
   const [dirty, setDirty] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -29,31 +120,35 @@ export function StorePage() {
     if (settings) {
       setForm({
         name: settings.store.name,
-        phone: settings.profile.phone ?? '',
-        whatsapp: settings.profile.whatsapp ?? '',
-        address: settings.profile.address ?? '',
+        segment: settings.profile.segment ?? '',
+        phone: formatPhone(settings.profile.phone ?? ''),
+        whatsapp: formatPhone(settings.profile.whatsapp ?? ''),
         description: settings.profile.description ?? '',
         logoUrl: settings.profile.logoUrl ?? '',
         coverUrl: settings.profile.coverUrl ?? '',
       });
+      setAddressFields(parseAddressString(settings.profile.address ?? ''));
       setDirty(false);
     }
   }, [settings]);
 
   const save = useMutation({
-    mutationFn: () =>
-      apiFetch('/admin/settings/profile', {
+    mutationFn: () => {
+      const fullAddress = buildAddressString(addressFields);
+      return apiFetch('/admin/settings/profile', {
         method: 'PUT',
         body: JSON.stringify({
           name: form.name,
+          segment: form.segment || null,
           phone: form.phone || null,
           whatsapp: form.whatsapp || null,
-          address: form.address || null,
+          address: fullAddress || null,
           description: form.description || null,
           logoUrl: form.logoUrl || null,
           coverUrl: form.coverUrl || null,
         }),
-      }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       setDirty(false);
@@ -76,6 +171,37 @@ export function StorePage() {
   function update(patch: Partial<typeof form>) {
     setForm((current) => ({ ...current, ...patch }));
     setDirty(true);
+  }
+
+  function updateAddress(patch: Partial<AddressFields>) {
+    setAddressFields((current) => ({ ...current, ...patch }));
+    setDirty(true);
+  }
+
+  async function handleCepChange(rawCep: string) {
+    const formatted = formatCep(rawCep);
+    updateAddress({ zip: formatted });
+
+    const cleanZip = formatted.replace(/\D/g, '');
+    if (cleanZip.length === 8) {
+      setLoadingCep(true);
+      const res = await fetchViaCep(cleanZip);
+      setLoadingCep(false);
+      if (res) {
+        setAddressFields((current) => ({
+          ...current,
+          zip: formatted,
+          street: res.street || current.street,
+          district: res.district || current.district,
+          city: res.city || current.city,
+          state: res.state || current.state,
+        }));
+        setDirty(true);
+        setTimeout(() => {
+          numberInputRef.current?.focus();
+        }, 100);
+      }
+    }
   }
 
   return (
@@ -120,12 +246,40 @@ export function StorePage() {
 
         <Section title="Identificação">
           <div className="grid gap-3.5">
+            <Field label="Logo da loja">
+              <LogoUploader
+                logoUrl={form.logoUrl || null}
+                onUploaded={(url) => {
+                  update({ logoUrl: url });
+                  queryClient.invalidateQueries({ queryKey: ['settings'] });
+                }}
+              />
+            </Field>
+
             <Field label="Nome do restaurante">
               <input
                 value={form.name}
                 onChange={(e) => update({ name: e.target.value })}
                 className="field"
               />
+            </Field>
+
+            <Field
+              label="Tipo de estabelecimento"
+              hint="Usado para sugerir categorias pré-definidas para o seu cardápio."
+            >
+              <select
+                value={form.segment}
+                onChange={(e) => update({ segment: e.target.value })}
+                className="field"
+              >
+                <option value="">Selecione o tipo do estabelecimento...</option>
+                {SEGMENT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </Field>
 
             <Field
@@ -142,53 +296,129 @@ export function StorePage() {
           </div>
         </Section>
 
-        <Section title="Contato">
+        <Section title="Contato e Endereço">
           <div className="grid gap-3.5 sm:grid-cols-2">
             <Field label="Telefone">
               <input
                 value={form.phone}
-                onChange={(e) => update({ phone: e.target.value })}
+                onChange={(e) =>
+                  update({ phone: formatPhone(e.target.value) })
+                }
                 className="field"
                 placeholder="(11) 3333-4444"
+                maxLength={15}
               />
             </Field>
 
             <Field label="WhatsApp" hint="Recebe o aviso de cada pedido.">
               <input
                 value={form.whatsapp}
-                onChange={(e) => update({ whatsapp: e.target.value })}
+                onChange={(e) =>
+                  update({ whatsapp: formatPhone(e.target.value) })
+                }
                 className="field"
                 placeholder="(11) 99999-9999"
+                maxLength={15}
               />
             </Field>
           </div>
 
-          <div className="mt-3.5">
-            <Field label="Endereço físico">
-              <input
-                value={form.address}
-                onChange={(e) => update({ address: e.target.value })}
-                className="field"
-                placeholder="Rua das Flores, 100 — Centro"
-              />
-            </Field>
+          {/* Endereço estruturado / quebrado */}
+          <div className="mt-4 grid gap-3 rounded-lg border border-line p-3.5 bg-line/10">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+              Endereço físico do restaurante
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-3">
+              <Field label="CEP" hint="Busca via ViaCEP">
+                <div className="relative">
+                  <input
+                    value={addressFields.zip}
+                    onChange={(e) => handleCepChange(e.target.value)}
+                    className="field"
+                    placeholder="00000-000"
+                    maxLength={9}
+                  />
+                  {loadingCep && (
+                    <span className="absolute inset-y-0 right-3 flex items-center text-xs text-muted animate-pulse">
+                      ...
+                    </span>
+                  )}
+                </div>
+              </Field>
+
+              <Field label="Rua / Logradouro">
+                <input
+                  value={addressFields.street}
+                  onChange={(e) => updateAddress({ street: e.target.value })}
+                  className="field"
+                  placeholder="Ex: Rua Augusta"
+                />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-[100px_1fr_1fr] gap-3">
+              <Field label="Número">
+                <input
+                  ref={numberInputRef}
+                  value={addressFields.number}
+                  onChange={(e) => updateAddress({ number: e.target.value })}
+                  className="field"
+                  placeholder="1200"
+                />
+              </Field>
+
+              <Field label="Complemento" hint="Opcional">
+                <input
+                  value={addressFields.complement}
+                  onChange={(e) =>
+                    updateAddress({ complement: e.target.value })
+                  }
+                  className="field"
+                  placeholder="Apto / Sala"
+                />
+              </Field>
+
+              <Field label="Bairro">
+                <input
+                  value={addressFields.district}
+                  onChange={(e) => updateAddress({ district: e.target.value })}
+                  className="field"
+                  placeholder="Consolação"
+                />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-[1fr_80px] gap-3">
+              <Field label="Cidade">
+                <input
+                  value={addressFields.city}
+                  onChange={(e) => updateAddress({ city: e.target.value })}
+                  className="field"
+                  placeholder="São Paulo"
+                />
+              </Field>
+
+              <Field label="UF">
+                <input
+                  value={addressFields.state}
+                  onChange={(e) =>
+                    updateAddress({ state: e.target.value.toUpperCase() })
+                  }
+                  className="field uppercase"
+                  placeholder="SP"
+                  maxLength={2}
+                />
+              </Field>
+            </div>
           </div>
         </Section>
 
         <Section
-          title="Imagens"
-          description="Informe o endereço das imagens já hospedadas."
+          title="Imagens da Loja"
+          description="Logotipo e imagem de capa da loja."
         >
           <div className="grid gap-3.5">
-            <Field label="Logo (URL)">
-              <input
-                value={form.logoUrl}
-                onChange={(e) => update({ logoUrl: e.target.value })}
-                className="field"
-                placeholder="https://…/logo.png"
-              />
-            </Field>
-
             <Field label="Capa (URL)">
               <input
                 value={form.coverUrl}

@@ -1,0 +1,59 @@
+# Imagem de produção da API: PHP-FPM, não o servidor embutido do artisan.
+#
+# O Dockerfile de desenvolvimento usa `php artisan serve`, que é single-threaded
+# e explicitamente não recomendado para produção — uma requisição lenta bloqueia
+# todas as outras. Aqui o código é copiado para dentro da imagem (não montado
+# por volume), para que o container seja imutável e reproduzível.
+FROM php:8.3-fpm AS base
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git unzip libpq-dev libicu-dev libzip-dev \
+    && docker-php-ext-install -j"$(nproc)" pdo_pgsql bcmath intl zip opcache \
+    && pecl install redis && docker-php-ext-enable redis \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
+
+WORKDIR /app
+
+# ---------------------------------------------------------------------------
+# Dependências primeiro: sem alteração em composer.json/lock, o Docker reaproveita
+# esta camada e o build não baixa nada de novo.
+# ---------------------------------------------------------------------------
+FROM base AS vendor
+
+COPY apps/api/composer.json apps/api/composer.lock ./
+
+# --no-scripts: os scripts do Laravel precisam do código da aplicação, que ainda
+# não foi copiado nesta camada. Rodam no estágio final.
+RUN composer install \
+        --no-dev \
+        --no-interaction \
+        --no-progress \
+        --no-scripts \
+        --prefer-dist \
+        --optimize-autoloader
+
+# ---------------------------------------------------------------------------
+# Imagem final
+# ---------------------------------------------------------------------------
+FROM base AS app
+
+# OPcache: em produção o código não muda dentro do container, então revalidar
+# timestamp a cada request é desperdício puro de I/O.
+COPY docker/php/opcache.ini /usr/local/etc/php/conf.d/opcache.ini
+COPY docker/php/php.ini /usr/local/etc/php/conf.d/zz-app.ini
+
+COPY --from=vendor /app/vendor ./vendor
+COPY apps/api ./
+
+RUN composer dump-autoload --no-dev --optimize --classmap-authoritative \
+    && chown -R www-data:www-data storage bootstrap/cache
+
+# storage/ e bootstrap/cache precisam ser graváveis pelo processo do PHP-FPM,
+# que roda como www-data.
+USER www-data
+
+EXPOSE 9000
+
+CMD ["php-fpm"]

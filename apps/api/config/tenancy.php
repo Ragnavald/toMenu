@@ -2,8 +2,11 @@
 
 return [
     /*
-     * Domínio raiz da plataforma. Subdomínios abaixo dele são tratados como
-     * slugs de tenant; qualquer outro host é procurado em tenants.custom_domain.
+     * Domínio raiz da plataforma. Subdomínios de um nível abaixo dele são
+     * tratados como slugs de tenant; qualquer outro host é recusado.
+     *
+     * Precisa casar com o certificado wildcard `*.dominio` do Cloudflare, que
+     * cobre exatamente um nível — host fora disso não teria TLS válido.
      */
     'root_domain' => env('TENANCY_ROOT_DOMAIN', 'tomenu.test'),
 

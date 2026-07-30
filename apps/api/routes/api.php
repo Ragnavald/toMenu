@@ -54,6 +54,9 @@ Route::middleware(['identify.tenant'])->group(function () {
 
     Route::post('orders', [OrderController::class, 'store'])
         ->middleware('throttle:20,1'); // Limite mais baixo: cria registro e cobra.
+
+    Route::get('orders/{order}', [OrderController::class, 'show'])
+        ->middleware('throttle:60,1');
 });
 
 /*
@@ -66,11 +69,13 @@ Route::middleware(['identify.tenant'])->group(function () {
 Route::prefix('admin')
     ->middleware(['auth:sanctum', 'identify.tenant', 'tenant.member'])
     ->group(function () {
+        Route::post('products/upload-image', [ProductAdminController::class, 'uploadImage']);
         Route::apiResource('products', ProductAdminController::class);
 
-        // A reordenação vem antes do apiResource para que "reorder" não seja
-        // capturado como {category} pelo route model binding.
+        // A reordenação e criação em lote vêm antes do apiResource para que não sejam
+        // capturados como {category} pelo route model binding.
         Route::post('categories/reorder', [CategoryAdminController::class, 'reorder']);
+        Route::post('categories/batch', [CategoryAdminController::class, 'batchStore']);
         Route::apiResource('categories', CategoryAdminController::class)
             ->only(['index', 'store', 'update', 'destroy']);
 
@@ -79,6 +84,7 @@ Route::prefix('admin')
 
         Route::get('settings', [SettingsController::class, 'show']);
         Route::put('settings/profile', [SettingsController::class, 'updateProfile']);
+        Route::post('settings/logo', [SettingsController::class, 'uploadLogo']);
         Route::put('settings/delivery', [SettingsController::class, 'updateDelivery']);
         Route::put('settings/hours', [SettingsController::class, 'updateHours']);
         Route::put('settings/payments', [SettingsController::class, 'updatePayments']);

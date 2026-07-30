@@ -1,0 +1,152 @@
+# Stack de produção da API.
+#
+# Diferenças relevantes para o docker-compose.yml de desenvolvimento:
+#
+# - PHP-FPM atrás de nginx, não `php artisan serve` (single-threaded).
+# - Código copiado para a imagem, não montado por volume.
+# - Worker de fila como serviço próprio: hoje QUEUE_CONNECTION=database e
+#   NotifyNewOrder/ProcessStripeEvent são ShouldQueue. Sem este processo, o
+#   restaurante nunca é avisado do pedido e o webhook do Stripe nunca é
+#   processado — falha silenciosa, porque o job só fica enfileirado.
+# - Sem Postgres: o banco roda no host ou é gerenciado. Rodar o banco de
+#   produção como container efêmero ao lado da aplicação convida a perda de
+#   dados num `docker compose down -v`.
+#
+# Uso:
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+name: tomenu-prod
+
+x-api: &api
+  build:
+    context: .
+    dockerfile: docker/php/Dockerfile.prod
+  restart: unless-stopped
+  # Configuração vem de arquivo, nunca embutida na imagem. APP_ENV_FILE permite
+  # apontar para outro arquivo sem editar este compose.
+  env_file: ["${APP_ENV_FILE:-apps/api/.env}"]
+  depends_on:
+    redis:
+      condition: service_healthy
+  volumes:
+    # Único estado que precisa sobreviver ao container. As imagens vão para o
+    # R2; isto cobre o fallback local e os logs.
+    - storage:/app/storage
+
+services:
+  api:
+    <<: *api
+    expose: ["9000"]
+    healthcheck:
+      test: ["CMD-SHELL", "php-fpm-healthcheck || exit 0"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Copia public/ da imagem da API para o volume compartilhado com o nginx, a
+  # cada `up`, para que um deploy novo também atualize os estáticos.
+  public-sync:
+    <<: *api
+    restart: "no"
+    depends_on: []
+    # root apenas aqui: o volume é criado pertencendo ao root e o usuário da
+    # imagem (www-data) não conseguiria escrever nele. O container encerra logo
+    # após a cópia; nada fica rodando privilegiado.
+    user: root
+    command: sh -c "cp -r /app/public/. /public-out/"
+    volumes:
+      - public:/public-out
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    # Só na interface de loopback: quem termina TLS e expõe à internet é o
+    # cloudflared, que alcança este serviço pela rede interna do compose (como
+    # http://nginx:80, o valor a usar no ingress do túnel) e não por esta porta.
+    # Ela fica publicada apenas para debug no próprio host; em 0.0.0.0 a API
+    # ficaria acessível em HTTP puro pelo IP do droplet, contornando o túnel.
+    ports: ["127.0.0.1:${HTTP_PORT:-8000}:80"]
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # nginx serve os estáticos direto do disco, sem passar pelo PHP; por isso
+      # precisa enxergar o mesmo public/ que o FPM. O conteúdo vem da imagem da
+      # API — um volume nomeado aqui mascararia o diretório e deixaria o nginx
+      # servindo um public/ vazio.
+      - public:/app/public:ro
+      - storage:/app/storage:ro
+    # Popula o volume `public` a partir da imagem da API antes do nginx subir.
+    # Volume nomeado só copia o conteúdo do container na primeira criação, e
+    # quem monta public/ é o nginx, que não tem esses arquivos.
+    depends_on:
+      api:
+        condition: service_started
+      public-sync:
+        condition: service_completed_successfully
+
+  # Terminação TLS e entrada pública. O túnel disca para fora, então o droplet
+  # não precisa de nenhuma porta aberta à internet — não há 80/443 para
+  # varredura encontrar.
+  #
+  # O certificado é o universal do Cloudflare: cobre `dominio` e `*.dominio`,
+  # renovado por eles. Não há certbot nem ACME nesta stack por isso. O wildcard
+  # cobre exatamente um nível (loja.dominio, não loja.staging.dominio), que é o
+  # que IdentifyTenant aceita como slug.
+  #
+  # Configuração no painel (Zero Trust > Networks > Tunnels), em "Public
+  # hostnames" do túnel — duas entradas, ambas para http://nginx:80:
+  #
+  #   dominio      -> landing e admin
+  #   *.dominio    -> lojas
+  #
+  # Cada entrada cria sozinha o CNAME proxied correspondente; não se cria
+  # registro DNS à mão, e o `*` precisa existir como hostname próprio porque o
+  # apex não cobre subdomínio.
+  #
+  # SSL/TLS em "Full" é o correto (a origem responde por HTTP interno, sem
+  # certificado — "Full (strict)" exigiria um Origin Certificate no nginx e
+  # quebraria). O nginx já força o esquema https para o Laravel, então o modo
+  # do painel não é o que sustenta a geração de URLs.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    # O token carrega a rota do túnel; a configuração de ingress vive no painel.
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?defina CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      nginx:
+        condition: service_started
+
+  worker:
+    <<: *api
+    # --max-time recicla o processo de hora em hora: worker de fila é um daemon
+    # PHP de vida longa, e reiniciar periodicamente evita que vazamento de
+    # memória acumule até o OOM.
+    command: php artisan queue:work --tries=3 --backoff=10 --max-time=3600 --sleep=3
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work' > /dev/null || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  scheduler:
+    <<: *api
+    # `schedule:work` bloqueia e dispara os comandos agendados no minuto certo,
+    # sem depender de cron no host.
+    command: php artisan schedule:work
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # appendonly: a fila e o cache passam por aqui. Sem persistência, um restart
+    # do container descarta jobs ainda não processados.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  storage:
+  public:
+  redis:

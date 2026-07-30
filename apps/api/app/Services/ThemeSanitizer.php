@@ -26,6 +26,7 @@ class ThemeSanitizer
         'brandSoft' => '255 237 213',
         'surface' => '255 255 255',
         'ink' => '23 23 23',
+        'brandInk' => '255 255 255',
         'font' => 'inter',
         'radius' => '16px',
         'layout' => 'classic',
@@ -34,15 +35,35 @@ class ThemeSanitizer
     /** @return array<string,string> */
     public function sanitize(array $input): array
     {
+        $brand = $this->rgb($input['brand'] ?? null, self::DEFAULTS['brand']);
+
         return [
-            'brand' => $this->rgb($input['brand'] ?? null, self::DEFAULTS['brand']),
+            'brand' => $brand,
             'brandSoft' => $this->rgb($input['brandSoft'] ?? null, self::DEFAULTS['brandSoft']),
             'surface' => $this->rgb($input['surface'] ?? null, self::DEFAULTS['surface']),
             'ink' => $this->rgb($input['ink'] ?? null, self::DEFAULTS['ink']),
+            'brandInk' => $this->calculateContrastInk($brand),
             'font' => $this->enum($input['font'] ?? null, self::FONTS, self::DEFAULTS['font']),
             'radius' => $this->radius($input['radius'] ?? null),
             'layout' => $this->enum($input['layout'] ?? null, self::LAYOUTS, self::DEFAULTS['layout']),
         ];
+    }
+
+    /**
+     * Calcula se o texto sobre a cor de marca deve ser claro (255 255 255) ou escuro (17 17 19)
+     * com base na luminância relativa percebida (W3C WCAG).
+     */
+    public function calculateContrastInk(string $brandRgb): string
+    {
+        $channels = array_map('intval', explode(' ', $brandRgb));
+        if (count($channels) !== 3) {
+            return '255 255 255';
+        }
+
+        [$r, $g, $b] = $channels;
+        $luminance = (0.2126 * $r + 0.7152 * $g + 0.0722 * $b) / 255;
+
+        return $luminance > 0.55 ? '17 17 19' : '255 255 255';
     }
 
     /**

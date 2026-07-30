@@ -23,14 +23,15 @@ class DemoSeeder extends Seeder
 {
     public function run(): void
     {
-        $plan = Plan::create([
-            'name' => 'Pro',
-            'slug' => 'pro',
-            'price_cents' => 9900,
-            'max_products' => 500,
-            'allows_custom_domain' => true,
-            'allows_online_payment' => true,
-        ]);
+        $plan = Plan::firstOrCreate(
+            ['slug' => 'pro'],
+            [
+                'name' => 'Pro',
+                'price_cents' => 9900,
+                'max_products' => 500,
+                'allows_online_payment' => true,
+            ]
+        );
 
         $this->createPizzaria($plan);
         $this->createSushi($plan);

@@ -13,9 +13,13 @@ use Symfony\Component\HttpFoundation\Response;
  * Camada 1 do isolamento: resolve o tenant a partir da requisição.
  *
  * Ordem de resolução (mais específica primeiro):
- *   1. custom_domain  — cardapio.restaurante.com.br
- *   2. subdomínio     — pizzaria.tomenu.app
- *   3. path param     — tomenu.app/pizzaria  (fallback)
+ *   1. subdomínio     — pizzaria.tomenu.app
+ *   2. path param     — tomenu.app/pizzaria  (fallback)
+ *
+ * Domínio próprio não é suportado por decisão de plataforma: o TLS vem do
+ * certificado wildcard `*.dominio` do Cloudflare, que cobre exatamente um nível
+ * de subdomínio. Um host fora dele não teria certificado válido, então resolver
+ * o tenant por ele só produziria erro de TLS no navegador.
  *
  * O header X-Tenant só é aceito quando explicitamente habilitado, para uso do
  * frontend em desenvolvimento (onde não há wildcard DNS). Em produção ele é
@@ -52,8 +56,6 @@ class IdentifyTenant
             return null;
         }
 
-        [$type, $value] = $identifier;
-
         /*
          * Cacheia apenas o ID, não o model.
          *
@@ -67,22 +69,16 @@ class IdentifyTenant
          * o banco a cada request (cache negativo contra enumeração de slugs).
          */
         $tenantId = Cache::remember(
-            "tenant-id:{$type}:{$value}",
+            "tenant-id:slug:{$identifier}",
             now()->addHour(),
-            function () use ($type, $value) {
-                $tenant = $type === 'domain'
-                    ? Tenant::where('custom_domain', $value)->first()
-                    : Tenant::where('slug', $value)->first();
-
-                return $tenant?->getKey() ?? 0;
-            }
+            fn () => Tenant::where('slug', $identifier)->first()?->getKey() ?? 0
         );
 
         return $tenantId === 0 ? null : Tenant::find($tenantId);
     }
 
-    /** @return array{0:string,1:string}|null */
-    private function identifierFrom(Request $request): ?array
+    /** Slug do tenant indicado pela requisição, ou null se nenhum. */
+    private function identifierFrom(Request $request): ?string
     {
         $host = strtolower($request->getHost());
         $root = strtolower((string) config('tenancy.root_domain'));
@@ -90,19 +86,20 @@ class IdentifyTenant
         if ($root !== '' && str_ends_with($host, ".{$root}")) {
             $sub = substr($host, 0, -(strlen($root) + 1));
 
+            // str_contains('.'): "loja.staging.tomenu.app" está fora do wildcard
+            // `*.tomenu.app` — um nível só. Tratar como slug daria 200 num host
+            // cujo certificado o navegador já teria rejeitado.
             if ($sub !== '' && ! in_array($sub, self::RESERVED, true) && ! str_contains($sub, '.')) {
-                return ['slug', $sub];
+                return $sub;
             }
-        } elseif ($root !== '' && $host !== $root && $host !== 'localhost') {
-            return ['domain', $host];
         }
 
         if ($slug = $request->route('tenant')) {
-            return ['slug', strtolower((string) $slug)];
+            return strtolower((string) $slug);
         }
 
         if (config('tenancy.trust_header') && ($slug = $request->header('X-Tenant'))) {
-            return ['slug', strtolower($slug)];
+            return strtolower($slug);
         }
 
         return null;

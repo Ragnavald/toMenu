@@ -1,9 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { DAYS, PAYMENT_LABELS, type Category, type Settings } from '@/lib/types';
+import { SEGMENT_OPTIONS, templateCategorias, getSegmentLabel } from '@/lib/templates';
 import { Field, MoneyInput, Toggle } from '@/components/ui';
+import {
+  buildAddressString,
+  fetchViaCep,
+  formatCep,
+  formatPhone,
+  parseAddressString,
+  type AddressFields,
+} from '@/lib/masks';
 
 const STEPS = [
   { n: 1, title: 'Sua loja', hint: 'Como os clientes vão te encontrar' },
@@ -89,14 +98,12 @@ export function OnboardingPage() {
                 className="w-full text-left"
               >
                 <span
-                  className={`block h-1 rounded-full transition-colors ${
-                    done || current ? 'bg-accent' : 'bg-line'
-                  }`}
+                  className={`block h-1 rounded-full transition-colors ${done || current ? 'bg-accent' : 'bg-line'
+                    }`}
                 />
                 <span
-                  className={`mt-1.5 hidden text-[11px] font-medium sm:block ${
-                    current ? 'text-accent' : 'text-muted'
-                  }`}
+                  className={`mt-1.5 hidden text-[11px] font-medium sm:block ${current ? 'text-accent' : 'text-muted'
+                    }`}
                 >
                   {item.title}
                 </span>
@@ -122,6 +129,7 @@ export function OnboardingPage() {
             <MenuStep
               categories={categories?.data ?? []}
               storefrontUrl={settings.store.storefrontUrl}
+              segment={settings.profile.segment}
             />
           )}
         </div>
@@ -170,6 +178,75 @@ export function OnboardingPage() {
 
 /* ------------------------------------------------------------------ passos */
 
+function LogoUploader({
+  logoUrl,
+  onUploaded,
+}: {
+  logoUrl: string | null;
+  onUploaded: (url: string) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('logo', file);
+
+    setUploading(true);
+    try {
+      const res = await apiFetch<{ url: string }>('/admin/settings/logo', {
+        method: 'POST',
+        body: formData,
+      });
+      onUploaded(res.url);
+    } catch {
+      alert('Erro ao enviar a imagem do logo.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-4">
+      <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-line bg-line/20 flex items-center justify-center">
+        {logoUrl ? (
+          <img
+            src={logoUrl}
+            alt="Logo da loja"
+            className="size-full object-cover"
+          />
+        ) : (
+          <span className="text-xs text-muted">Sem logo</span>
+        )}
+      </div>
+
+      <div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <button
+          type="button"
+          disabled={uploading}
+          onClick={() => fileInputRef.current?.click()}
+          className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold hover:bg-line/40 transition-colors disabled:opacity-50"
+        >
+          {uploading ? 'Enviando...' : logoUrl ? 'Alterar logo' : 'Enviar logo'}
+        </button>
+        <p className="mt-1 text-[11px] text-muted">
+          PNG, JPG, WEBP ou SVG (máx. 5MB)
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function StoreStep({
   settings,
   onError,
@@ -178,37 +255,107 @@ function StoreStep({
   onError: (message: string | null) => void;
 }) {
   const queryClient = useQueryClient();
+  const numberInputRef = useRef<HTMLInputElement>(null);
+  const [loadingCep, setLoadingCep] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(
+    settings.profile.logoUrl ?? null,
+  );
   const [form, setForm] = useState({
     name: settings.store.name,
-    whatsapp: settings.profile.whatsapp ?? '',
-    address: settings.profile.address ?? '',
+    segment: settings.profile.segment ?? '',
+    whatsapp: formatPhone(settings.profile.whatsapp ?? ''),
     description: settings.profile.description ?? '',
   });
 
+  const [addressFields, setAddressFields] = useState<AddressFields>(() =>
+    parseAddressString(settings.profile.address ?? ''),
+  );
+
   const save = useMutation({
-    mutationFn: () =>
-      apiFetch('/admin/settings/profile', {
+    mutationFn: () => {
+      const fullAddress = buildAddressString(addressFields);
+      return apiFetch('/admin/settings/profile', {
         method: 'PUT',
         body: JSON.stringify({
           name: form.name,
+          segment: form.segment || null,
           whatsapp: form.whatsapp || null,
-          address: form.address || null,
+          address: fullAddress || null,
           description: form.description || null,
           phone: settings.profile.phone,
+          logoUrl: logoUrl,
         }),
-      }),
+      });
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] }),
     onError: () => onError('Não foi possível salvar os dados da loja.'),
   });
 
+  function updateAddress(patch: Partial<AddressFields>) {
+    setAddressFields((current) => ({ ...current, ...patch }));
+  }
+
+  async function handleCepChange(rawCep: string) {
+    const formatted = formatCep(rawCep);
+    updateAddress({ zip: formatted });
+
+    const cleanZip = formatted.replace(/\D/g, '');
+    if (cleanZip.length === 8) {
+      setLoadingCep(true);
+      const res = await fetchViaCep(cleanZip);
+      setLoadingCep(false);
+      if (res) {
+        setAddressFields((current) => ({
+          ...current,
+          zip: formatted,
+          street: res.street || current.street,
+          district: res.district || current.district,
+          city: res.city || current.city,
+          state: res.state || current.state,
+        }));
+        setTimeout(() => {
+          numberInputRef.current?.focus();
+        }, 100);
+      }
+    }
+  }
+
   return (
     <div className="grid gap-3.5" onBlur={() => save.mutate()}>
+      <Field label="Logo da loja">
+        <LogoUploader
+          logoUrl={logoUrl}
+          onUploaded={(url) => {
+            setLogoUrl(url);
+            queryClient.invalidateQueries({ queryKey: ['settings'] });
+          }}
+        />
+      </Field>
+
       <Field label="Nome do restaurante">
         <input
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
           className="field"
         />
+      </Field>
+
+      <Field
+        label="Tipo de estabelecimento (opcional)"
+        hint="Ajuda a sugerir e popular as categorias pré-definidas no seu cardápio."
+      >
+        <select
+          value={form.segment}
+          onChange={(e) => setForm({ ...form, segment: e.target.value })}
+          className="field"
+        >
+          <option value="">Selecione o tipo do estabelecimento...</option>
+          {SEGMENT_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
       </Field>
 
       <Field
@@ -228,20 +375,102 @@ function StoreStep({
       >
         <input
           value={form.whatsapp}
-          onChange={(e) => setForm({ ...form, whatsapp: e.target.value })}
+          onChange={(e) =>
+            setForm({ ...form, whatsapp: formatPhone(e.target.value) })
+          }
           className="field"
           placeholder="(11) 99999-9999"
+          maxLength={15}
         />
       </Field>
 
-      <Field label="Endereço físico">
-        <input
-          value={form.address}
-          onChange={(e) => setForm({ ...form, address: e.target.value })}
-          className="field"
-          placeholder="Rua das Flores, 100 — Centro"
-        />
-      </Field>
+      {/* Endereço quebrado */}
+      <div className="grid gap-3 rounded-lg border border-line p-3.5 bg-line/10">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+          Endereço físico do restaurante
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-3">
+          <Field label="CEP" hint="Busca via ViaCEP">
+            <div className="relative">
+              <input
+                value={addressFields.zip}
+                onChange={(e) => handleCepChange(e.target.value)}
+                className="field"
+                placeholder="00000-000"
+                maxLength={9}
+              />
+              {loadingCep && (
+                <span className="absolute inset-y-0 right-3 flex items-center text-xs text-muted animate-pulse">
+                  ...
+                </span>
+              )}
+            </div>
+          </Field>
+
+          <Field label="Rua / Logradouro">
+            <input
+              value={addressFields.street}
+              onChange={(e) => updateAddress({ street: e.target.value })}
+              className="field"
+              placeholder="Ex: Rua Augusta"
+            />
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-[100px_1fr_1fr] gap-3">
+          <Field label="Número">
+            <input
+              ref={numberInputRef}
+              value={addressFields.number}
+              onChange={(e) => updateAddress({ number: e.target.value })}
+              className="field"
+              placeholder="1200"
+            />
+          </Field>
+
+          <Field label="Complemento" hint="Opcional">
+            <input
+              value={addressFields.complement}
+              onChange={(e) => updateAddress({ complement: e.target.value })}
+              className="field"
+              placeholder="Apto / Sala"
+            />
+          </Field>
+
+          <Field label="Bairro">
+            <input
+              value={addressFields.district}
+              onChange={(e) => updateAddress({ district: e.target.value })}
+              className="field"
+              placeholder="Consolação"
+            />
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-[1fr_80px] gap-3">
+          <Field label="Cidade">
+            <input
+              value={addressFields.city}
+              onChange={(e) => updateAddress({ city: e.target.value })}
+              className="field"
+              placeholder="São Paulo"
+            />
+          </Field>
+
+          <Field label="UF">
+            <input
+              value={addressFields.state}
+              onChange={(e) =>
+                updateAddress({ state: e.target.value.toUpperCase() })
+              }
+              className="field uppercase"
+              placeholder="SP"
+              maxLength={2}
+            />
+          </Field>
+        </div>
+      </div>
 
       <Field label="Descrição curta">
         <textarea
@@ -299,32 +528,16 @@ function DeliveryStep({
         </Field>
       </div>
 
-      <div className="grid gap-3.5 sm:grid-cols-2">
-        <Field label="Tempo estimado (minutos)">
-          <input
-            type="number"
-            min={5}
-            max={240}
-            value={form.etaMinutes}
-            onChange={(e) => update({ etaMinutes: Number(e.target.value) })}
-            className="field"
-          />
-        </Field>
-
-        <Field label="Raio de entrega (km)" hint="Opcional.">
-          <input
-            type="number"
-            min={0}
-            max={100}
-            step="0.5"
-            value={form.radiusKm ?? ''}
-            onChange={(e) =>
-              update({ radiusKm: e.target.value ? Number(e.target.value) : null })
-            }
-            className="field"
-          />
-        </Field>
-      </div>
+      <Field label="Tempo estimado (minutos)">
+        <input
+          type="number"
+          min={5}
+          max={240}
+          value={form.etaMinutes}
+          onChange={(e) => update({ etaMinutes: Number(e.target.value) })}
+          className="field"
+        />
+      </Field>
 
       <Field label="Frete grátis acima de" hint="Deixe em branco para não oferecer.">
         <MoneyInput
@@ -443,9 +656,8 @@ function PaymentOption({
 }) {
   return (
     <label
-      className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm transition-colors ${
-        checked ? 'border-accent bg-accent/5' : 'border-line hover:bg-line/40'
-      }`}
+      className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm transition-colors ${checked ? 'border-accent bg-accent/5' : 'border-line hover:bg-line/40'
+        }`}
     >
       <input
         type="checkbox"
@@ -540,12 +752,19 @@ function HoursStep({
 function MenuStep({
   categories,
   storefrontUrl,
+  segment,
 }: {
   categories: Category[];
   storefrontUrl: string;
+  segment?: string | null;
 }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
+  const [selectedSegment, setSelectedSegment] = useState<string>(segment ?? '');
+
+  useEffect(() => {
+    if (segment) setSelectedSegment(segment);
+  }, [segment]);
 
   const create = useMutation({
     mutationFn: (categoryName: string) =>
@@ -559,7 +778,26 @@ function MenuStep({
     },
   });
 
-  const SUGGESTIONS = ['Entradas', 'Pratos principais', 'Bebidas', 'Sobremesas'];
+  const batchCreate = useMutation({
+    mutationFn: (items: { name: string }[]) =>
+      apiFetch('/admin/categories/batch', {
+        method: 'POST',
+        body: JSON.stringify({ categories: items }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: number) =>
+      apiFetch(`/admin/categories/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
+    },
+  });
+
+  const activeTemplates = selectedSegment ? templateCategorias[selectedSegment] : null;
 
   return (
     <div className="grid gap-4">
@@ -567,6 +805,63 @@ function MenuStep({
         Comece criando as seções do seu cardápio. Depois é só adicionar os
         pratos dentro de cada uma.
       </p>
+
+      {/* Seleção e importação por tipo de estabelecimento */}
+      <div className="rounded-xl border border-line bg-line/10 p-3.5 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className="text-xs font-semibold uppercase tracking-wide text-muted">
+            Tipo de Estabelecimento
+          </label>
+          <select
+            value={selectedSegment}
+            onChange={(e) => setSelectedSegment(e.target.value)}
+            className="field max-w-xs text-xs py-1 px-2.5"
+          >
+            <option value="">Selecione o tipo...</option>
+            {SEGMENT_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {activeTemplates && activeTemplates.length > 0 && (
+          <div className="space-y-2 border-t border-line pt-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-medium text-ink">
+                Categorias sugeridas ({getSegmentLabel(selectedSegment)}):
+              </span>
+              <button
+                type="button"
+                disabled={batchCreate.isPending}
+                onClick={() => {
+                  const items = activeTemplates.map((t) => ({
+                    name: `${t.icone} ${t.nome}`,
+                  }));
+                  batchCreate.mutate(items);
+                }}
+                className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {batchCreate.isPending ? 'Importando...' : '✨ Importar todas do modelo'}
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {activeTemplates.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={create.isPending}
+                  onClick={() => create.mutate(`${item.icone} ${item.nome}`)}
+                  className="rounded-full border border-line bg-surface px-3 py-1 text-xs font-medium transition-colors hover:bg-line/50"
+                >
+                  + {item.icone} {item.nome}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       <form
         onSubmit={(event) => {
@@ -578,7 +873,7 @@ function MenuStep({
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Nome da seção"
+          placeholder="Nome de nova seção manual — ex.: Sobremesas"
           className="field"
         />
         <button
@@ -590,22 +885,6 @@ function MenuStep({
         </button>
       </form>
 
-      {categories.length === 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          <span className="text-xs text-muted">Sugestões:</span>
-          {SUGGESTIONS.map((suggestion) => (
-            <button
-              key={suggestion}
-              type="button"
-              onClick={() => create.mutate(suggestion)}
-              className="rounded-full border border-line px-2.5 py-1 text-xs text-muted transition-colors hover:bg-line/50"
-            >
-              + {suggestion}
-            </button>
-          ))}
-        </div>
-      )}
-
       {categories.length > 0 && (
         <ul className="grid gap-1.5">
           {categories.map((category) => (
@@ -614,9 +893,24 @@ function MenuStep({
               className="flex items-center justify-between rounded-lg border border-line px-3.5 py-2.5 text-sm"
             >
               <span>{category.name}</span>
-              <span className="text-xs text-muted">
-                {category.products_count ?? 0} itens
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted">
+                  {category.products_count ?? 0} itens
+                </span>
+                <button
+                  type="button"
+                  disabled={remove.isPending}
+                  onClick={() => remove.mutate(category.id)}
+                  className="grid size-6 place-items-center rounded-md text-muted transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                  title="Remover categoria"
+                  aria-label={`Remover categoria ${category.name}`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
             </li>
           ))}
         </ul>

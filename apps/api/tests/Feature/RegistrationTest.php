@@ -10,7 +10,6 @@ beforeEach(function () {
         'slug' => 'pro',
         'price_cents' => 9900,
         'max_products' => 500,
-        'allows_custom_domain' => true,
         'allows_online_payment' => true,
     ]);
 });

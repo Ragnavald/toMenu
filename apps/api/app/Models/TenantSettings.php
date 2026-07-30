@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'tenant_id', 'theme', 'logo_url', 'cover_url', 'business_hours',
+    'tenant_id', 'segment', 'theme', 'logo_url', 'cover_url', 'business_hours',
     'delivery_config', 'payment_methods', 'is_open_override',
     'phone', 'whatsapp', 'address', 'description',
 ])]

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTheme } from '@/lib/theme';
 import { NavLink } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch, clearSession, type Session } from '@/lib/api';
@@ -46,6 +47,7 @@ export function Shell({
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { theme, toggle: toggleTheme } = useTheme();
 
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -150,6 +152,16 @@ export function Shell({
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-medium">{session.userName}</p>
             </div>
+
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={theme === 'dark' ? 'Mudar para tema claro' : 'Mudar para tema escuro'}
+              className="grid size-7 shrink-0 place-items-center rounded-lg text-muted transition-colors hover:bg-line hover:text-ink"
+            >
+              {theme === 'dark' ? <IconSun /> : <IconMoon />}
+            </button>
+
             <button
               type="button"
               onClick={() => {
@@ -190,7 +202,7 @@ export function Shell({
           </div>
         )}
 
-        <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 sm:px-6">
+        <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6 sm:px-6">
           {children}
         </main>
       </div>
@@ -276,6 +288,23 @@ function IconBars() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
       <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconSun() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconMoon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

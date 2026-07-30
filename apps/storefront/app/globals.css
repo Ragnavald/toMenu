@@ -13,8 +13,11 @@
 @theme inline {
   --color-brand: rgb(var(--brand) / <alpha-value>);
   --color-brand-soft: rgb(var(--brand-soft) / <alpha-value>);
+  --color-brand-ink: rgb(var(--brand-ink) / <alpha-value>);
   --color-surface: rgb(var(--surface) / <alpha-value>);
   --color-ink: rgb(var(--ink) / <alpha-value>);
+  --color-muted: var(--ink-muted);
+  --color-subtle: var(--ink-subtle);
 
   --font-display: var(--font-tenant), ui-sans-serif, system-ui, sans-serif;
 
@@ -29,6 +32,7 @@
 :root {
   --brand: 234 88 12;
   --brand-soft: 255 237 213;
+  --brand-ink: 255 255 255;
   --surface: 255 255 255;
   --ink: 23 23 23;
   --radius: 16px;
@@ -48,7 +52,7 @@
  * porque ela é a identidade da loja e deve permanecer reconhecível.
  */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
+  :root:not([data-theme='light']):not(:has([data-tenant])) {
     --surface: 17 17 19;
     --ink: 244 244 245;
     --ink-muted: rgb(var(--ink) / 0.64);
@@ -59,7 +63,7 @@
   }
 }
 
-:root[data-theme='dark'] {
+:root[data-theme='dark']:not(:has([data-tenant])) {
   --surface: 17 17 19;
   --ink: 244 244 245;
   --ink-muted: rgb(var(--ink) / 0.64);
@@ -95,6 +99,11 @@ body {
   background: rgb(var(--surface));
   color: rgb(var(--ink));
   min-height: 100dvh;
+
+  --ink-muted: rgb(var(--ink) / 0.55);
+  --ink-subtle: rgb(var(--ink) / 0.38);
+  --hairline: rgb(var(--ink) / 0.09);
+  --elevated: rgb(var(--surface));
 }
 
 /* Foco visível e consistente — navegação por teclado. */
@@ -117,20 +126,34 @@ body {
 }
 
 @utility text-muted {
-  color: var(--ink-muted);
+  color: var(--ink-muted) !important;
 }
 
 @utility text-subtle {
-  color: var(--ink-subtle);
+  color: var(--ink-subtle) !important;
+}
+
+.text-muted,
+[data-tenant] .text-muted {
+  color: var(--ink-muted) !important;
+}
+
+.text-subtle,
+[data-tenant] .text-subtle {
+  color: var(--ink-subtle) !important;
+}
+
+@utility text-brand-ink {
+  color: rgb(var(--brand-ink));
 }
 
 @utility hairline {
-  border-color: var(--hairline);
+  border-color: rgb(var(--ink) / 0.12);
 }
 
 @utility surface-card {
-  background: var(--elevated);
-  border: 1px solid var(--hairline);
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--ink) / 0.12);
   border-radius: var(--radius);
 }
 

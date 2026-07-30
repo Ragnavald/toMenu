@@ -1,0 +1,36 @@
+# O contexto de build é a raiz do monorepo. Sem estas exclusões o Docker envia
+# node_modules e vendor inteiros ao daemon, e falha ao ler diretórios de
+# storage criados pelos testes com outro dono.
+
+.git
+.gitignore
+
+# Frontends: não entram na imagem da API, são publicados à parte.
+apps/admin
+apps/storefront
+
+**/node_modules
+**/.next
+**/dist
+
+# vendor é reinstalado no build (composer install --no-dev), então a cópia
+# local, que inclui pacotes de desenvolvimento, não deve ir junto.
+apps/api/vendor
+
+# Estado de runtime: recriado pela aplicação, e o conteúdo local não tem
+# nenhuma relação com o do servidor.
+apps/api/storage/app
+apps/api/storage/framework/cache
+apps/api/storage/framework/sessions
+apps/api/storage/framework/testing
+apps/api/storage/framework/views
+apps/api/storage/logs
+
+# Segredos: a imagem recebe configuração por env_file em runtime, nunca
+# embutida em camada — quem tem a imagem teria as credenciais.
+apps/api/.env
+apps/api/.env.*
+!apps/api/.env.example
+
+**/.DS_Store
+docker-compose*.yml

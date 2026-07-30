@@ -39,6 +39,30 @@ class CategoryAdminController extends Controller
         return response()->json($category, 201);
     }
 
+    public function batchStore(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'categories' => ['required', 'array', 'min:1'],
+            'categories.*.name' => ['required', 'string', 'max:80'],
+        ]);
+
+        $created = [];
+        $maxPos = (int) Category::max('position');
+
+        DB::transaction(function () use ($data, $maxPos, &$created) {
+            foreach ($data['categories'] as $index => $item) {
+                $created[] = Category::create([
+                    'name' => $item['name'],
+                    'slug' => $this->uniqueSlug($item['name']),
+                    'is_active' => true,
+                    'position' => $maxPos + $index + 1,
+                ]);
+            }
+        });
+
+        return response()->json(['data' => $created], 201);
+    }
+
     public function update(Request $request, Category $category): JsonResponse
     {
         $data = $request->validate([

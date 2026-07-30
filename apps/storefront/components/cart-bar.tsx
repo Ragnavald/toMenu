@@ -43,15 +43,16 @@ export function CartBar({
             type="button"
             onClick={() => setOpen(true)}
             disabled={belowMinimum}
-            className="animate-rise flex w-full items-center gap-3 px-4 py-3.5 text-white shadow-soft transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-55"
+            className="animate-rise flex w-full items-center gap-3 px-4 py-3.5 shadow-soft transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-55"
             style={{
               background: 'rgb(var(--brand))',
+              color: 'rgb(var(--brand-ink))',
               borderRadius: 'var(--radius)',
             }}
           >
             <span
               className="grid size-7 shrink-0 place-items-center rounded-full text-xs font-bold tabular-nums"
-              style={{ background: 'rgb(255 255 255 / 0.22)' }}
+              style={{ background: 'rgb(var(--brand-ink) / 0.22)' }}
             >
               {itemCount}
             </span>

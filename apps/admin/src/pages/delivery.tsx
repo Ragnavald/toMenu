@@ -14,6 +14,7 @@ import {
   Section,
   Toggle,
 } from '@/components/ui';
+import { formatPhone } from '@/lib/masks';
 
 export function DeliveryPage() {
   const queryClient = useQueryClient();
@@ -121,34 +122,16 @@ export function DeliveryPage() {
               </Field>
             </div>
 
-            <div className="grid gap-3.5 sm:grid-cols-2">
-              <Field label="Tempo estimado (minutos)">
-                <input
-                  type="number"
-                  min={5}
-                  max={240}
-                  value={form.etaMinutes}
-                  onChange={(e) => update({ etaMinutes: Number(e.target.value) })}
-                  className="field"
-                />
-              </Field>
-
-              <Field label="Raio de entrega (km)" hint="Opcional, informativo.">
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step="0.5"
-                  value={form.radiusKm ?? ''}
-                  onChange={(e) =>
-                    update({
-                      radiusKm: e.target.value ? Number(e.target.value) : null,
-                    })
-                  }
-                  className="field"
-                />
-              </Field>
-            </div>
+            <Field label="Tempo estimado (minutos)">
+              <input
+                type="number"
+                min={5}
+                max={240}
+                value={form.etaMinutes}
+                onChange={(e) => update({ etaMinutes: Number(e.target.value) })}
+                className="field"
+              />
+            </Field>
 
             <Field
               label="Frete grátis acima de"
@@ -184,9 +167,12 @@ export function DeliveryPage() {
             >
               <input
                 value={form.merchantPhone ?? ''}
-                onChange={(e) => update({ merchantPhone: e.target.value })}
+                onChange={(e) =>
+                  update({ merchantPhone: formatPhone(e.target.value) })
+                }
                 className="field"
                 placeholder="(11) 99999-9999"
+                maxLength={15}
               />
             </Field>
           </div>

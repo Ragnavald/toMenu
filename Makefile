@@ -1,4 +1,4 @@
-.PHONY: up down dev test fresh api-shell logs
+.PHONY: up down dev build test fresh api-shell logs
 
 COMPOSE = docker compose
 API = $(COMPOSE) run --rm api
@@ -26,6 +26,10 @@ dev:
 	@npm --prefix apps/storefront run dev & \
 	 npm --prefix apps/admin run dev & \
 	 wait
+
+build:
+	npm --prefix apps/storefront run build
+	npm --prefix apps/admin run build
 
 test:
 	$(API_TEST) ./vendor/bin/pest

@@ -249,9 +249,10 @@ export function SignupForm() {
       <button
         type="submit"
         disabled={submitting || slugState === 'taken'}
-        className="mt-1 px-4 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-55"
+        className="mt-1 px-4 py-3 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-55"
         style={{
           background: 'rgb(var(--brand))',
+          color: 'rgb(var(--brand-ink))',
           borderRadius: 'calc(var(--radius) * 0.6)',
         }}
       >

@@ -16,6 +16,25 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        /*
+         * Sem isto o Laravel ignora X-Forwarded-Proto e gera URLs http:// atrás
+         * do túnel — o navegador então barra o conteúdo misto. Não adianta pôr
+         * o Cloudflare em "Full" se a aplicação não confia no proxy.
+         *
+         * A requisição sempre chega pelo cloudflared na rede interna do compose,
+         * nunca direto da internet (a porta 80 do nginx escuta em loopback), e
+         * confiar na faixa privada dispensa manter a lista de IPs do Cloudflare
+         * em dia. `*` (confiar em qualquer origem) deixaria qualquer cliente
+         * capaz de forjar o esquema e o IP de origem.
+         */
+        $middleware->trustProxies(
+            at: ['127.0.0.1', '172.16.0.0/12'],
+            headers: Request::HEADER_X_FORWARDED_FOR
+                | Request::HEADER_X_FORWARDED_HOST
+                | Request::HEADER_X_FORWARDED_PORT
+                | Request::HEADER_X_FORWARDED_PROTO,
+        );
+
         $middleware->alias([
             'identify.tenant' => IdentifyTenant::class,
             'tenant.member' => EnsureUserBelongsToTenant::class,

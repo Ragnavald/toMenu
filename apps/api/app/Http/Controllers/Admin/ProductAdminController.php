@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Services\ImageStorage;
+use App\Tenancy\TenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -74,6 +76,25 @@ class ProductAdminController extends Controller
         );
 
         return response()->json(status: 204);
+    }
+
+    public function uploadImage(Request $request, TenantContext $context, ImageStorage $images): JsonResponse
+    {
+        $tenant = $context->getOrFail();
+
+        $request->validate([
+            'image' => ['required', 'image', 'mimes:jpeg,png,jpg,gif,webp,svg', 'max:5120'],
+        ]);
+
+        $file = $request->file('image');
+        $filename = "products/{$tenant->id}-".time().'-'.Str::random(6).'.'.$file->getClientOriginalExtension();
+
+        $url = $images->put($file, $filename);
+
+        return response()->json([
+            'url' => $url,
+            'message' => 'Imagem enviada com sucesso.',
+        ]);
     }
 
     private function validated(Request $request, ?int $ignoreId = null): array

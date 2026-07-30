@@ -61,11 +61,13 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const session = loadSession();
 
+  const isFormData = options.body instanceof FormData;
+
   const response = await fetch(`/api${path}`, {
     ...options,
     headers: {
       Accept: 'application/json',
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
       ...(session ? { 'X-Tenant': session.tenantSlug } : {}),
       ...options.headers,

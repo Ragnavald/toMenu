@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 
 #[Fillable([
     'name', 'slug', 'price_cents', 'max_products',
-    'allows_custom_domain', 'allows_online_payment',
+    'allows_online_payment',
 ])]
 class Plan extends Model
 {
@@ -19,7 +19,6 @@ class Plan extends Model
         return [
             'price_cents' => 'integer',
             'max_products' => 'integer',
-            'allows_custom_domain' => 'boolean',
             'allows_online_payment' => 'boolean',
         ];
     }

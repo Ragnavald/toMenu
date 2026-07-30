@@ -14,7 +14,6 @@ return new class extends Migration
             $table->string('slug')->unique();
             $table->unsignedInteger('price_cents')->default(0);
             $table->unsignedInteger('max_products')->default(50);
-            $table->boolean('allows_custom_domain')->default(false);
             $table->boolean('allows_online_payment')->default(false);
             $table->timestamps();
         });
@@ -23,7 +22,6 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('slug')->unique();
-            $table->string('custom_domain')->nullable()->unique();
             $table->foreignId('plan_id')->constrained();
             $table->string('status')->default('trial'); // trial|active|past_due|suspended
             $table->timestamp('trial_ends_at')->nullable();

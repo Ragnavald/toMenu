@@ -215,9 +215,10 @@ export function ProductSheet({
           <button
             type="button"
             onClick={handleAdd}
-            className="flex flex-1 items-center justify-center gap-2 px-4 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            className="flex flex-1 items-center justify-center gap-2 px-4 py-3 text-sm font-semibold transition-opacity hover:opacity-90"
             style={{
               background: 'rgb(var(--brand))',
+              color: 'rgb(var(--brand-ink))',
               borderRadius: 'calc(var(--radius) * 0.6)',
             }}
           >

@@ -4,9 +4,11 @@ vendor/
 dist/
 build/
 
+# Qualquer .env fica de fora, não só os sufixos conhecidos: o arquivo de
+# produção mora dentro do repo clonado no droplet, e um `git add -A` distraído
+# publicaria token do túnel, APP_KEY e senha do banco.
 .env
-.env.local
-.env.*.local
+.env.*
 !.env.example
 
 apps/api/storage/*.key

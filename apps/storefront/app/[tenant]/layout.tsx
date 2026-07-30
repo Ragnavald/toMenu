@@ -2,7 +2,11 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { fetchMenu } from '@/lib/api';
 import { fontClassFor } from '@/lib/fonts';
+import { getContrastInk } from '@/lib/contrast';
 import { CartProvider } from '@/components/cart-provider';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 type Props = {
   params: Promise<{ tenant: string }>;
@@ -33,32 +37,34 @@ export default async function TenantLayout({ params, children }: Props) {
   if (!menu) notFound();
 
   const { theme } = menu;
+  const brandInk = theme.brandInk ?? getContrastInk(theme.brand);
 
-  /*
-   * Tema aplicado no HTML enviado pelo servidor.
-   *
-   * Injetar aqui — e não em um useEffect — elimina o flash de tema padrão
-   * antes da hidratação: o primeiro paint já sai com as cores da loja.
-   *
-   * Os valores vêm do ThemeSanitizer no backend, que só aceita formatos
-   * fechados ("R G B", enum de fontes, radius limitado). Essa validação é o
-   * que torna a interpolação abaixo segura: sem ela, um tenant poderia
-   * escapar do bloco e injetar CSS arbitrário contra todos os visitantes.
-   */
   const themeCss = `
-    [data-tenant="${theme.layout}"] {
+    [data-tenant] {
       --brand: ${theme.brand};
       --brand-soft: ${theme.brandSoft};
+      --brand-ink: ${brandInk};
       --surface: ${theme.surface};
       --ink: ${theme.ink};
       --radius: ${theme.radius};
+      --ink-muted: rgb(${theme.ink} / 0.55);
+      --ink-subtle: rgb(${theme.ink} / 0.38);
+      --hairline: rgb(${theme.ink} / 0.12);
+      --elevated: rgb(${theme.surface});
+      color-scheme: light;
     }
   `;
 
   return (
-    // A fonte entra por className (next/font) e as cores pelo bloco <style>:
-    // só o className faz o @font-face ser emitido e o arquivo pré-carregado.
-    <div data-tenant={theme.layout} className={fontClassFor(theme.font)}>
+    <div
+      data-tenant={theme.layout}
+      className={fontClassFor(theme.font)}
+      style={{
+        colorScheme: 'light',
+        backgroundColor: `rgb(${theme.surface})`,
+        color: `rgb(${theme.ink})`,
+      }}
+    >
       <style dangerouslySetInnerHTML={{ __html: themeCss }} />
       <CartProvider tenantSlug={tenant}>{children}</CartProvider>
     </div>

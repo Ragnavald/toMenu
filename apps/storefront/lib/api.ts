@@ -14,7 +14,7 @@ export async function fetchMenu(tenantSlug: string): Promise<Menu | null> {
   try {
     const response = await fetch(`${API_URL}/api/menu`, {
       headers: { 'X-Tenant': tenantSlug, Accept: 'application/json' },
-      next: { revalidate: 60, tags: [`menu:${tenantSlug}`] },
+      cache: 'no-store',
     });
 
     if (!response.ok) return null;
@@ -53,3 +53,22 @@ export function formatMoney(cents: number): string {
     currency: 'BRL',
   });
 }
+
+export async function fetchOrderStatus(tenantSlug: string, orderId: number) {
+  try {
+    const response = await fetch(`${API_URL}/api/orders/${orderId}`, {
+      headers: {
+        'X-Tenant': tenantSlug,
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+    });
+
+    if (!response.ok) return null;
+
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+

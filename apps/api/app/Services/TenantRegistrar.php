@@ -30,7 +30,15 @@ class TenantRegistrar
     public function register(array $data): array
     {
         return DB::transaction(function () use ($data) {
-            $plan = Plan::where('slug', 'pro')->firstOrFail();
+            $plan = Plan::firstOrCreate(
+                ['slug' => 'pro'],
+                [
+                    'name' => 'Pro',
+                    'price_cents' => 9900,
+                    'max_products' => 500,
+                    'allows_online_payment' => true,
+                ]
+            );
 
             $tenant = Tenant::create([
                 'name' => $data['store_name'],

@@ -1,14 +1,22 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiFetch } from '@/lib/api';
-import type { Category } from '@/lib/types';
+import type { Category, Settings } from '@/lib/types';
 import { EmptyState, PageHeader } from '@/components/ui';
+import { SEGMENT_OPTIONS, templateCategorias, getSegmentLabel } from '@/lib/templates';
 
 export function CategoriesPage() {
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [editing, setEditing] = useState<{ id: number; name: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => apiFetch<Settings>('/admin/settings'),
+  });
+
+  const [selectedSegment, setSelectedSegment] = useState<string>('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['categories'],
@@ -17,9 +25,11 @@ export function CategoriesPage() {
 
   const categories = data?.data ?? [];
 
+  const activeSegment = selectedSegment || settings?.profile?.segment || '';
+  const activeTemplates = activeSegment ? templateCategorias[activeSegment] : null;
+
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['categories'] });
-    // O cardápio depende das categorias; recarregar evita lista desatualizada.
     queryClient.invalidateQueries({ queryKey: ['products'] });
   }
 
@@ -32,6 +42,18 @@ export function CategoriesPage() {
     onSuccess: () => {
       invalidate();
       setName('');
+      setError(null);
+    },
+  });
+
+  const batchCreate = useMutation({
+    mutationFn: (items: { name: string }[]) =>
+      apiFetch('/admin/categories/batch', {
+        method: 'POST',
+        body: JSON.stringify({ categories: items }),
+      }),
+    onSuccess: () => {
+      invalidate();
       setError(null);
     },
   });
@@ -94,6 +116,63 @@ export function CategoriesPage() {
         title="Categorias"
         description="As seções do seu cardápio, na ordem em que o cliente vê."
       />
+
+      {/* Sugestão de Categorias por Segmento */}
+      <div className="panel mb-4 p-3.5 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className="text-xs font-semibold uppercase tracking-wide text-muted">
+            Categorias do Tipo de Estabelecimento
+          </label>
+          <select
+            value={activeSegment}
+            onChange={(e) => setSelectedSegment(e.target.value)}
+            className="field max-w-xs text-xs py-1 px-2.5"
+          >
+            <option value="">Selecione o tipo do estabelecimento...</option>
+            {SEGMENT_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {activeTemplates && activeTemplates.length > 0 && (
+          <div className="space-y-2 border-t border-line pt-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-medium text-ink">
+                Sugestões para {getSegmentLabel(activeSegment)}:
+              </span>
+              <button
+                type="button"
+                disabled={batchCreate.isPending}
+                onClick={() => {
+                  const items = activeTemplates.map((t) => ({
+                    name: `${t.icone} ${t.nome}`,
+                  }));
+                  batchCreate.mutate(items);
+                }}
+                className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {batchCreate.isPending ? 'Importando...' : '✨ Importar todas deste modelo'}
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {activeTemplates.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={create.isPending}
+                  onClick={() => create.mutate(`${item.icone} ${item.nome}`)}
+                  className="rounded-full border border-line bg-surface px-3 py-1 text-xs font-medium transition-colors hover:bg-line/50"
+                >
+                  + {item.icone} {item.nome}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       <form
         onSubmit={(event) => {

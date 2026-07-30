@@ -34,7 +34,6 @@ it('salva taxa de entrega, pedido mínimo e tempo estimado', function () {
             'minOrderCents' => 3500,
             'etaMinutes' => 50,
             'freeAboveCents' => 9000,
-            'radiusKm' => 7.5,
             'acceptsPickup' => true,
             'acceptsDelivery' => true,
         ])
@@ -248,4 +247,54 @@ it('não expõe configurações de uma loja para outra', function () {
     $response = $this->withHeaders(asStore())->getJson('/api/admin/settings');
 
     expect(json_encode($response->json()))->not->toContain('SEGREDO-DA-LOJA-B');
+});
+
+it('faz upload da logo da loja', function () {
+    Illuminate\Support\Facades\Storage::fake('public');
+
+    $file = Illuminate\Http\UploadedFile::fake()->create('logo.png', 100, 'image/png');
+
+    $this->withHeaders(asStore())
+        ->postJson('/api/admin/settings/logo', [
+            'logo' => $file,
+        ])
+        ->assertOk()
+        ->assertJsonStructure(['url', 'message']);
+
+    expect(TenantSettings::find($this->tenant->id)->logo_url)->not->toBeNull();
+});
+
+/*
+ * Regressão: a logo já foi para o disco local mesmo com o R2 configurado,
+ * porque o upload só reconhecia o disco 's3'. O resultado era silencioso — foto
+ * de produto na nuvem, logo no container, some no deploy seguinte.
+ */
+it('envia a logo para o disco remoto quando o R2 está configurado', function () {
+    Illuminate\Support\Facades\Storage::fake('r2');
+    Illuminate\Support\Facades\Storage::fake('public');
+    config(['filesystems.disks.r2.key' => 'test-key']);
+
+    $this->withHeaders(asStore())
+        ->postJson('/api/admin/settings/logo', [
+            'logo' => Illuminate\Http\UploadedFile::fake()->create('logo.png', 100, 'image/png'),
+        ])
+        ->assertOk();
+
+    expect(Illuminate\Support\Facades\Storage::disk('r2')->allFiles())->toHaveCount(1)
+        ->and(Illuminate\Support\Facades\Storage::disk('public')->allFiles())->toBeEmpty();
+});
+
+it('envia a imagem do produto para o mesmo disco remoto que a logo', function () {
+    Illuminate\Support\Facades\Storage::fake('r2');
+    Illuminate\Support\Facades\Storage::fake('public');
+    config(['filesystems.disks.r2.key' => 'test-key']);
+
+    $this->withHeaders(asStore())
+        ->postJson('/api/admin/products/upload-image', [
+            'image' => Illuminate\Http\UploadedFile::fake()->create('prato.png', 100, 'image/png'),
+        ])
+        ->assertOk();
+
+    expect(Illuminate\Support\Facades\Storage::disk('r2')->allFiles())->toHaveCount(1)
+        ->and(Illuminate\Support\Facades\Storage::disk('public')->allFiles())->toBeEmpty();
 });

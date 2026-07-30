@@ -1,6 +1,12 @@
 @import 'tailwindcss';
 
 /*
+ * Troca o dark: do Tailwind de media-query para classe .dark no <html>.
+ * Assim o toggle manual do sidebar controla o tema, não o OS.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
  * O Admin tem identidade própria e estável — é o produto do ToMenu, não a
  * vitrine do tenant. Usa paleta neutra fixa em vez das variáveis de tema: o
  * operador precisa de uma interface previsível durante horas de uso, e as
@@ -15,15 +21,13 @@
   --accent: 37 99 235;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: 12 12 14;
-    --panel: 24 24 27;
-    --ink: 244 244 245;
-    --ink-muted: 161 161 170;
-    --line: 39 39 42;
-    --accent: 96 165 250;
-  }
+.dark {
+  --bg: 12 12 14;
+  --panel: 24 24 27;
+  --ink: 244 244 245;
+  --ink-muted: 161 161 170;
+  --line: 39 39 42;
+  --accent: 96 165 250;
 }
 
 @theme inline {
@@ -46,6 +50,17 @@ body {
   color: rgb(var(--ink));
   font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+select {
+  color: rgb(var(--ink));
+  background-color: rgb(var(--panel));
+  color-scheme: light dark;
+}
+
+option {
+  background-color: rgb(var(--panel));
+  color: rgb(var(--ink));
 }
 
 :where(a, button, input, select, textarea):focus-visible {
@@ -71,7 +86,8 @@ body {
 
 @utility field {
   width: 100%;
-  background: transparent;
+  background: rgb(var(--panel));
+  color: rgb(var(--ink));
   border: 1px solid rgb(var(--line));
   border-radius: 8px;
   padding: 0.55rem 0.75rem;

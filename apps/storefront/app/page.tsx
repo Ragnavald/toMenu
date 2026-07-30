@@ -55,8 +55,11 @@ export default function LandingPage() {
         <span className="flex items-center gap-2 font-semibold tracking-tight">
           <span
             aria-hidden
-            className="grid size-7 place-items-center rounded-lg text-sm text-white"
-            style={{ background: 'rgb(var(--brand))' }}
+            className="grid size-7 place-items-center rounded-lg text-sm"
+            style={{
+              background: 'rgb(var(--brand))',
+              color: 'rgb(var(--brand-ink))',
+            }}
           >
             T
           </span>
@@ -97,8 +100,11 @@ export default function LandingPage() {
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link
                 href="#comecar"
-                className="rounded-xl px-5 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-                style={{ background: 'rgb(var(--brand))' }}
+                className="rounded-xl px-5 py-3 text-sm font-semibold transition-opacity hover:opacity-90"
+                style={{
+                  background: 'rgb(var(--brand))',
+                  color: 'rgb(var(--brand-ink))',
+                }}
               >
                 Criar minha loja grátis
               </Link>
@@ -167,8 +173,11 @@ export default function LandingPage() {
                 <li key={item} className="flex items-start gap-2.5 text-sm">
                   <span
                     aria-hidden
-                    className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full text-[10px] text-white"
-                    style={{ background: 'rgb(var(--brand))' }}
+                    className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full text-[10px]"
+                    style={{
+                      background: 'rgb(var(--brand))',
+                      color: 'rgb(var(--brand-ink))',
+                    }}
                   >
                     ✓
                   </span>

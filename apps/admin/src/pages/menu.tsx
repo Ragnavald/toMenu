@@ -105,6 +105,25 @@ export function MenuPage() {
     },
   });
 
+  const [categoryError, setCategoryError] = useState<string | null>(null);
+
+  const removeCategory = useMutation({
+    mutationFn: (id: number) =>
+      apiFetch(`/admin/categories/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
+      setCategoryError(null);
+    },
+    onError: (caught) => {
+      setCategoryError(
+        caught instanceof ApiError
+          ? Object.values(caught.errors ?? {}).flat().join(' ') || caught.message
+          : 'Não foi possível excluir a categoria.',
+      );
+    },
+  });
+
   const toggleAvailability = useMutation({
     mutationFn: (product: Product) =>
       apiFetch(`/admin/products/${product.id}`, {
@@ -242,12 +261,10 @@ export function MenuPage() {
             </Field>
           </div>
 
-          <Field label="Foto (URL)" hint="Opcional.">
-            <input
-              value={draft.imageUrl}
-              onChange={(e) => setDraft({ ...draft, imageUrl: e.target.value })}
-              className="field"
-              placeholder="https://…/pizza.jpg"
+          <Field label="Foto do produto" hint="Faça upload do arquivo da foto ou digite a URL.">
+            <ProductImageUploader
+              imageUrl={draft.imageUrl}
+              onUploaded={(url) => setDraft({ ...draft, imageUrl: url })}
             />
           </Field>
 
@@ -283,6 +300,12 @@ export function MenuPage() {
         </form>
       )}
 
+      {categoryError && (
+        <p role="alert" className="mb-4 rounded-lg bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300">
+          {categoryError}
+        </p>
+      )}
+
       {isLoading && <p className="text-sm text-muted">Carregando…</p>}
 
       <div className="grid gap-5">
@@ -298,16 +321,35 @@ export function MenuPage() {
                 )}
               </h2>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setDraft(emptyDraft(category.id));
-                  setFormError(null);
-                }}
-                className="rounded-lg px-2.5 py-1 text-xs font-medium text-accent hover:bg-accent/10"
-              >
-                + Item
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraft(emptyDraft(category.id));
+                    setFormError(null);
+                  }}
+                  className="rounded-lg px-2.5 py-1 text-xs font-medium text-accent hover:bg-accent/10"
+                >
+                  + Item
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (items.length > 0) {
+                      setCategoryError(`A seção "${category.name}" possui ${items.length} item(ns). Mova ou remova os produtos antes de excluí-la.`);
+                      return;
+                    }
+                    if (confirm(`Excluir a categoria "${category.name}"?`)) {
+                      removeCategory.mutate(category.id);
+                    }
+                  }}
+                  className="rounded-lg px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                  title="Excluir seção"
+                >
+                  Excluir seção
+                </button>
+              </div>
             </div>
 
             {items.length === 0 ? (
@@ -399,6 +441,103 @@ export function MenuPage() {
           </section>
         ))}
       </div>
+    </div>
+  );
+}
+
+function ProductImageUploader({
+  imageUrl,
+  onUploaded,
+}: {
+  imageUrl: string;
+  onUploaded: (url: string) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('Por favor, selecione um arquivo de imagem válido.');
+      return;
+    }
+
+    const body = new FormData();
+    body.append('image', file);
+
+    setUploading(true);
+    setError(null);
+
+    try {
+      const res = await apiFetch<{ url: string }>('/admin/products/upload-image', {
+        method: 'POST',
+        body,
+      });
+      onUploaded(res.url);
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : 'Não foi possível enviar a imagem.',
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex flex-wrap items-center gap-3">
+        {imageUrl ? (
+          <div className="relative size-16 shrink-0 overflow-hidden rounded-lg border border-line bg-line/20">
+            <img
+              src={imageUrl}
+              alt="Pré-visualização"
+              className="size-full object-cover"
+            />
+            <button
+              type="button"
+              onClick={() => onUploaded('')}
+              className="absolute top-1 right-1 grid size-5 place-items-center rounded-full bg-black/70 text-[10px] text-white hover:bg-red-600"
+              title="Remover imagem"
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <div className="grid size-16 shrink-0 place-items-center rounded-lg border border-dashed border-line bg-line/10 text-muted">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+          </div>
+        )}
+
+        <div className="flex-1 min-w-[200px] grid gap-1.5">
+          <label className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-line bg-panel px-3 py-2 text-xs font-semibold shadow-xs transition-colors hover:bg-line/40">
+            {uploading ? 'Enviando foto…' : '📷 Escolher imagem da galeria'}
+            <input
+              type="file"
+              accept="image/*"
+              disabled={uploading}
+              onChange={handleFileChange}
+              className="sr-only"
+            />
+          </label>
+
+          <input
+            value={imageUrl}
+            onChange={(e) => onUploaded(e.target.value)}
+            className="field text-xs"
+            placeholder="Ou cole a URL direta (https://…)"
+          />
+        </div>
+      </div>
+
+      {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );
 }

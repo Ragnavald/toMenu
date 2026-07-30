@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\TenantSettings;
+use App\Services\ImageStorage;
 use App\Services\ThemeSanitizer;
 use App\Tenancy\TenantContext;
 use Illuminate\Http\JsonResponse;
@@ -35,6 +36,7 @@ class SettingsController extends Controller
                 'trialEndsAt' => $tenant->trial_ends_at?->toIso8601String(),
             ],
             'profile' => [
+                'segment' => $settings?->segment,
                 'phone' => $settings?->phone,
                 'whatsapp' => $settings?->whatsapp,
                 'address' => $settings?->address,
@@ -62,6 +64,7 @@ class SettingsController extends Controller
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
+            'segment' => ['nullable', 'string', 'max:50'],
             'phone' => ['nullable', 'string', 'max:20'],
             'whatsapp' => ['nullable', 'string', 'max:20'],
             'address' => ['nullable', 'string', 'max:300'],
@@ -74,6 +77,7 @@ class SettingsController extends Controller
 
         $settings = TenantSettings::firstOrNew(['tenant_id' => $tenant->id]);
         $settings->fill([
+            'segment' => $data['segment'] ?? null,
             'phone' => $data['phone'] ?? null,
             'whatsapp' => $data['whatsapp'] ?? null,
             'address' => $data['address'] ?? null,
@@ -84,6 +88,30 @@ class SettingsController extends Controller
         $settings->save();
 
         return response()->json(['message' => 'Perfil atualizado.']);
+    }
+
+    /** Upload de logo do restaurante (Cloudflare R2 em produção, disco público como fallback). */
+    public function uploadLogo(Request $request, TenantContext $context, ImageStorage $images): JsonResponse
+    {
+        $tenant = $context->getOrFail();
+
+        $request->validate([
+            'logo' => ['required', 'image', 'mimes:jpeg,png,jpg,gif,webp,svg', 'max:5120'],
+        ]);
+
+        $file = $request->file('logo');
+        $filename = "logos/{$tenant->id}-logo-".time().'.'.$file->getClientOriginalExtension();
+
+        $url = $images->put($file, $filename);
+
+        $settings = TenantSettings::firstOrNew(['tenant_id' => $tenant->id]);
+        $settings->logo_url = $url;
+        $settings->save();
+
+        return response()->json([
+            'url' => $url,
+            'message' => 'Logo enviado com sucesso.',
+        ]);
     }
 
     /**
@@ -184,6 +212,8 @@ class SettingsController extends Controller
         $settings = TenantSettings::firstOrNew(['tenant_id' => $tenant->id]);
         $settings->theme = $sanitizer->sanitize($request->input('theme', []));
         $settings->save();
+
+        $tenant->increment('menu_version');
 
         return response()->json(['theme' => $settings->theme]);
     }

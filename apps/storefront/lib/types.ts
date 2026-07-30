@@ -3,6 +3,7 @@ export type ThemeTokens = {
   brandSoft: string;
   surface: string;
   ink: string;
+  brandInk?: string;
   font: string;
   radius: string;
   layout: 'classic' | 'grid' | 'compact';

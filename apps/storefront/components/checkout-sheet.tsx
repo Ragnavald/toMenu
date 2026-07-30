@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { formatMoney, submitOrder } from '@/lib/api';
+import { addStoredOrder } from '@/lib/orders-storage';
 import type { TenantInfo } from '@/lib/types';
 import { useCart } from './cart-provider';
 
@@ -12,31 +13,51 @@ const PAYMENT_LABELS: Record<string, string> = {
   card_on_delivery: 'Cartão na entrega',
   stripe_card: 'Cartão pelo site',
   stripe_pix: 'Pix pelo site',
-};
+};function formatCpf(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 9)
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
+
+function formatCep(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 5) return digits;
+  return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+}
 
 export function CheckoutSheet({
   tenant,
   tenantSlug,
   onClose,
+  onOpenOrders,
 }: {
   tenant: TenantInfo;
   tenantSlug: string;
   onClose: () => void;
+  onOpenOrders?: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const numberInputRef = useRef<HTMLInputElement>(null);
   const { lines, subtotalCents, setQuantity, clear } = useCart();
 
   const [step, setStep] = useState<Step>('cart');
   const [submitting, setSubmitting] = useState(false);
+  const [loadingCep, setLoadingCep] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [orderNumber, setOrderNumber] = useState<number | null>(null);
 
   const [form, setForm] = useState({
     name: '',
     phone: '',
+    cpf: '',
     fulfillment: 'delivery' as 'delivery' | 'pickup',
+    zip: '',
     street: '',
     number: '',
+    complement: '',
     district: '',
     city: '',
     state: '',
@@ -56,23 +77,67 @@ export function CheckoutSheet({
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  async function handleCepChange(rawCep: string) {
+    const formatted = formatCep(rawCep);
+    setForm((current) => ({ ...current, zip: formatted }));
+
+    const cleanZip = formatted.replace(/\D/g, '');
+    if (cleanZip.length === 8) {
+      setLoadingCep(true);
+      try {
+        const response = await fetch(`https://viacep.com.br/ws/${cleanZip}/json/`);
+        if (response.ok) {
+          const data = await response.json();
+          if (!data.erro) {
+            setForm((current) => ({
+              ...current,
+              zip: formatted,
+              street: data.logradouro || current.street,
+              district: data.bairro || current.district,
+              city: data.localidade || current.city,
+              state: data.uf || current.state,
+            }));
+            setTimeout(() => {
+              numberInputRef.current?.focus();
+            }, 100);
+          }
+        }
+      } catch {
+        // Falha graciosa se ViaCEP não estiver disponível
+      } finally {
+        setLoadingCep(false);
+      }
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setSubmitting(true);
     setError(null);
 
     try {
+      const notesArray = [];
+      if (form.cpf.trim()) notesArray.push(`CPF: ${form.cpf.trim()}`);
+      if (form.notes.trim()) notesArray.push(form.notes.trim());
+      const finalNotes = notesArray.join(' · ');
+
       // Envia apenas IDs e quantidades. Todo preço é recalculado pelo servidor
       // a partir do banco — o cliente não tem voz sobre valores.
       const result = await submitOrder(tenantSlug, {
-        customer: { name: form.name, phone: form.phone },
+        customer: {
+          name: form.name,
+          phone: form.phone,
+          cpf: form.cpf || undefined,
+        },
         fulfillment: form.fulfillment,
         address:
           form.fulfillment === 'delivery'
             ? {
+                zip: form.zip || undefined,
                 street: form.street,
-                number: form.number,
-                district: form.district,
+                number: form.number || undefined,
+                complement: form.complement || undefined,
+                district: form.district || undefined,
                 city: form.city,
                 state: form.state.toUpperCase(),
               }
@@ -83,10 +148,30 @@ export function CheckoutSheet({
           quantity: line.quantity,
           modifier_ids: line.modifiers.map((modifier) => modifier.id),
         })),
-        notes: form.notes || undefined,
+        notes: finalNotes || undefined,
       });
 
       setOrderNumber(result.number);
+
+      addStoredOrder(tenantSlug, {
+        id: result.id,
+        number: result.number,
+        tenantSlug,
+        status: result.status ?? 'confirmed',
+        fulfillment: form.fulfillment,
+        paymentMethod: form.paymentMethod,
+        totalCents: result.totalCents ?? total,
+        placedAt: new Date().toISOString(),
+        customerName: form.name,
+        customerPhone: form.phone,
+        items: lines.map((l) => ({
+          name: l.name,
+          quantity: l.quantity,
+          unitPriceCents: l.unitPriceCents,
+          totalCents: l.unitPriceCents * l.quantity,
+        })),
+      });
+
       setStep('done');
       clear();
     } catch (caught) {
@@ -153,17 +238,42 @@ export function CheckoutSheet({
               {tenant.name} já foi avisado e vai preparar seu pedido.
             </p>
 
-            <button
-              type="button"
-              onClick={() => dialogRef.current?.close()}
-              className="mt-7 w-full px-4 py-3 text-sm font-semibold text-white"
-              style={{
-                background: 'rgb(var(--brand))',
-                borderRadius: 'calc(var(--radius) * 0.6)',
-              }}
-            >
-              Concluir
-            </button>
+            <div className="mt-7 flex flex-col gap-2.5">
+              {onOpenOrders && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    dialogRef.current?.close();
+                    onOpenOrders();
+                  }}
+                  className="w-full px-4 py-3 text-sm font-semibold transition-opacity hover:opacity-90"
+                  style={{
+                    background: 'rgb(var(--brand))',
+                    color: 'rgb(var(--brand-ink))',
+                    borderRadius: 'calc(var(--radius) * 0.6)',
+                  }}
+                >
+                  Acompanhar Pedido
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => dialogRef.current?.close()}
+                className={`w-full px-4 text-sm transition-colors ${
+                  onOpenOrders
+                    ? 'border border-[var(--hairline)] py-2.5 font-medium text-muted hover:bg-[var(--hairline)]'
+                    : 'py-3 font-semibold'
+                }`}
+                style={{
+                  background: onOpenOrders ? 'transparent' : 'rgb(var(--brand))',
+                  color: onOpenOrders ? 'inherit' : 'rgb(var(--brand-ink))',
+                  borderRadius: 'calc(var(--radius) * 0.6)',
+                }}
+              >
+                Concluir
+              </button>
+            </div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex min-h-0 flex-col">
@@ -236,20 +346,38 @@ export function CheckoutSheet({
                     />
                   </div>
 
-                  <div className="grid gap-1.5">
-                    <label htmlFor="phone" className="text-xs font-medium text-muted">
-                      WhatsApp
-                    </label>
-                    <input
-                      id="phone"
-                      required
-                      inputMode="tel"
-                      value={form.phone}
-                      onChange={(e) => update('phone', e.target.value)}
-                      className={inputClass}
-                      style={inputStyle}
-                      placeholder="(11) 99999-9999"
-                    />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="grid gap-1.5">
+                      <label htmlFor="phone" className="text-xs font-medium text-muted">
+                        WhatsApp
+                      </label>
+                      <input
+                        id="phone"
+                        required
+                        inputMode="tel"
+                        value={form.phone}
+                        onChange={(e) => update('phone', e.target.value)}
+                        className={inputClass}
+                        style={inputStyle}
+                        placeholder="(11) 99999-9999"
+                      />
+                    </div>
+
+                    <div className="grid gap-1.5">
+                      <label htmlFor="cpf" className="text-xs font-medium text-muted">
+                        CPF (opcional)
+                      </label>
+                      <input
+                        id="cpf"
+                        inputMode="numeric"
+                        maxLength={14}
+                        value={form.cpf}
+                        onChange={(e) => update('cpf', formatCpf(e.target.value))}
+                        className={inputClass}
+                        style={inputStyle}
+                        placeholder="000.000.000-00"
+                      />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
@@ -278,6 +406,29 @@ export function CheckoutSheet({
 
                   {form.fulfillment === 'delivery' && (
                     <>
+                      <div className="grid gap-1.5">
+                        <label htmlFor="zip" className="text-xs font-medium text-muted">
+                          CEP
+                        </label>
+                        <div className="relative">
+                          <input
+                            id="zip"
+                            inputMode="numeric"
+                            maxLength={9}
+                            value={form.zip}
+                            onChange={(e) => handleCepChange(e.target.value)}
+                            className={inputClass}
+                            style={inputStyle}
+                            placeholder="00000-000"
+                          />
+                          {loadingCep && (
+                            <span className="absolute inset-y-0 right-3 flex items-center text-xs text-muted animate-pulse">
+                              Buscando...
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
                       <div className="grid grid-cols-[1fr_88px] gap-2">
                         <input
                           required
@@ -285,10 +436,12 @@ export function CheckoutSheet({
                           onChange={(e) => update('street', e.target.value)}
                           className={inputClass}
                           style={inputStyle}
-                          placeholder="Rua"
+                          placeholder="Rua / Avenida"
                           aria-label="Rua"
                         />
                         <input
+                          ref={numberInputRef}
+                          required
                           value={form.number}
                           onChange={(e) => update('number', e.target.value)}
                           className={inputClass}
@@ -298,14 +451,24 @@ export function CheckoutSheet({
                         />
                       </div>
 
-                      <input
-                        value={form.district}
-                        onChange={(e) => update('district', e.target.value)}
-                        className={inputClass}
-                        style={inputStyle}
-                        placeholder="Bairro"
-                        aria-label="Bairro"
-                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          value={form.complement}
+                          onChange={(e) => update('complement', e.target.value)}
+                          className={inputClass}
+                          style={inputStyle}
+                          placeholder="Complemento (Apt, Bloco)"
+                          aria-label="Complemento"
+                        />
+                        <input
+                          value={form.district}
+                          onChange={(e) => update('district', e.target.value)}
+                          className={inputClass}
+                          style={inputStyle}
+                          placeholder="Bairro"
+                          aria-label="Bairro"
+                        />
+                      </div>
 
                       <div className="grid grid-cols-[1fr_72px] gap-2">
                         <input
@@ -416,9 +579,10 @@ export function CheckoutSheet({
                 <button
                   type="button"
                   onClick={() => setStep('details')}
-                  className="w-full px-4 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                  className="w-full px-4 py-3 text-sm font-semibold transition-opacity hover:opacity-90"
                   style={{
                     background: 'rgb(var(--brand))',
+                    color: 'rgb(var(--brand-ink))',
                     borderRadius: 'calc(var(--radius) * 0.6)',
                   }}
                 >
@@ -428,9 +592,10 @@ export function CheckoutSheet({
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full px-4 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                  className="w-full px-4 py-3 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-60"
                   style={{
                     background: 'rgb(var(--brand))',
+                    color: 'rgb(var(--brand-ink))',
                     borderRadius: 'calc(var(--radius) * 0.6)',
                   }}
                 >

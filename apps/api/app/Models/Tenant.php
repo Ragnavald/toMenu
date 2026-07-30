@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
-    'name', 'slug', 'custom_domain', 'plan_id', 'status', 'trial_ends_at',
+    'name', 'slug', 'plan_id', 'status', 'trial_ends_at',
     'stripe_customer_id', 'stripe_account_id', 'stripe_charges_enabled',
     'whatsapp_phone_id', 'whatsapp_token',
     'onboarding_step', 'onboarding_completed_at',
@@ -77,19 +77,14 @@ class Tenant extends Model
     }
 
     /**
-     * URL pública da loja.
+     * URL pública da loja: sempre subdomínio do domínio raiz.
      *
-     * Domínio próprio tem precedência; caso contrário monta o subdomínio a
-     * partir do slug. A porta é configurável porque em desenvolvimento o
-     * storefront não roda na 80/443.
+     * A porta é configurável porque em desenvolvimento o storefront não roda
+     * na 80/443.
      */
     public function storefrontUrl(): string
     {
         $scheme = config('tenancy.storefront_scheme', 'https');
-
-        if ($this->custom_domain) {
-            return "{$scheme}://{$this->custom_domain}";
-        }
 
         $host = "{$this->slug}.".config('tenancy.root_domain');
         $port = config('tenancy.storefront_port');

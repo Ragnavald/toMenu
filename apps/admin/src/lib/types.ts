@@ -56,6 +56,7 @@ export type ThemeTokens = {
   brandSoft: string;
   surface: string;
   ink: string;
+  brandInk?: string;
   font: string;
   radius: string;
   layout: string;
@@ -66,7 +67,7 @@ export type DeliveryConfig = {
   minOrderCents: number;
   etaMinutes: number;
   freeAboveCents: number | null;
-  radiusKm: number | null;
+  radiusKm?: number | null;
   acceptsPickup: boolean;
   acceptsDelivery: boolean;
   merchantPhone: string | null;
@@ -92,6 +93,7 @@ export type Settings = {
     trialEndsAt: string | null;
   };
   profile: {
+    segment: string | null;
     phone: string | null;
     whatsapp: string | null;
     address: string | null;

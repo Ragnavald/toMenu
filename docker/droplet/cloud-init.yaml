@@ -1,0 +1,75 @@
+#cloud-config
+# User-data do droplet toMenu.
+#
+# Só provisiona a máquina — nada de segredo aqui. O user-data fica legível
+# para sempre via metadata service (169.254.169.254) e no painel da DO, então
+# CLOUDFLARE_TUNNEL_TOKEN, senha do Postgres e APP_KEY vão depois, por SSH,
+# no .env.prod com permissão 600.
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - ufw
+  - fail2ban
+  - postgresql-client-16
+
+# 2 GB de swap: o `docker compose build` da imagem PHP é o pico de memória do
+# deploy e é o passo que morre por OOM num droplet de 2 GB sem swap.
+swap:
+  filename: /swapfile
+  size: 2147483648
+  maxsize: 2147483648
+
+write_files:
+  # swappiness baixo: o swap existe como rede de segurança para o build, não
+  # para uso rotineiro — com o padrão 60 o kernel paginaria o Postgres em
+  # operação normal e a latência do banco pioraria.
+  - path: /etc/sysctl.d/99-tomenu.conf
+    content: |
+      vm.swappiness=10
+      vm.overcommit_memory=1
+
+  # Sem limite, o journal e os logs de container enchem o disco do droplet —
+  # que é pequeno e é o mesmo volume do Postgres.
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": { "max-size": "10m", "max-file": "3" }
+      }
+
+runcmd:
+  # --- Docker (repositório oficial; o do Ubuntu fica muito atrás) ---
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - systemctl enable --now docker
+
+  # --- Firewall: só SSH ---
+  # 80/443 ficam fechados de propósito. O cloudflared disca de dentro para
+  # fora, então não há nada escutando publicamente; manter as portas fechadas
+  # tira a origem do alcance de varredura.
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp
+  - ufw --force enable
+
+  # --- SSH: só chave ---
+  - sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+  - sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+  - systemctl restart ssh
+
+  - systemctl enable --now fail2ban
+  - sysctl --system
+
+  # Atualizações de segurança sem intervenção. Um droplet de produção que
+  # ninguém atualiza vira o elo mais fraco em poucos meses.
+  - apt-get install -y unattended-upgrades
+  - dpkg-reconfigure -f noninteractive unattended-upgrades

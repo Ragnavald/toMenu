@@ -18,6 +18,7 @@ class StoreOrderRequest extends FormRequest
             'customer.name' => ['required', 'string', 'max:120'],
             'customer.phone' => ['required', 'string', 'max:20'],
             'customer.email' => ['nullable', 'email', 'max:180'],
+            'customer.cpf' => ['nullable', 'string', 'max:20'],
 
             'fulfillment' => ['required', Rule::in(['delivery', 'pickup'])],
 

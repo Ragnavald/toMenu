@@ -84,42 +84,50 @@ export function MoneyInput({
 }) {
   const [text, setText] = useState(() => centsToText(valueCents));
 
-  // Ressincroniza quando o valor muda por fora (ex.: dados recarregados).
   useEffect(() => {
-    setText((current) =>
-      textToCents(current) === valueCents ? current : centsToText(valueCents),
-    );
+    setText(centsToText(valueCents));
   }, [valueCents]);
 
   return (
     <div className="flex items-center gap-2">
-      <span className="text-sm text-muted">R$</span>
+      <span className="text-sm font-medium text-muted shrink-0">R$</span>
       <input
         id={id}
-        inputMode="decimal"
+        type="text"
+        inputMode="numeric"
         value={text}
         placeholder={placeholder}
         onChange={(event) => {
-          const raw = event.target.value.replace(/[^\d,.]/g, '');
-          setText(raw);
-          onChange(textToCents(raw));
+          const rawDigits = event.target.value.replace(/\D/g, '');
+          if (!rawDigits) {
+            setText('');
+            onChange(null);
+            return;
+          }
+          const cents = parseInt(rawDigits, 10);
+          const formatted = centsToText(cents);
+          setText(formatted);
+          onChange(cents);
         }}
-        className="field"
+        className="field font-mono"
       />
     </div>
   );
 }
 
-export function centsToText(cents: number | null): string {
-  if (cents === null || Number.isNaN(cents)) return '';
-  return (cents / 100).toFixed(2).replace('.', ',');
+export function centsToText(cents: number | null | undefined): string {
+  if (cents === null || cents === undefined || Number.isNaN(cents)) return '';
+  return (cents / 100).toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 export function textToCents(text: string): number | null {
-  const normalized = text.replace(/\./g, '').replace(',', '.');
-  if (normalized.trim() === '') return null;
-  const parsed = Number.parseFloat(normalized);
-  return Number.isNaN(parsed) ? null : Math.round(parsed * 100);
+  const digits = text.replace(/\D/g, '');
+  if (!digits) return null;
+  const parsed = parseInt(digits, 10);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 export function Toggle({

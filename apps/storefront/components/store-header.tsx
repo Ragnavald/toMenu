@@ -1,5 +1,6 @@
 import { formatMoney } from '@/lib/api';
 import type { TenantInfo } from '@/lib/types';
+import { OrderTrackingButton } from './order-tracking-button';
 
 /** Server Component: sem JS no cliente, entra direto no HTML inicial. */
 export function StoreHeader({ tenant }: { tenant: TenantInfo }) {
@@ -33,35 +34,41 @@ export function StoreHeader({ tenant }: { tenant: TenantInfo }) {
       </div>
 
       <div className="mx-auto max-w-3xl px-4">
-        <div className="-mt-10 flex items-end gap-4 sm:-mt-12">
-          <div
-            className="grid size-20 shrink-0 place-items-center overflow-hidden border-4 bg-[rgb(var(--surface))] text-xl font-semibold shadow-soft sm:size-24"
-            style={{
-              borderColor: 'rgb(var(--surface))',
-              borderRadius: 'var(--radius)',
-              color: 'rgb(var(--brand))',
-            }}
-          >
-            {tenant.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={tenant.logoUrl}
-                alt={tenant.name}
-                className="size-full object-cover"
-              />
-            ) : (
-              initials
-            )}
+        <div className="-mt-10 flex items-end justify-between gap-4 sm:-mt-12">
+          <div className="flex items-end gap-4 min-w-0 flex-1">
+            <div
+              className="grid size-20 shrink-0 place-items-center overflow-hidden border-4 bg-[rgb(var(--surface))] text-xl font-semibold shadow-soft sm:size-24"
+              style={{
+                borderColor: 'rgb(var(--surface))',
+                borderRadius: 'var(--radius)',
+                color: 'rgb(var(--brand))',
+              }}
+            >
+              {tenant.logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={tenant.logoUrl}
+                  alt={tenant.name}
+                  className="size-full object-cover"
+                />
+              ) : (
+                initials
+              )}
+            </div>
+
+            <div className="min-w-0 flex-1 pb-1">
+              <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">
+                {tenant.name}
+              </h1>
+            </div>
           </div>
 
-          <div className="min-w-0 flex-1 pb-1">
-            <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">
-              {tenant.name}
-            </h1>
+          <div className="pb-1">
+            <OrderTrackingButton tenantSlug={tenant.slug} />
           </div>
         </div>
 
-        <dl className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+        <dl className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-medium">
           {config.eta_minutes ? (
             <div className="flex items-center gap-2">
               <span
@@ -70,7 +77,9 @@ export function StoreHeader({ tenant }: { tenant: TenantInfo }) {
                 style={{ background: 'rgb(var(--brand))' }}
               />
               <dt className="sr-only">Tempo estimado</dt>
-              <dd className="text-muted">{config.eta_minutes} min</dd>
+              <dd className="text-muted">
+                {config.eta_minutes} min
+              </dd>
             </div>
           ) : null}
 
