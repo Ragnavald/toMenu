@@ -1,0 +1,85 @@
+@import 'tailwindcss';
+
+/*
+ * O Admin tem identidade própria e estável — é o produto do ToMenu, não a
+ * vitrine do tenant. Usa paleta neutra fixa em vez das variáveis de tema: o
+ * operador precisa de uma interface previsível durante horas de uso, e as
+ * cores da loja apareceriam apenas como acento pontual.
+ */
+:root {
+  --bg: 250 250 250;
+  --panel: 255 255 255;
+  --ink: 24 24 27;
+  --ink-muted: 113 113 122;
+  --line: 228 228 231;
+  --accent: 37 99 235;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: 12 12 14;
+    --panel: 24 24 27;
+    --ink: 244 244 245;
+    --ink-muted: 161 161 170;
+    --line: 39 39 42;
+    --accent: 96 165 250;
+  }
+}
+
+@theme inline {
+  --color-bg: rgb(var(--bg));
+  --color-panel: rgb(var(--panel));
+  --color-ink: rgb(var(--ink));
+  --color-muted: rgb(var(--ink-muted));
+  --color-line: rgb(var(--line));
+  --color-accent: rgb(var(--accent));
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: rgb(var(--bg));
+  color: rgb(var(--ink));
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+:where(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid rgb(var(--accent));
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@utility panel {
+  background: rgb(var(--panel));
+  border: 1px solid rgb(var(--line));
+  border-radius: 12px;
+}
+
+@utility field {
+  width: 100%;
+  background: transparent;
+  border: 1px solid rgb(var(--line));
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s;
+
+  &:focus {
+    border-color: rgb(var(--accent));
+  }
+}

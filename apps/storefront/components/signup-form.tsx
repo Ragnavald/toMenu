@@ -1,0 +1,284 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'localhost';
+const ADMIN_URL = process.env.NEXT_PUBLIC_ADMIN_URL ?? 'http://localhost:5173';
+
+type SlugState = 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
+
+/** Espelha a normalização do backend para que a prévia não minta ao usuário. */
+function slugify(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+}
+
+export function SignupForm() {
+  const [storeName, setStoreName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [slugState, setSlugState] = useState<SlugState>('idle');
+  const [ownerName, setOwnerName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [errors, setErrors] = useState<Record<string, string[]>>({});
+  const [submitting, setSubmitting] = useState(false);
+
+  // Enquanto o usuário não editar o endereço manualmente, ele acompanha o nome
+  // da loja — a maioria nunca vai querer que sejam diferentes.
+  const effectiveSlug = slugTouched ? slug : slugify(storeName);
+
+  const previewUrl = useMemo(
+    () => `${effectiveSlug || 'sualoja'}.${ROOT_DOMAIN}`,
+    [effectiveSlug],
+  );
+
+  useEffect(() => {
+    if (effectiveSlug.length < 3) {
+      setSlugState(effectiveSlug.length === 0 ? 'idle' : 'invalid');
+      return;
+    }
+
+    setSlugState('checking');
+    const controller = new AbortController();
+
+    // Debounce: sem isso a API leva uma requisição por tecla digitada.
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `${API_URL}/api/register/check-slug?slug=${encodeURIComponent(effectiveSlug)}`,
+          { signal: controller.signal, headers: { Accept: 'application/json' } },
+        );
+
+        if (!response.ok) {
+          setSlugState('invalid');
+          return;
+        }
+
+        const data = await response.json();
+        setSlugState(data.available ? 'available' : 'taken');
+      } catch {
+        // Abortos do debounce são esperados; não vale sinalizar erro.
+      }
+    }, 400);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [effectiveSlug]);
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setSubmitting(true);
+    setErrors({});
+
+    try {
+      const response = await fetch(`${API_URL}/api/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          store_name: storeName,
+          slug: effectiveSlug,
+          owner_name: ownerName,
+          email,
+          password,
+          password_confirmation: confirmation,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setErrors(data.errors ?? { geral: [data.message ?? 'Não foi possível criar a loja.'] });
+        return;
+      }
+
+      // O token do cadastro já autentica o painel: o dono cai direto no wizard
+      // em vez de ter que fazer login logo após criar a conta.
+      const handoff = new URLSearchParams({
+        token: data.token,
+        tenant: data.tenant.slug,
+        name: data.tenant.name,
+        user: data.user.name,
+      });
+
+      window.location.href = `${ADMIN_URL}/bem-vindo#${handoff.toString()}`;
+    } catch {
+      setErrors({ geral: ['Não foi possível falar com o servidor.'] });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const inputClass =
+    'w-full border bg-transparent px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-[var(--ink-subtle)] focus:border-[rgb(var(--brand))]';
+  const inputStyle = {
+    borderRadius: 'calc(var(--radius) * 0.55)',
+    borderColor: 'var(--hairline)',
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="grid gap-3.5">
+      <Field label="Nome do restaurante" error={errors.store_name?.[0]}>
+        <input
+          required
+          value={storeName}
+          onChange={(e) => setStoreName(e.target.value)}
+          className={inputClass}
+          style={inputStyle}
+          placeholder="Cantina da Nona"
+        />
+      </Field>
+
+      <Field label="Endereço da sua loja" error={errors.slug?.[0]}>
+        <div
+          className="flex items-center overflow-hidden border"
+          style={inputStyle}
+        >
+          <input
+            required
+            value={effectiveSlug}
+            onChange={(e) => {
+              setSlugTouched(true);
+              setSlug(slugify(e.target.value));
+            }}
+            className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm outline-none"
+            placeholder="cantina-da-nona"
+            aria-describedby="slug-hint"
+          />
+          <span className="shrink-0 pr-3 text-sm text-subtle">
+            .{ROOT_DOMAIN}
+          </span>
+        </div>
+
+        <p id="slug-hint" className="mt-1.5 text-xs">
+          {slugState === 'available' && (
+            <span className="text-emerald-600">
+              {previewUrl} está disponível
+            </span>
+          )}
+          {slugState === 'taken' && (
+            <span className="text-red-600">
+              {previewUrl} já está em uso
+            </span>
+          )}
+          {slugState === 'checking' && (
+            <span className="text-subtle">verificando…</span>
+          )}
+          {slugState === 'invalid' && (
+            <span className="text-subtle">
+              Use ao menos 3 letras, números ou hífens.
+            </span>
+          )}
+          {slugState === 'idle' && (
+            <span className="text-subtle">Sua loja ficará em {previewUrl}</span>
+          )}
+        </p>
+      </Field>
+
+      <div className="mt-1 border-t border-[var(--hairline)] pt-3.5">
+        <Field label="Seu nome" error={errors.owner_name?.[0]}>
+          <input
+            required
+            value={ownerName}
+            onChange={(e) => setOwnerName(e.target.value)}
+            className={inputClass}
+            style={inputStyle}
+            placeholder="Ana Souza"
+          />
+        </Field>
+      </div>
+
+      <Field label="E-mail" error={errors.email?.[0]}>
+        <input
+          type="email"
+          required
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className={inputClass}
+          style={inputStyle}
+          placeholder="voce@restaurante.com"
+        />
+      </Field>
+
+      <div className="grid gap-3.5 sm:grid-cols-2">
+        <Field label="Senha" error={errors.password?.[0]}>
+          <input
+            type="password"
+            required
+            minLength={8}
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className={inputClass}
+            style={inputStyle}
+          />
+        </Field>
+
+        <Field label="Confirmar senha">
+          <input
+            type="password"
+            required
+            autoComplete="new-password"
+            value={confirmation}
+            onChange={(e) => setConfirmation(e.target.value)}
+            className={inputClass}
+            style={inputStyle}
+          />
+        </Field>
+      </div>
+
+      {errors.geral && (
+        <p role="alert" className="text-xs text-red-600">
+          {errors.geral[0]}
+        </p>
+      )}
+
+      <button
+        type="submit"
+        disabled={submitting || slugState === 'taken'}
+        className="mt-1 px-4 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-55"
+        style={{
+          background: 'rgb(var(--brand))',
+          borderRadius: 'calc(var(--radius) * 0.6)',
+        }}
+      >
+        {submitting ? 'Criando sua loja…' : 'Criar minha loja grátis'}
+      </button>
+
+      <p className="text-center text-xs text-subtle">
+        14 dias grátis. Você não precisa informar cartão agora.
+      </p>
+    </form>
+  );
+}
+
+function Field({
+  label,
+  error,
+  children,
+}: {
+  label: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="grid gap-1.5">
+      <span className="text-xs font-medium text-muted">{label}</span>
+      {children}
+      {error && <span className="text-xs text-red-600">{error}</span>}
+    </label>
+  );
+}

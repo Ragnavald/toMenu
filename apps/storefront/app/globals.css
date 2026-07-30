@@ -1,0 +1,177 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens.
+ *
+ * Todo o CSS da aplicação é escrito contra estas variáveis — nenhuma cor
+ * literal aparece nos componentes. Os valores concretos são injetados em
+ * runtime pelo layout do tenant, a partir da API, o que permite a cada loja
+ * ter identidade visual própria sem nenhum rebuild do frontend.
+ *
+ * Os valores em :root são apenas o fallback usado enquanto o tema não chega.
+ */
+@theme inline {
+  --color-brand: rgb(var(--brand) / <alpha-value>);
+  --color-brand-soft: rgb(var(--brand-soft) / <alpha-value>);
+  --color-surface: rgb(var(--surface) / <alpha-value>);
+  --color-ink: rgb(var(--ink) / <alpha-value>);
+
+  --font-display: var(--font-tenant), ui-sans-serif, system-ui, sans-serif;
+
+  --radius-theme: var(--radius);
+}
+
+/*
+ * Estes valores são, ao mesmo tempo, o fallback enquanto o tema de um tenant
+ * não chega e a identidade da própria plataforma (landing e páginas centrais),
+ * que não pertencem a loja nenhuma.
+ */
+:root {
+  --brand: 234 88 12;
+  --brand-soft: 255 237 213;
+  --surface: 255 255 255;
+  --ink: 23 23 23;
+  --radius: 16px;
+
+  /* Derivados — evitam repetir a mesma expressão em dezenas de lugares. */
+  --ink-muted: rgb(var(--ink) / 0.62);
+  --ink-subtle: rgb(var(--ink) / 0.45);
+  --hairline: rgb(var(--ink) / 0.09);
+  --elevated: rgb(var(--surface));
+  --shadow-soft: 0 1px 2px rgb(var(--ink) / 0.04), 0 8px 24px rgb(var(--ink) / 0.06);
+}
+
+/*
+ * Modo escuro.
+ *
+ * Apenas as superfícies invertem; a cor de marca do tenant é preservada,
+ * porque ela é a identidade da loja e deve permanecer reconhecível.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --surface: 17 17 19;
+    --ink: 244 244 245;
+    --ink-muted: rgb(var(--ink) / 0.64);
+    --ink-subtle: rgb(var(--ink) / 0.46);
+    --hairline: rgb(var(--ink) / 0.13);
+    --elevated: rgb(var(--ink) / 0.05);
+    --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.28);
+  }
+}
+
+:root[data-theme='dark'] {
+  --surface: 17 17 19;
+  --ink: 244 244 245;
+  --ink-muted: rgb(var(--ink) / 0.64);
+  --ink-subtle: rgb(var(--ink) / 0.46);
+  --hairline: rgb(var(--ink) / 0.13);
+  --elevated: rgb(var(--ink) / 0.05);
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.28);
+}
+
+body {
+  background: rgb(var(--surface));
+  color: rgb(var(--ink));
+  font-family: var(--font-display);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/*
+ * O tema do tenant é declarado em [data-tenant], que fica ABAIXO do body na
+ * árvore. Variáveis CSS herdam para baixo, nunca para cima, então a regra do
+ * body não enxerga --font-tenant e cairia sempre no fallback sans-serif.
+ * Reaplicar aqui faz a fonte da loja valer de fato.
+ */
+/*
+ * As variáveis do tema são declaradas em [data-tenant], que fica ABAIXO do body
+ * na árvore. Variáveis CSS herdam para baixo, nunca para cima, então a regra do
+ * body cai sempre no fallback. Pintar aqui é o que faz as cores da loja valerem.
+ *
+ * A família tipográfica não aparece nesta regra de propósito: ela vem da classe
+ * gerada pelo next/font, aplicada neste mesmo elemento.
+ */
+[data-tenant] {
+  background: rgb(var(--surface));
+  color: rgb(var(--ink));
+  min-height: 100dvh;
+}
+
+/* Foco visível e consistente — navegação por teclado. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid rgb(var(--brand));
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* Respeita a preferência de menos movimento do sistema operacional. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@utility text-muted {
+  color: var(--ink-muted);
+}
+
+@utility text-subtle {
+  color: var(--ink-subtle);
+}
+
+@utility hairline {
+  border-color: var(--hairline);
+}
+
+@utility surface-card {
+  background: var(--elevated);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+}
+
+@utility shadow-soft {
+  box-shadow: var(--shadow-soft);
+}
+
+/* Trilha horizontal de categorias, sem barra de rolagem visível. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@utility animate-rise {
+  animation: rise 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@utility animate-slide-up {
+  animation: slide-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
