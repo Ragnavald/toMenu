@@ -8,7 +8,16 @@ services:
       POSTGRES_USER: tomenu
       POSTGRES_PASSWORD: secret
     ports: ["5433:5432"]
-    volumes: ["pgdata:/var/lib/postgresql/data"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Cria o papel tomenu_app (não-superuser, para o RLS valer) e o banco
+      # tomenu_test. Sem este mount os scripts só rodavam em produção, e o
+      # ambiente local dependia de alguém ter criado o papel na mão — que era
+      # perdido em qualquer `docker compose down -v`.
+      #
+      # Só executam quando o volume está vazio: em base já inicializada o
+      # entrypoint imprime "ignoring /docker-entrypoint-initdb.d/*".
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tomenu -d tomenu"]
       interval: 3s
@@ -32,13 +41,18 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    # Só o que é específico do Docker: os nomes dos serviços na rede interna.
+    #
+    # Credenciais e nome do banco NÃO entram aqui — ficam no .env. Variável de
+    # ambiente real é escrita em $_SERVER, de onde o `env()` do Laravel lê
+    # primeiro, e nem o `force="true"` do phpunit.xml consegue sobrescrevê-la.
+    # Com DB_DATABASE fixado aqui, a suíte rodava no banco de desenvolvimento:
+    # o RefreshDatabase apagava os dados locais a cada execução, e o antigo
+    # DB_USERNAME=tomenu (superuser) desativava o RLS, deixando os testes da
+    # terceira camada de isolamento falharem sem que houvesse bug no código.
     environment:
-      DB_CONNECTION: pgsql
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_DATABASE: tomenu
-      DB_USERNAME: tomenu
-      DB_PASSWORD: secret
       REDIS_HOST: redis
     command: php artisan serve --host=0.0.0.0 --port=8000
 

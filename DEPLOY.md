@@ -758,6 +758,16 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod restart nginx
 Mudou alguma `NEXT_PUBLIC_*`? O `--build` é obrigatório: elas entram no bundle
 em tempo de build.
 
+O `up -d --build` cria serviços novos do compose sozinho — é assim que o
+`reports-worker` (fila de PDFs do financeiro) sobe na primeira atualização
+depois que ele foi adicionado. Já uma extensão nova do PHP, como a `gd` que o
+dompdf exige, só entra rebuildando a imagem; se o deploy reaproveitar camada
+antiga em cache, force com:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache api
+```
+
 > **O `restart nginx` no fim não é zelo — sem ele o site cai.** O nginx resolve
 > `api` e `storefront` para IPs uma única vez, na inicialização, e mantém o
 > cache. O `up -d --build` recria os containers com IPs novos, e o nginx segue
@@ -847,6 +857,17 @@ curl -s -o /dev/null -w 'api:   %{http_code}\n' https://api.to-menu.com/api/admi
 
 Esperado: `200`, `200`, `200`, `401` — o 401 da API confirma que ela responde e
 exige autenticação.
+
+O `ps` deve listar **dois** workers: `worker` (fila `default`) e
+`reports-worker` (fila `reports`). Se o segundo não aparecer, o compose do
+droplet está desatualizado — os PDFs do financeiro ficam presos na fila sem
+erro visível, porque ninguém consome aquela fila.
+
+```bash
+# A extensão gd precisa existir na imagem, senão o logo some do PDF.
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    run --rm api php -m | grep -x gd
+```
 
 ---
 
