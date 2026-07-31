@@ -311,7 +311,24 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod \
 Cole o valor em `APP_KEY=` no `.env.prod`.
 
 Preencha também `CLOUDFLARE_R2_*` (imagens de produto e backups) e as chaves do
-Stripe, se já tiver.
+Stripe, se já tiver — ver passo 10 para o R2.
+
+> **Dois arquivos de env, e a distinção importa.** O `--env-file .env.prod` dos
+> comandos do compose alimenta apenas a *interpolação* do
+> `docker-compose.prod.yml` (as `NEXT_PUBLIC_*` do build e o `APP_ENV_FILE`).
+> Os containers em si leem o que estiver em `env_file:`, que por padrão é
+> **`apps/api/.env`**.
+>
+> Na prática: variáveis lidas pelo Laravel em runtime (`DB_*`, `REDIS_*`,
+> `CLOUDFLARE_R2_*`, `APP_KEY`) precisam estar em `apps/api/.env`; o script de
+> backup e o build do storefront leem `.env.prod`. Manter os dois iguais é o
+> caminho mais simples — editar só um e recriar o container leva a sintomas
+> confusos, como upload indo para o lugar errado sem erro nenhum.
+>
+> ```bash
+> docker compose -f docker-compose.prod.yml --env-file .env.prod \
+>     exec -T api printenv CLOUDFLARE_R2_ENDPOINT   # o que o container VÊ
+> ```
 
 ---
 
@@ -645,10 +662,45 @@ crontab -e
 # 15 4 * * *  /usr/local/bin/tomenu-backup >> /var/log/tomenu-backup.log 2>&1
 ```
 
-**Preencha as credenciais do R2 no `.env.prod` antes** — sem elas o script
-aborta com `preencha as credenciais do R2 no .env.prod`. São
-`CLOUDFLARE_R2_BUCKET`, `CLOUDFLARE_R2_ENDPOINT` (troque o `<account_id>` pelo
-seu), `CLOUDFLARE_R2_ACCESS_KEY_ID` e `CLOUDFLARE_R2_SECRET_ACCESS_KEY`.
+### Credenciais do R2
+
+No painel do Cloudflare, **R2 Object Storage**:
+
+1. **Create bucket** — o nome vai em `CLOUDFLARE_R2_BUCKET`.
+2. **Manage R2 API Tokens → Create API Token**, permissão `Object Read & Write`
+   escopada ao bucket. O *Secret Access Key* aparece **uma única vez**.
+3. **Settings → Public access → Connect Domain**: use um domínio próprio
+   (`cdn.to-menu.com`), **não** a *Public Development URL* — aquela tem rate
+   limit e não passa pelo cache do CDN. O valor vai em `CLOUDFLARE_R2_URL`.
+
+Preencha nos **dois** arquivos (`.env.prod` e `apps/api/.env` — ver a nota do
+passo 5); sem as credenciais o script aborta com `preencha as credenciais do R2
+no .env.prod`:
+
+```ini
+CLOUDFLARE_R2_BUCKET=to-menu
+CLOUDFLARE_R2_ENDPOINT=https://SEU_ACCOUNT_ID.r2.cloudflarestorage.com
+CLOUDFLARE_R2_ACCESS_KEY_ID=...
+CLOUDFLARE_R2_SECRET_ACCESS_KEY=...
+CLOUDFLARE_R2_URL=https://cdn.to-menu.com
+```
+
+> **O endpoint não leva o nome do bucket.** O painel mostra
+> `https://<account>.r2.cloudflarestorage.com/to-menu`, mas tanto o SDK do
+> Laravel quanto o `aws s3` concatenam o bucket sozinhos — deixar o sufixo faz
+> os arquivos irem para `to-menu/to-menu/...` e as imagens dão 404 no CDN, sem
+> erro nenhum no upload.
+
+Depois de preencher, recrie os containers (as variáveis são lidas na subida) e
+confira o upload:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    up -d --force-recreate api worker scheduler
+```
+
+O `ImageStorage` passa a usar o R2 automaticamente assim que a chave existe —
+sem ela, as imagens ficam no disco do container e **somem no próximo deploy**.
 
 > **O dump roda como `postgres`, não como `DB_USERNAME`.** As tabelas pertencem
 > a `tomenu_app`, que tem `FORCE ROW LEVEL SECURITY`: um `pg_dump` com esse
@@ -695,10 +747,106 @@ cd /opt/tomenu
 git pull
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm api php artisan migrate --force
+
+# NÃO OPCIONAL: ver abaixo.
+docker compose -f docker-compose.prod.yml --env-file .env.prod restart nginx
+
+# Limpa qualquer resposta ruim que o edge tenha guardado durante a janela.
+/usr/local/bin/tomenu-purge
 ```
 
 Mudou alguma `NEXT_PUBLIC_*`? O `--build` é obrigatório: elas entram no bundle
 em tempo de build.
+
+> **O `restart nginx` no fim não é zelo — sem ele o site cai.** O nginx resolve
+> `api` e `storefront` para IPs uma única vez, na inicialização, e mantém o
+> cache. O `up -d --build` recria os containers com IPs novos, e o nginx segue
+> tentando os antigos:
+>
+> ```
+> connect() failed (113: Host is unreachable) ... upstream: "fastcgi://172.18.0.8:9000"
+> connect() failed (111: Connection refused) ... upstream: "http://172.18.0.3:3000/"
+> ```
+>
+> O sintoma é 502 em tudo, enquanto `docker compose ps` mostra todos os
+> serviços `Up` e saudáveis — o que faz procurar o problema no lugar errado.
+
+### Erro de deploy não fica preso no edge
+
+O nginx envia `no-store` quando a resposta é 500/502/503/504 (o `map $status`
+em `docker/nginx/default.conf`), então o Cloudflare não guarda página de erro:
+assim que a origem volta, o próximo acesso já é 200, sem purge manual.
+
+Sem esse tratamento, um 502 de poucos segundos durante o deploy ficaria servido
+pelo edge por todo o `s-maxage` — visitantes veriam erro com o site já no ar.
+
+O 404 continua cacheável de propósito: é resposta legítima de loja inexistente,
+e cacheá-la protege a origem de quem enumera slugs. A contrapartida é que uma
+loja recém-criada pode levar até 60s para aparecer; se precisar antes, use
+**Purge Cache** no painel.
+
+Para distinguir cache do edge de problema na origem:
+
+```bash
+curl -s -o /dev/null -w 'normal: %{http_code}\n' https://SUA-LOJA.to-menu.com/
+curl -s -o /dev/null -w 'bypass: %{http_code}\n' "https://SUA-LOJA.to-menu.com/?cb=$(date +%s)"
+```
+
+Divergência entre os dois significa cache; iguais, o problema é na origem.
+
+### Purge automático
+
+Duas camadas, além do `no-store` do nginx:
+
+| Quando | O quê |
+|---|---|
+| Fim de todo deploy | `tomenu-purge` limpa a zona inteira |
+| A cada 2 min | `tomenu-watch` compara edge × origem e purga se divergirem |
+
+O `tomenu-watch` só purga quando o edge serve erro **e** a origem está
+saudável. Com a origem fora ele apenas registra no log: purgar durante um
+incidente não corrige nada e ainda joga todo o tráfego na origem já em
+dificuldade. Há um cooldown de 10 min para que uma origem intermitente não vire
+um laço de purge que destrói o cache inteiro.
+
+Ambos precisam de credenciais no `.env.prod` — sem elas o purge é pulado com
+aviso, sem quebrar o deploy:
+
+```ini
+CLOUDFLARE_ZONE_ID=...      # Overview da zona, coluna da direita
+CLOUDFLARE_API_TOKEN=...    # token com permissão Zone > Cache Purge
+```
+
+Instalação:
+
+```bash
+cp /opt/tomenu/docker/droplet/purge-cache.sh  /usr/local/bin/tomenu-purge
+cp /opt/tomenu/docker/droplet/watch-errors.sh /usr/local/bin/tomenu-watch
+chmod +x /usr/local/bin/tomenu-purge /usr/local/bin/tomenu-watch
+
+crontab -e
+# */2 * * * *  /usr/local/bin/tomenu-watch >> /var/log/tomenu-watch.log 2>&1
+```
+
+Purge de URLs específicas, quando souber o que está ruim (preserva o resto do
+cache):
+
+```bash
+tomenu-purge https://forno-di-napoli.to-menu.com/
+```
+
+### Verificação pós-deploy
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod ps
+curl -s -o /dev/null -w 'loja:  %{http_code}\n' https://SUA-LOJA.to-menu.com/
+curl -s -o /dev/null -w 'apex:  %{http_code}\n' https://to-menu.com/
+curl -s -o /dev/null -w 'admin: %{http_code}\n' https://app.to-menu.com/
+curl -s -o /dev/null -w 'api:   %{http_code}\n' https://api.to-menu.com/api/admin/products
+```
+
+Esperado: `200`, `200`, `200`, `401` — o 401 da API confirma que ela responde e
+exige autenticação.
 
 ---
 
@@ -803,6 +951,37 @@ sudo -u postgres psql -d tomenu -c 'GRANT ALL ON SCHEMA public TO tomenu_app;'
 Ser dono das tabelas não enfraquece o isolamento: é justamente o que o
 `CREATE POLICY` da migration 000400 exige, e o `FORCE ROW LEVEL SECURITY` da
 mesma migration impede que a dona escape das policies.
+
+### Tudo responde 502, mas `docker compose ps` mostra todos `Up`
+
+O nginx está com IPs de container antigos em cache. Acontece sempre que
+`api` ou `storefront` são recriados sem reiniciar o nginx:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod logs nginx --tail=10
+# "Host is unreachable" / "Connection refused" apontando para um IP 172.18.x
+docker compose -f docker-compose.prod.yml --env-file .env.prod restart nginx
+```
+
+Ver passo 11 — o `restart nginx` faz parte do procedimento de atualização.
+
+### `worker` aparece `unhealthy` mas processa a fila
+
+O healthcheck usava `pgrep`, que não existe na imagem PHP (`procps` não está
+instalado), então falhava sempre com `pgrep: not found`:
+
+```bash
+docker inspect tomenu-prod-worker-1 --format '{{json .State.Health}}' | tail -5
+```
+
+Já corrigido no `docker-compose.prod.yml` — o check agora lê `/proc/1/cmdline`,
+que não depende de pacote nenhum. Se reaparecer, confirme que o worker está
+vivo pelo PID 1:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    exec -T worker cat /proc/1/cmdline | tr '\0' ' '
+```
 
 ### `required variable CLOUDFLARE_TUNNEL_TOKEN is missing`
 
