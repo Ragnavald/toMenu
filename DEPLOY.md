@@ -622,8 +622,20 @@ O backup do droplet é snapshot de disco tirado com o Postgres rodando — resta
 a máquina, mas não garante consistência transacional. O `pg_dump` complementa e
 guarda a cópia fora da DigitalOcean.
 
+O `awscli` **não** está mais no repositório do Ubuntu 24.04 (`Package 'awscli'
+has no installation candidate`). Use o instalador oficial:
+
 ```bash
-apt-get install -y awscli
+apt-get install -y unzip
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp && /tmp/aws/install
+rm -rf /tmp/aws /tmp/awscliv2.zip
+aws --version
+```
+
+Depois instale o script e agende:
+
+```bash
 cp /opt/tomenu/docker/droplet/backup-db.sh /usr/local/bin/tomenu-backup
 chmod +x /usr/local/bin/tomenu-backup
 
@@ -633,11 +645,42 @@ crontab -e
 # 15 4 * * *  /usr/local/bin/tomenu-backup >> /var/log/tomenu-backup.log 2>&1
 ```
 
-Retenção padrão de 30 dias (`RETENTION_DAYS`). Restauração:
+**Preencha as credenciais do R2 no `.env.prod` antes** — sem elas o script
+aborta com `preencha as credenciais do R2 no .env.prod`. São
+`CLOUDFLARE_R2_BUCKET`, `CLOUDFLARE_R2_ENDPOINT` (troque o `<account_id>` pelo
+seu), `CLOUDFLARE_R2_ACCESS_KEY_ID` e `CLOUDFLARE_R2_SECRET_ACCESS_KEY`.
+
+> **O dump roda como `postgres`, não como `DB_USERNAME`.** As tabelas pertencem
+> a `tomenu_app`, que tem `FORCE ROW LEVEL SECURITY`: um `pg_dump` com esse
+> papel falha com `query would be affected by row-level security policy` — e,
+> num contexto onde `app.tenant_id` estivesse definido, geraria um dump
+> silenciosamente incompleto, com as linhas de um único tenant. Superuser
+> ignora RLS, que é o comportamento que um backup precisa.
+>
+> O script também verifica a contagem de tabelas antes de enviar: um dump vazio
+> só seria descoberto na hora do restore.
+
+Retenção padrão de 30 dias (`RETENTION_DAYS`).
+
+### Restauração
 
 ```bash
-pg_restore --host=127.0.0.1 --username=tomenu_owner --dbname=tomenu \
-    --clean --no-owner tomenu-YYYYMMDDTHHMMSSZ.dump
+# Num banco novo, para conferir sem tocar em produção:
+sudo -u postgres psql -c 'CREATE DATABASE restore_test OWNER tomenu_app;'
+sudo -u postgres pg_restore --dbname=restore_test --no-owner tomenu-YYYYMMDDTHHMMSSZ.dump
+
+# Sobre o banco de produção (destrutivo):
+sudo -u postgres pg_restore --dbname=tomenu --clean --no-owner tomenu-....dump
+```
+
+Depois de restaurar, **confirme que a RLS voltou** — um restore que a perdesse
+reabriria o isolamento entre lojas sem nenhum erro visível:
+
+```bash
+sudo -u postgres psql -d restore_test -c \
+  "SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class
+   WHERE relname IN ('products','orders');"
+# esperado: t | t nas duas
 ```
 
 > Teste a restauração pelo menos uma vez. Backup nunca verificado é backup que
@@ -808,4 +851,7 @@ use `git stash` antes.
 - [ ] `app.to-menu.com/produtos` responde 200 — rewrite catch-all funcionando
 - [ ] `curl -k https://SEU_IP` **não** responde — origem fora do alcance direto
 - [ ] `chmod 600 .env.prod`
-- [ ] Backup testado com `pg_restore`
+- [ ] Credenciais do `CLOUDFLARE_R2_*` preenchidas no `.env.prod` (sem elas o
+      backup aborta)
+- [ ] Backup testado com `pg_restore` **num banco separado**, conferindo que a
+      RLS voltou (`relforcerowsecurity = t`)

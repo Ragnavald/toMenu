@@ -19,11 +19,23 @@ set -euo pipefail
 ENV_FILE="${ENV_FILE:-/opt/tomenu/.env.prod}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
 
-# shellcheck disable=SC1090
-set -a; source "$ENV_FILE"; set +a
+# `grep` em vez de `source`: o .env.prod é lido pelo Docker, não pelo shell, e
+# aceita valores que quebram o bash — `<account_id>` no endpoint do R2 vira
+# redirecionamento de arquivo e aborta o script.
+env_get() {
+    sed -n "s/^$1=//p" "$ENV_FILE" | tail -1 | sed -e 's/^"//' -e 's/"$//'
+}
 
-: "${DB_DATABASE:?}" "${DB_USERNAME:?}" "${DB_PASSWORD:?}"
-: "${CLOUDFLARE_R2_BUCKET:?}" "${CLOUDFLARE_R2_ENDPOINT:?}"
+DB_DATABASE="$(env_get DB_DATABASE)"
+CLOUDFLARE_R2_BUCKET="$(env_get CLOUDFLARE_R2_BUCKET)"
+CLOUDFLARE_R2_ENDPOINT="$(env_get CLOUDFLARE_R2_ENDPOINT)"
+CLOUDFLARE_R2_REGION="$(env_get CLOUDFLARE_R2_REGION)"
+CLOUDFLARE_R2_ACCESS_KEY_ID="$(env_get CLOUDFLARE_R2_ACCESS_KEY_ID)"
+CLOUDFLARE_R2_SECRET_ACCESS_KEY="$(env_get CLOUDFLARE_R2_SECRET_ACCESS_KEY)"
+
+: "${DB_DATABASE:?}"
+: "${CLOUDFLARE_R2_BUCKET:?preencha as credenciais do R2 no .env.prod}"
+: "${CLOUDFLARE_R2_ENDPOINT:?}"
 : "${CLOUDFLARE_R2_ACCESS_KEY_ID:?}" "${CLOUDFLARE_R2_SECRET_ACCESS_KEY:?}"
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -32,18 +44,33 @@ DUMP="/tmp/tomenu-${STAMP}.dump"
 cleanup() { rm -f "$DUMP"; }
 trap cleanup EXIT
 
+# Roda como `postgres` (superuser local, via socket), NÃO como DB_USERNAME.
+#
+# As tabelas pertencem a tomenu_app, que tem FORCE ROW LEVEL SECURITY: um
+# pg_dump com esse papel falha com "query would be affected by row-level
+# security policy" — ou, pior, num cenário com app.tenant_id definido, geraria
+# um dump silenciosamente incompleto, contendo só as linhas de um tenant.
+# Superuser ignora RLS, que é exatamente o que um backup precisa.
+#
 # -Fc (custom): comprimido e restaurável seletivamente com pg_restore, ao
 # contrário do SQL puro. --no-owner evita que o restore exija os mesmos papéis
-# do servidor de origem — relevante aqui, porque a app usa um papel separado
-# (tomenu_app) do dono das tabelas.
-PGPASSWORD="$DB_PASSWORD" pg_dump \
-    --host="${DB_HOST:-127.0.0.1}" \
-    --port="${DB_PORT:-5432}" \
-    --username="$DB_USERNAME" \
+# do servidor de origem.
+sudo -u postgres pg_dump \
     --dbname="$DB_DATABASE" \
     --format=custom \
     --no-owner \
     --file="$DUMP"
+
+# O dump nasce pertencendo ao postgres; o aws s3 cp roda como root.
+chown root:root "$DUMP"
+
+# Um dump vazio ou truncado é pior que nenhum: passa despercebido até a hora do
+# restore. 24 tabelas hoje; o limiar cobre o caso de o dump sair sem dados.
+TABLES="$(sudo -u postgres pg_restore -l "$DUMP" | grep -c 'TABLE DATA' || true)"
+if [ "$TABLES" -lt 10 ]; then
+    echo "ERRO: dump com apenas $TABLES tabelas — abortando antes de enviar" >&2
+    exit 1
+fi
 
 export AWS_ACCESS_KEY_ID="$CLOUDFLARE_R2_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$CLOUDFLARE_R2_SECRET_ACCESS_KEY"
