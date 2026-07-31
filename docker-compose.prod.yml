@@ -62,6 +62,25 @@ services:
     volumes:
       - public:/public-out
 
+  # Builda o admin e despeja o dist/ no volume que o nginx serve. Mesmo padrão
+  # do public-sync: roda uma vez a cada `up` e encerra.
+  admin-build:
+    build:
+      context: .
+      dockerfile: docker/admin/Dockerfile.prod
+      args:
+        # Vazio de propósito: o nginx serve /api no mesmo host do admin, então
+        # o caminho relativo funciona e não há CORS envolvido. Preencher só se
+        # o admin passar a ser hospedado fora do droplet.
+        VITE_API_URL: ${VITE_API_URL:-}
+    restart: "no"
+    # O volume nasce pertencendo ao root; a imagem alpine já roda como root, mas
+    # explicitar evita surpresa se a base mudar.
+    user: root
+    command: sh -c "rm -rf /admin-out/* && cp -r /dist/. /admin-out/"
+    volumes:
+      - admin:/admin-out
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -87,6 +106,9 @@ services:
       # servindo um public/ vazio.
       - public:/app/public:ro
       - storage:/app/storage:ro
+      # Build estático do admin (Vite), servido em app.to-menu.com. Populado
+      # pelo admin-build, pelo mesmo motivo do public-sync acima.
+      - admin:/usr/share/nginx/admin:ro
     # Popula o volume `public` a partir da imagem da API antes do nginx subir.
     # Volume nomeado só copia o conteúdo do container na primeira criação, e
     # quem monta public/ é o nginx, que não tem esses arquivos.
@@ -94,6 +116,8 @@ services:
       api:
         condition: service_started
       public-sync:
+        condition: service_completed_successfully
+      admin-build:
         condition: service_completed_successfully
 
   # Storefront (Next.js) em modo standalone. Roda ao lado da API de propósito:
@@ -155,4 +179,5 @@ services:
 volumes:
   storage:
   public:
+  admin:
   redis:

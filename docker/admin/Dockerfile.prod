@@ -1,0 +1,32 @@
+# Build estático do Admin (Vite + React), servido pelo nginx em
+# app.to-menu.com.
+#
+# Não há imagem de runtime: o resultado é um punhado de arquivos estáticos que
+# o nginx serve direto. Este Dockerfile existe só para produzir o dist/ dentro
+# de um volume, sem exigir Node instalado no droplet.
+#
+# O contexto de build é a raiz do monorepo, como o do storefront.
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+
+# Camada própria para as dependências: só reinstala quando o lock muda.
+COPY apps/admin/package.json apps/admin/package-lock.json ./
+RUN npm ci
+
+COPY apps/admin ./
+
+# O admin é servido pelo mesmo nginx que a API (app.to-menu.com/api), então a
+# origem é a própria página e o caminho relativo basta. VITE_API_URL fica
+# disponível para quem hospedar o admin em outro domínio -- aí a URL absoluta
+# passa a ser obrigatória, e o CORS junto.
+ARG VITE_API_URL=""
+ENV VITE_API_URL=$VITE_API_URL
+
+RUN npm run build
+
+# Estágio final: só o dist. O `command` do compose copia daqui para o volume
+# que o nginx monta.
+FROM alpine:3.20
+
+COPY --from=builder /app/dist /dist

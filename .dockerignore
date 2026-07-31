@@ -5,10 +5,10 @@
 .git
 .gitignore
 
-# O admin é build estático, publicado à parte. O storefront NÃO entra aqui: ele
-# tem imagem própria (docker/storefront/Dockerfile.prod) que compartilha este
-# contexto, e excluí-lo deixaria o build do Next sem o código-fonte.
-apps/admin
+# Nem admin nem storefront entram aqui: os dois têm imagem própria
+# (docker/admin/Dockerfile.prod, docker/storefront/Dockerfile.prod) que
+# compartilha este contexto, e excluí-los deixaria os builds sem código-fonte.
+# Só o node_modules de cada um fica de fora, pela regra `**/node_modules`.
 
 **/node_modules
 **/.next

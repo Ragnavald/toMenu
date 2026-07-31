@@ -469,31 +469,65 @@ curl -sk --max-time 5 https://SEU_IP_FIXO/ ; echo "exit=$?"
 
 ## 8. Admin (Vite)
 
-O admin é build estático e **não** está no compose. Publique como Static Site no
-App Platform, Cloudflare Pages ou similar, em `app.to-menu.com`:
+O admin é um build estático (Vite + React) servido pelo **próprio nginx** do
+droplet em `app.to-menu.com`. Não exige serviço externo, conta em CDN nem
+registro DNS novo: o wildcard `*.to-menu.com` do passo 4 já resolve, e o Origin
+Certificate já cobre o subdomínio.
 
-- Build: `npm ci && npm run build` em `apps/admin`, saída `dist`
-- **Variável de ambiente `VITE_API_URL=https://api.to-menu.com`** — obrigatória.
-  Sem ela o admin chama `/api/...` na própria origem (`app.to-menu.com`), que
-  não é a API, e o login falha na primeira tentativa. Em desenvolvimento ela
-  não existe: o proxy do `vite.config.ts` cuida disso.
-- **Rewrite catch-all para `/index.html`** — sem isso o React Router dá 404 no
-  refresh de qualquer rota
-- A API precisa aceitar CORS da origem do admin (o proxy `/api` do Vite só
-  existe em desenvolvimento)
+Está tudo no compose — `docker compose up -d --build` do passo 7 já o publica.
+As peças:
 
-> Como toda `VITE_*`, a URL é **inlined no bundle em tempo de build**: trocá-la
-> exige rebuild e novo deploy, não basta mudar a configuração do host. Confira
-> no artefato antes de publicar:
->
-> ```bash
-> grep -c "api.to-menu.com" dist/assets/*.js    # 1 ou mais
-> ```
+| Arquivo | Papel |
+|---|---|
+| `docker/admin/Dockerfile.prod` | builda o `dist/` num container Node |
+| serviço `admin-build` | copia o `dist/` para o volume `admin` e encerra |
+| bloco `app.to-menu.com` em `docker/nginx/default.conf` | serve o volume |
 
-O `app` é subdomínio reservado no storefront, então **não** basta o wildcard
-`*.to-menu.com`: enquanto não houver um registro DNS próprio apontando para o
-serviço onde o admin foi publicado, `app.to-menu.com` cai no droplet e serve a
-landing do storefront.
+Para publicar só o admin, sem mexer no resto:
+
+```bash
+cd /opt/tomenu
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build admin-build
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d nginx
+```
+
+O `admin-build` roda uma vez e sai com `Exited (0)` — é o esperado, não é falha.
+O nginx depende dele com `service_completed_successfully`, então um build que
+falhar impede o nginx de subir com um `dist` vazio.
+
+### Por que `/api` também é servido em `app.to-menu.com`
+
+O bloco do admin encaminha `/api` para o mesmo php-fpm de `api.to-menu.com`.
+Isso coloca admin e API na **mesma origem**, o que elimina duas coisas de uma
+vez: o navegador não faz preflight (sem CORS a configurar) e o `VITE_API_URL`
+pode ficar vazio, porque o caminho relativo `/api/...` já resolve.
+
+Se um dia o admin sair do droplet (Cloudflare Pages, App Platform), aí sim:
+
+- `VITE_API_URL=https://api.to-menu.com` obrigatório no build — sem ele o admin
+  chamaria `/api` na própria origem, que não seria mais a API, e o login
+  falharia na primeira tentativa;
+- a API precisa aceitar CORS daquela origem;
+- e `app.to-menu.com` precisa de um registro DNS próprio, senão continua caindo
+  no droplet pelo wildcard.
+
+Como toda `VITE_*`, a URL é inlined no bundle em tempo de build: trocá-la exige
+rebuild, não basta reconfigurar o host.
+
+### Verificação
+
+```bash
+curl -s https://app.to-menu.com/ | grep -o '<title>[^<]*</title>'   # <title>admin</title>
+curl -s -o /dev/null -w '%{http_code}\n' https://app.to-menu.com/produtos   # 200, não 404
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+    -H 'Content-Type: application/json' -d '{}' \
+    https://app.to-menu.com/api/auth/login                          # 422 (API respondeu)
+```
+
+O 200 em `/produtos` confirma o rewrite catch-all: sem ele o React Router dá 404
+em qualquer F5 fora da raiz. Se o `<title>` vier `ToMenu — Seu cardápio
+digital`, o nginx está servindo o storefront — o bloco `app.to-menu.com` não foi
+carregado.
 
 ---
 
@@ -697,6 +731,8 @@ use `git stash` antes.
       some no reboot e a origem fica exposta)
 - [ ] Um container alcança a internet:
       `docker run --rm alpine sh -c "apk add -q curl && curl -sI https://registry.npmjs.org"`
+- [ ] `app.to-menu.com` serve o admin (`<title>admin</title>`), não a landing
+- [ ] `app.to-menu.com/produtos` responde 200 — rewrite catch-all funcionando
 - [ ] `curl -k https://SEU_IP` **não** responde — origem fora do alcance direto
 - [ ] `chmod 600 .env.prod`
 - [ ] Backup testado com `pg_restore`
