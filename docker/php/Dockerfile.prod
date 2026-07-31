@@ -50,7 +50,18 @@ COPY docker/php/php.ini /usr/local/etc/php/conf.d/zz-app.ini
 COPY --from=vendor /app/vendor ./vendor
 COPY apps/api ./
 
-RUN composer dump-autoload --no-dev --optimize --classmap-authoritative \
+# Os diretórios de runtime do storage precisam existir na imagem. O .gitignore
+# do Laravel exclui o conteúdo deles, e diretório vazio não entra no git — então
+# o COPY acima não os traz. Nada dependia disso até o relatório financeiro, que
+# compila um template Blade e falha com "Please provide a valid cache path"
+# quando framework/views não existe. O job marca o relatório como failed e o
+# dono da loja só vê "não foi possível gerar", sem pista da causa.
+RUN mkdir -p storage/framework/views \
+             storage/framework/cache/data \
+             storage/framework/sessions \
+             storage/logs \
+             storage/app/private \
+    && composer dump-autoload --no-dev --optimize --classmap-authoritative \
     && chown -R www-data:www-data storage bootstrap/cache
 
 # storage/ e bootstrap/cache precisam ser graváveis pelo processo do PHP-FPM,
