@@ -1,0 +1,67 @@
+# Imagem de produção do storefront (Next.js).
+#
+# O contexto de build é a raiz do monorepo, como o da API, para que o
+# docker-compose use um contexto só.
+FROM node:22-alpine AS base
+
+WORKDIR /app
+
+# ---------------------------------------------------------------------------
+# Dependências: camada própria para que o Docker só reinstale quando o
+# package-lock mudar, e não a cada alteração de código.
+# ---------------------------------------------------------------------------
+FROM base AS deps
+
+COPY apps/storefront/package.json apps/storefront/package-lock.json ./
+
+# `npm ci` em vez de `install`: instala exatamente o que está no lock, sem
+# resolver versões de novo — reprodutível e mais rápido.
+RUN npm ci
+
+# ---------------------------------------------------------------------------
+# Build
+# ---------------------------------------------------------------------------
+FROM base AS builder
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY apps/storefront ./
+
+# As NEXT_PUBLIC_* são inlined no bundle do browser durante o build, não lidas
+# em runtime: precisam existir aqui, senão o JS servido ao visitante carrega o
+# fallback de localhost e o checkout falha no navegador.
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_ROOT_DOMAIN
+ARG NEXT_PUBLIC_ADMIN_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_ROOT_DOMAIN=$NEXT_PUBLIC_ROOT_DOMAIN
+ENV NEXT_PUBLIC_ADMIN_URL=$NEXT_PUBLIC_ADMIN_URL
+
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# Imagem final: só a saída standalone, sem node_modules nem CLI do Next.
+# ---------------------------------------------------------------------------
+FROM base AS runner
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+# Usuário sem privilégio: o processo serve conteúdo da internet e não tem
+# motivo para rodar como root.
+RUN addgroup -g 1001 -S nodejs && adduser -S -u 1001 -G nodejs nextjs
+
+# O server.js do standalone não copia public/ nem .next/static sozinho — sem
+# estes dois COPY a página sobe sem CSS nem imagens.
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+
+USER nextjs
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]

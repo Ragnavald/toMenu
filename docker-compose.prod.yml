@@ -24,6 +24,12 @@ x-api: &api
   # Configuração vem de arquivo, nunca embutida na imagem. APP_ENV_FILE permite
   # apontar para outro arquivo sem editar este compose.
   env_file: ["${APP_ENV_FILE:-apps/api/.env}"]
+  # O Postgres roda no host, não como container (ver DEPLOY.md). No Linux o
+  # nome `host.docker.internal` não existe por padrão; esta linha o cria
+  # apontando para o gateway da rede do compose. Fixar o IP no .env seria
+  # frágil: cada projeto ganha uma rede com gateway diferente.
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   depends_on:
     redis:
       condition: service_healthy
@@ -91,11 +97,40 @@ services:
   # cobre exatamente um nível (loja.dominio, não loja.staging.dominio), que é o
   # que IdentifyTenant aceita como slug.
   #
+  # Storefront (Next.js) em modo standalone. Roda ao lado da API de propósito:
+  # o render no servidor busca o cardápio a cada request (cache: 'no-store'), e
+  # pela rede interna isso custa ~1ms em vez da ida e volta até o edge.
+  storefront:
+    build:
+      context: .
+      dockerfile: docker/storefront/Dockerfile.prod
+      # NEXT_PUBLIC_* são inlined no bundle durante o build, não lidas em
+      # runtime — precisam vir como argumento, não como environment.
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?defina NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_ROOT_DOMAIN: ${NEXT_PUBLIC_ROOT_DOMAIN:?defina NEXT_PUBLIC_ROOT_DOMAIN}
+        NEXT_PUBLIC_ADMIN_URL: ${NEXT_PUBLIC_ADMIN_URL:-}
+    restart: unless-stopped
+    expose: ["3000"]
+    environment:
+      # Só o render no servidor usa esta: encurta o caminho até a API, sem sair
+      # para a internet. O browser continua usando NEXT_PUBLIC_API_URL.
+      INTERNAL_API_URL: http://nginx:80
+      NEXT_PUBLIC_ROOT_DOMAIN: ${NEXT_PUBLIC_ROOT_DOMAIN}
+    depends_on:
+      nginx:
+        condition: service_started
+
   # Configuração no painel (Zero Trust > Networks > Tunnels), em "Public
-  # hostnames" do túnel — duas entradas, ambas para http://nginx:80:
+  # hostnames" do túnel — três entradas:
   #
-  #   dominio      -> landing e admin
-  #   *.dominio    -> lojas
+  #   dominio       -> http://storefront:3000   landing da plataforma
+  #   *.dominio     -> http://storefront:3000   lojas (o Next resolve pelo Host)
+  #   api.dominio   -> http://nginx:80          API; usada pelo browser
+  #
+  # `api` já está na lista RESERVED de IdentifyTenant e do proxy.ts, então não
+  # colide com slug de loja. O storefront chama a API pela rede interna e não
+  # passa por este hostname; ele existe para o JS no navegador.
   #
   # Cada entrada cria sozinha o CNAME proxied correspondente; não se cria
   # registro DNS à mão, e o `*` precisa existir como hostname próprio porque o
@@ -112,6 +147,8 @@ services:
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?defina CLOUDFLARE_TUNNEL_TOKEN}
     depends_on:
       nginx:
+        condition: service_started
+      storefront:
         condition: service_started
 
   worker:

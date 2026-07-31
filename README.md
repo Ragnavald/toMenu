@@ -64,6 +64,19 @@ O wildcard cobre **um** nível de subdomínio. `loja.dominio` é válido;
 `loja.staging.dominio` não teria certificado, e por isso `IdentifyTenant` e o
 `proxy.ts` recusam subdomínio com ponto em vez de tratá-lo como slug.
 
+Em produção o storefront roda ao lado da API, e a chamada ao cardápio tem dois
+caminhos distintos:
+
+```
+navegador  -> *.dominio      -> storefront (Next)     [pelo túnel]
+storefront -> http://nginx   -> API, Host: loja.dom.  [rede interna, ~1ms]
+navegador  -> api.dominio    -> API                   [checkout, status]
+```
+
+O render no servidor **envia o `Host` da loja explicitamente** (`lib/api.ts`).
+Sem isso a API veria `Host: nginx` e nenhuma loja resolveria, porque
+`TENANCY_TRUST_HEADER` é `false` em produção e o `X-Tenant` é ignorado.
+
 ### Criar uma loja pelo cadastro público
 
 A landing em `/` vende o plano único e cria a loja. O fluxo é:
@@ -191,13 +204,17 @@ painel; o WhatsApp é redundância.
 - **`TENANCY_TRUST_HEADER=false`.** O header `X-Tenant` existe apenas para
   desenvolvimento, onde não há wildcard DNS. Em produção ele permitiria a
   qualquer visitante escolher a loja.
-- **DNS e TLS no Cloudflare.** Em Zero Trust > Networks > Tunnels, cadastre dois
-  *public hostnames* no túnel, ambos para `http://nginx:80`: `dominio` e
-  `*.dominio` (o apex não cobre subdomínio). Cada um cria o CNAME sozinho — não
-  se cria registro DNS à mão. SSL/TLS em **Full**; "Full (strict)" exigiria um
-  Origin Certificate no nginx. Sem certbot: o certificado universal cobre
-  `dominio` e `*.dominio`. Defina `CLOUDFLARE_TUNNEL_TOKEN` no `.env` de
+- **DNS e TLS no Cloudflare.** Em Zero Trust > Networks > Tunnels, cadastre três
+  *public hostnames* no túnel — `dominio` e `*.dominio` para
+  `http://storefront:3000`, e `api.dominio` para `http://nginx:80` (o apex não
+  cobre subdomínio, por isso o `*` é entrada própria). Cada um cria o CNAME
+  sozinho — não se cria registro DNS à mão. SSL/TLS em **Full**; "Full (strict)"
+  exigiria um Origin Certificate no nginx. Sem certbot: o certificado universal
+  cobre `dominio` e `*.dominio`. Defina `CLOUDFLARE_TUNNEL_TOKEN` no `.env` de
   produção.
+- **`NEXT_PUBLIC_*` são congeladas no build.** Entram no bundle do navegador
+  durante o `docker build`, não são lidas em runtime: alterá-las exige rebuild
+  da imagem do storefront, não apenas `restart`.
 - **Cache Rule para o cardápio no Cloudflare.** O `s-maxage=60` de
   `MenuController` só vale se o edge tratar a resposta como cacheável — e o
   padrão do Cloudflare ignora `application/json`, tratando `/api/*` como

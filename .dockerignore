@@ -5,9 +5,10 @@
 .git
 .gitignore
 
-# Frontends: não entram na imagem da API, são publicados à parte.
+# O admin é build estático, publicado à parte. O storefront NÃO entra aqui: ele
+# tem imagem própria (docker/storefront/Dockerfile.prod) que compartilha este
+# contexto, e excluí-lo deixaria o build do Next sem o código-fonte.
 apps/admin
-apps/storefront
 
 **/node_modules
 **/.next
