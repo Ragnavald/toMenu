@@ -22,6 +22,12 @@ export type Session = {
   tenantSlug: string;
   userName: string;
   tenantName: string;
+  /**
+   * Papel do usuário. Opcional porque sessões salvas antes deste campo existir
+   * continuam no localStorage — tratar como não-owner é o padrão seguro, e o
+   * backend rejeita de qualquer forma.
+   */
+  role?: string;
 };
 
 export function loadSession(): Session | null {
@@ -31,6 +37,11 @@ export function loadSession(): Session | null {
   } catch {
     return null;
   }
+}
+
+/** Só o dono pode excluir a loja; o backend confirma isso de qualquer forma. */
+export function isOwner(): boolean {
+  return loadSession()?.role === 'owner';
 }
 
 export function saveSession(session: Session): void {

@@ -38,6 +38,7 @@ export function LoginPage({
         tenantSlug: data.tenant.slug,
         tenantName: data.tenant.name,
         userName: data.user.name,
+        role: data.user.role,
       };
 
       saveSession(session);

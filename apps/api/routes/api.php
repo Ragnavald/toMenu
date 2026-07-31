@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\FinanceAdminController;
 use App\Http\Controllers\Admin\OrderAdminController;
 use App\Http\Controllers\Admin\ProductAdminController;
 use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\StoreDeletionController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Central\RegistrationController;
 use App\Http\Controllers\Storefront\MenuController;
@@ -125,4 +126,10 @@ Route::prefix('admin')
         Route::put('settings/payments', [SettingsController::class, 'updatePayments']);
         Route::put('settings/theme', [SettingsController::class, 'updateTheme']);
         Route::put('settings/onboarding', [SettingsController::class, 'updateOnboarding']);
+
+        // Exclusão da loja. Só o owner; o controller ainda exige senha e o slug
+        // digitado. O throttle limita tentativa de adivinhar a senha por aqui.
+        Route::get('store/deletion-preview', [StoreDeletionController::class, 'preview']);
+        Route::delete('store', [StoreDeletionController::class, 'destroy'])
+            ->middleware('throttle:5,1');
     });

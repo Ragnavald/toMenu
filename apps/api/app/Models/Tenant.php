@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
-    'name', 'slug', 'plan_id', 'status', 'trial_ends_at',
+    'name', 'slug', 'plan_id', 'status', 'trial_ends_at', 'deletion_reason',
     'stripe_customer_id', 'stripe_account_id', 'stripe_charges_enabled',
     'whatsapp_phone_id', 'whatsapp_token',
     'onboarding_step', 'onboarding_completed_at',

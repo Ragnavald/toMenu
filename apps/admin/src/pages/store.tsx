@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiFetch } from '@/lib/api';
 import type { Settings } from '@/lib/types';
 import { Field, PageHeader, SaveBar, Section } from '@/components/ui';
+import { DeleteStore } from '@/components/delete-store';
 import {
   buildAddressString,
   fetchViaCep,
@@ -435,6 +436,8 @@ export function StorePage() {
             {error}
           </p>
         )}
+
+        <DeleteStore />
       </div>
 
       <SaveBar
