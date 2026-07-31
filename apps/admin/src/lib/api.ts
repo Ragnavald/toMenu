@@ -109,6 +109,41 @@ export async function apiFetch<T>(
   return data as T;
 }
 
+/**
+ * Baixa um arquivo protegido por autenticação.
+ *
+ * Um <a href> comum não serve: o navegador não manda o bearer token nem o
+ * X-Tenant numa navegação, e a rota responderia 401. Busca como blob e dispara
+ * o download a partir da memória.
+ */
+export async function apiDownload(path: string, filename: string): Promise<void> {
+  const session = loadSession();
+
+  const response = await fetch(`${API_BASE}/api${path}`, {
+    headers: {
+      ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
+      ...(session ? { 'X-Tenant': session.tenantSlug } : {}),
+    },
+  });
+
+  if (!response.ok) {
+    throw new ApiError('Não foi possível baixar o arquivo.', response.status);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  // Sem revoke o blob fica retido na memória da aba até o reload.
+  URL.revokeObjectURL(url);
+}
+
 export function formatMoney(cents: number): string {
   return (cents / 100).toLocaleString('pt-BR', {
     style: 'currency',

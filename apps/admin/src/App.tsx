@@ -5,6 +5,7 @@ import { loadSession, saveSession, type Session } from '@/lib/api';
 import { LoginPage } from '@/pages/login';
 import { Shell } from '@/components/shell';
 import { OrdersPage } from '@/pages/orders';
+import { FinancePage } from '@/pages/finance';
 import { MenuPage } from '@/pages/menu';
 import { CategoriesPage } from '@/pages/categories';
 import { StorePage } from '@/pages/store';
@@ -90,6 +91,7 @@ export default function App() {
               <Shell session={session} onLogout={() => setSession(null)}>
                 <Routes>
                   <Route path="/pedidos" element={<OrdersPage />} />
+                  <Route path="/financeiro" element={<FinancePage />} />
                   <Route path="/cardapio" element={<MenuPage />} />
                   <Route path="/categorias" element={<CategoriesPage />} />
                   <Route path="/loja" element={<StorePage />} />

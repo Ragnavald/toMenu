@@ -17,6 +17,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
     section: 'Operação',
     items: [
       { to: '/pedidos', label: 'Pedidos', icon: <IconReceipt />, badge: 'orders' },
+      { to: '/financeiro', label: 'Financeiro', icon: <IconChart /> },
     ],
   },
   {
@@ -217,6 +218,16 @@ function IconReceipt() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
       <path d="M6 3v18l2-1.5L10 21l2-1.5L14 21l2-1.5L18 21V3H6Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
       <path d="M9.5 8h5M9.5 12h5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconChart() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path d="M4 20V4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M4 20h16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M8.5 20v-6M13 20V8m4.5 12v-9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }

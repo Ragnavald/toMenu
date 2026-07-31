@@ -149,11 +149,30 @@ services:
     # --max-time recicla o processo de hora em hora: worker de fila é um daemon
     # PHP de vida longa, e reiniciar periodicamente evita que vazamento de
     # memória acumule até o OOM.
-    command: php artisan queue:work --tries=3 --backoff=10 --max-time=3600 --sleep=3
+    # Só a fila default: relatórios têm worker próprio (reports-worker) para que
+    # um PDF de meses de pedidos nunca atrase o aviso de pedido novo na cozinha.
+    command: php artisan queue:work --queue=default --tries=3 --backoff=10 --max-time=3600 --sleep=3
     # Lê /proc/1/cmdline em vez de `pgrep`: a imagem PHP não traz procps, e o
     # healthcheck com pgrep falha sempre com "pgrep: not found" — o container
     # aparece unhealthy mesmo com o worker consumindo a fila normalmente.
     # O comando é o PID 1 do container, então basta conferir o cmdline dele.
+    healthcheck:
+      test: ["CMD-SHELL", "tr '\\0' ' ' < /proc/1/cmdline | grep -q 'queue:work' || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  # Worker dedicado às exportações de PDF.
+  #
+  # Separado do worker principal por dois motivos: isola o pico de memória do
+  # dompdf, e mantém a fila de pedidos fluindo enquanto um relatório longo é
+  # renderizado. `--memory=256` derruba o processo antes que ele chegue perto do
+  # limite do PHP, e a fila reentrega o job pendente ao próximo processo.
+  reports-worker:
+    <<: *api
+    command: >
+      php artisan queue:work --queue=reports
+      --tries=2 --backoff=30 --timeout=240 --memory=256 --max-time=3600 --sleep=5
     healthcheck:
       test: ["CMD-SHELL", "tr '\\0' ' ' < /proc/1/cmdline | grep -q 'queue:work' || exit 1"]
       interval: 60s

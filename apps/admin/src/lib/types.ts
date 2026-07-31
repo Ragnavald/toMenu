@@ -51,6 +51,50 @@ export type Paginated<T> = {
   total: number;
 };
 
+/* ------------------------------------------------------------- financeiro */
+
+export type FinanceSummary = {
+  revenueCents: number;
+  subtotalCents: number;
+  deliveryCents: number;
+  ordersCount: number;
+  averageTicketCents: number;
+};
+
+/** Ponto da série temporal. `day` ou `month` conforme a granularidade. */
+export type FinancePoint = {
+  day?: string;
+  month?: string;
+  label: string;
+  revenueCents: number;
+  ordersCount: number;
+};
+
+export type FinanceOverview = {
+  range: { from: string; to: string; granularity: 'day' | 'month' };
+  summary: FinanceSummary;
+  series: FinancePoint[];
+  monthly: FinancePoint[];
+  byPaymentMethod: {
+    method: string;
+    revenueCents: number;
+    ordersCount: number;
+  }[];
+};
+
+export type ReportExport = {
+  id: number;
+  status: 'queued' | 'processing' | 'done' | 'failed' | 'expired';
+  from: string;
+  to: string;
+  search: string | null;
+  rowCount: number | null;
+  fileSize: number | null;
+  error: string | null;
+  createdAt: string | null;
+  finishedAt: string | null;
+};
+
 export type ThemeTokens = {
   brand: string;
   brandSoft: string;
