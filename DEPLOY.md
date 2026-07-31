@@ -166,8 +166,7 @@ SQL
 Permita que os containers alcancem o Postgres do host:
 
 ```bash
-# postgresql.conf: escutar em todas as interfaces. O ufw não libera a 5432, que
-# portanto continua inacessível pela internet — o alcance real é a rede do Docker.
+# postgresql.conf: escutar em todas as interfaces.
 sed -i "s/^#*listen_addresses.*/listen_addresses = '*'/" \
     /etc/postgresql/16/main/postgresql.conf
 
@@ -178,6 +177,11 @@ echo "host tomenu tomenu_owner 172.16.0.0/12 scram-sha-256" \
     >> /etc/postgresql/16/main/pg_hba.conf
 
 systemctl restart postgresql
+
+# O ufw nega tudo que não casa com uma regra: sem esta, o container não alcança
+# o Postgres do host e o `migrate` do passo 7 morre com "timeout expired". Só a
+# faixa privada do Docker — a 5432 continua fechada para a internet.
+ufw allow from 172.16.0.0/12 to any port 5432 proto tcp
 ```
 
 > `listen_addresses = '*'` em vez de um IP fixo porque o compose cria uma rede
@@ -469,10 +473,27 @@ O admin é build estático e **não** está no compose. Publique como Static Sit
 App Platform, Cloudflare Pages ou similar, em `app.to-menu.com`:
 
 - Build: `npm ci && npm run build` em `apps/admin`, saída `dist`
+- **Variável de ambiente `VITE_API_URL=https://api.to-menu.com`** — obrigatória.
+  Sem ela o admin chama `/api/...` na própria origem (`app.to-menu.com`), que
+  não é a API, e o login falha na primeira tentativa. Em desenvolvimento ela
+  não existe: o proxy do `vite.config.ts` cuida disso.
 - **Rewrite catch-all para `/index.html`** — sem isso o React Router dá 404 no
   refresh de qualquer rota
 - A API precisa aceitar CORS da origem do admin (o proxy `/api` do Vite só
   existe em desenvolvimento)
+
+> Como toda `VITE_*`, a URL é **inlined no bundle em tempo de build**: trocá-la
+> exige rebuild e novo deploy, não basta mudar a configuração do host. Confira
+> no artefato antes de publicar:
+>
+> ```bash
+> grep -c "api.to-menu.com" dist/assets/*.js    # 1 ou mais
+> ```
+
+O `app` é subdomínio reservado no storefront, então **não** basta o wildcard
+`*.to-menu.com`: enquanto não houver um registro DNS próprio apontando para o
+serviço onde o admin foi publicado, `app.to-menu.com` cai no droplet e serve a
+landing do storefront.
 
 ---
 
@@ -595,6 +616,33 @@ fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /
 echo '/swapfile none swap sw 0 0' >> /etc/fstab
 ```
 
+### `migrate` falha com `timeout expired` em `host.docker.internal`
+
+```
+SQLSTATE[08006] [7] connection to server at "host.docker.internal"
+(172.17.0.1), port 5432 failed: timeout expired
+```
+
+O `ufw` está bloqueando. O Postgres pode estar perfeitamente configurado
+(`listen_addresses = '*'`, `pg_hba.conf` com a faixa do Docker) e ainda assim
+o container não passa, porque o firewall nega antes:
+
+```bash
+ufw status | grep 5432       # nenhuma linha = é isso
+ufw allow from 172.16.0.0/12 to any port 5432 proto tcp
+```
+
+Note que o container resolve `host.docker.internal` para `172.17.0.1` (bridge
+padrão) mesmo estando numa rede própria do compose (`172.18.x`) — por isso a
+regra cobre `172.16.0.0/12` inteira, e não um gateway específico.
+
+Se a regra existir e ainda falhar, aí sim confira o Postgres:
+
+```bash
+ss -lntp | grep 5432                                   # 0.0.0.0:5432
+grep tomenu /etc/postgresql/16/main/pg_hba.conf        # faixa 172.16.0.0/12
+```
+
 ### `migrate` falha com `permission denied for schema public`
 
 Desde o PG15 o schema `public` não concede `CREATE` a todos, e seu dono é o
@@ -639,6 +687,8 @@ use `git stash` antes.
 - [ ] Cache Rule de `/api/*`
 - [ ] `ufw status`: **active**, 22 aberta, 80/443 só para faixas do Cloudflare
       (se `command not found`, o `iptables-persistent` o removeu — ver passo 6)
+- [ ] `ufw status | grep 5432`: liberada para `172.16.0.0/12` — sem isso o
+      `migrate` não alcança o Postgres do host
 - [ ] `iptables -L DOCKER-USER -n` salta para `TOMENU-CF` (o ufw sozinho não
       cobre porta publicada por container)
 - [ ] O DROP da `TOMENU-CF` tem `-i eth0` — sem isso o `npm ci` do build falha

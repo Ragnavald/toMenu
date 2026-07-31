@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ApiError, saveSession, type Session } from '@/lib/api';
+import { API_BASE, ApiError, saveSession, type Session } from '@/lib/api';
 
 export function LoginPage({
   onAuthenticated,
@@ -18,7 +18,7 @@ export function LoginPage({
     setError(null);
 
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

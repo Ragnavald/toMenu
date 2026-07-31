@@ -1,6 +1,22 @@
 const TOKEN_KEY = 'tomenu:admin:token';
 const TENANT_KEY = 'tomenu:admin:tenant';
 
+/**
+ * Origem da API.
+ *
+ * Vazia em desenvolvimento: o proxy do vite.config.ts encaminha `/api` para o
+ * backend local, mantendo tudo na mesma origem e dispensando CORS.
+ *
+ * Em produção o admin é build estático servido de outro domínio
+ * (app.to-menu.com), onde `/api` apontaria para o próprio site e o login
+ * falharia — por isso a URL absoluta precisa entrar no build via
+ * VITE_API_URL. Como toda VITE_*, ela é inlined no bundle: mudar exige
+ * rebuild, não basta reconfigurar o host.
+ *
+ * Sem barra no fim, para não gerar `//api` ao concatenar.
+ */
+export const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+
 export type Session = {
   token: string;
   tenantSlug: string;
@@ -63,7 +79,7 @@ export async function apiFetch<T>(
 
   const isFormData = options.body instanceof FormData;
 
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(`${API_BASE}/api${path}`, {
     ...options,
     headers: {
       Accept: 'application/json',

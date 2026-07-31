@@ -90,6 +90,12 @@ ufw default allow outgoing
 ufw allow 22/tcp
 while read -r ip; do [ -n "$ip" ] && ufw allow from "$ip" to any port 80,443 proto tcp; done < /etc/tomenu-cf-ips-v4
 while read -r ip; do [ -n "$ip" ] && ufw allow from "$ip" to any port 80,443 proto tcp; done < /etc/tomenu-cf-ips-v6
+
+# O Postgres roda no host, nao em container: sem esta regra o ufw nega a
+# conexao vinda da rede do Docker e o `artisan migrate` morre com "timeout
+# expired". So a faixa privada -- a 5432 continua fechada para a internet.
+ufw allow from 172.16.0.0/12 to any port 5432 proto tcp
+
 ufw --force enable
 
 # O ufw sozinho NAO protege porta publicada por container: o Docker insere as
