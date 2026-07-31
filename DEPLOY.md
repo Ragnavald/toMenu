@@ -49,8 +49,42 @@ O cloud-init instala Docker, cria 2 GB de swap, configura o firewall (SSH aberto
 
 ```bash
 ssh root@SEU_IP
-cloud-init status --wait
+cloud-init status --long
 ```
+
+**Confira o `extended_status`, não só o `status`.** O user-data passa por um
+textarea no painel da DO, onde a codificação não é garantida: se um acento ou
+travessão dos comentários chegar corrompido, o parse do YAML falha e o
+cloud-init descarta a configuração inteira — sem instalar nada. O droplet sobe
+normalmente e o `status` diz `done`, então a falha só aparece muito depois, no
+passo 5, como `Command 'docker' not found`.
+
+O sintoma é este:
+
+```
+status: done
+extended_status: degraded done
+recoverable_errors:
+    WARNING:
+        - Failed loading yaml blob. unacceptable character #x0080: ...
+        - Failed at merging in cloud config part from part-001: empty cloud config
+```
+
+`degraded done` com `empty cloud config` significa que **nada** rodou: nem
+Docker, nem swap, nem firewall, nem hardening do SSH. Não dá para reexecutar o
+user-data numa máquina já iniciada (`cloud-init single` lê o YAML corrompido do
+datasource, não um arquivo local). Rode o script equivalente à mão:
+
+```bash
+# da sua máquina, com o repositório clonado:
+ssh root@SEU_IP 'bash -s' < docker/droplet/provision.sh
+```
+
+O `provision.sh` é a cópia executável do `cloud-init.yaml` — mesmos passos, na
+mesma ordem, idempotente. Mantenha os dois em sincronia ao mudar qualquer um.
+
+Se o `extended_status` disser apenas `done`, o user-data foi aplicado e você
+pode seguir direto para o passo 2.
 
 > Não coloque segredo no user-data: ele é legível para sempre pelo metadata
 > service e pelo painel.
@@ -263,11 +297,16 @@ Stripe, se já tiver.
 ## 6. Firewall: só o Cloudflare alcança a origem
 
 O `cloud-init.yaml` já configura isto num droplet novo. Esta seção existe para
-conferir o resultado e para reaplicar quando as faixas do Cloudflare mudarem.
+conferir o resultado, para aplicar à mão quando o cloud-init não rodou (passo 1)
+e para reaplicar quando as faixas do Cloudflare mudarem.
 
 Sem este passo o IP do droplet responde a qualquer um, e todo o valor do
 Cloudflare à frente (WAF, cache, rate limit, ocultação da origem) é contornável
 por quem descobrir o IP — o que é trivial via histórico de DNS.
+
+**Confira antes do passo 7.** O `up -d` publica 80/443; a partir daí a origem
+fica exposta até o filtro existir. O `run --rm` do passo 5 não publica porta,
+então aquele pode rodar antes.
 
 **O `ufw` sozinho não basta.** O Docker insere as próprias regras de DNAT antes
 da cadeia do ufw, então uma porta publicada por container fica aberta ao mundo
@@ -280,20 +319,86 @@ iptables -L DOCKER-USER -n       # primeira regra salta para TOMENU-CF
 iptables -L TOMENU-CF -n | tail  # DROP para 80,443 no final
 ```
 
-Quando o Cloudflare mudar as faixas (raro, mas acontece), reaplique:
+Se sair `Status: inactive`, `DOCKER-USER` vazia ou `No chain/target/match by
+that name` na `TOMENU-CF`, nada está protegido — é o estado de um droplet cujo
+cloud-init falhou. O `provision.sh` do passo 1 resolve junto com o resto; para
+aplicar **só** o firewall, no droplet:
 
 ```bash
 curl -fsSL https://www.cloudflare.com/ips-v4 -o /etc/tomenu-cf-ips-v4
-iptables -F TOMENU-CF
+curl -fsSL https://www.cloudflare.com/ips-v6 -o /etc/tomenu-cf-ips-v6
+# Uma lista vazia não adicionaria regra nenhuma, e o `ufw enable` seguinte daria
+# falsa sensação de proteção.
+[ -s /etc/tomenu-cf-ips-v4 ] || { echo "lista do Cloudflare vazia"; exit 1; }
+
+# O `allow 22` vem antes do `enable`: sua sessão SSH não cai.
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow 22/tcp
+while read -r ip; do [ -n "$ip" ] && ufw allow from "$ip" to any port 80,443 proto tcp; done \
+    < /etc/tomenu-cf-ips-v4
+while read -r ip; do [ -n "$ip" ] && ufw allow from "$ip" to any port 80,443 proto tcp; done \
+    < /etc/tomenu-cf-ips-v6
+ufw --force enable
+
+# A DOCKER-USER vê os DOIS sentidos do forwarding, então o DROP precisa do
+# `-i eth0`: sem ele, um container abrindo conexão para qualquer HTTPS externo
+# casa com `--dports 443` e é bloqueado.
+iptables -N TOMENU-CF 2>/dev/null || iptables -F TOMENU-CF
 while read -r ip; do [ -n "$ip" ] && iptables -A TOMENU-CF -s "$ip" -j RETURN; done \
     < /etc/tomenu-cf-ips-v4
-iptables -A TOMENU-CF -p tcp -m multiport --dports 80,443 -j DROP
+iptables -A TOMENU-CF -i eth0 -p tcp -m multiport --dports 80,443 -j DROP
 iptables -A TOMENU-CF -j RETURN
-netfilter-persistent save
+iptables -I DOCKER-USER 1 -j TOMENU-CF
+
+ip6tables -N TOMENU-CF 2>/dev/null || ip6tables -F TOMENU-CF
+while read -r ip; do [ -n "$ip" ] && ip6tables -A TOMENU-CF -s "$ip" -j RETURN; done \
+    < /etc/tomenu-cf-ips-v6
+ip6tables -A TOMENU-CF -i eth0 -p tcp -m multiport --dports 80,443 -j DROP
+ip6tables -A TOMENU-CF -j RETURN
+ip6tables -I DOCKER-USER 1 -j TOMENU-CF
+
 ```
 
-> O `netfilter-persistent save` no fim não é opcional: sem ele as regras somem
-> no próximo reboot e a origem fica exposta sem aviso.
+A cadeia `DOCKER-USER` é criada pelo daemon do Docker: instale o Docker antes,
+ou o `iptables -I DOCKER-USER` falha com `No chain/target/match by that name`.
+
+As regras acima vivem só em memória e somem no reboot. Quem as recria é o
+serviço `tomenu-cf-rules`, instalado pelo `cloud-init.yaml` / `provision.sh`:
+
+```bash
+systemctl is-enabled tomenu-cf-rules   # enabled
+systemctl restart tomenu-cf-rules      # reaplica sem reboot
+```
+
+> **Não instale `iptables-persistent` para isso.** O pacote conflita com o
+> `ufw` e o apt **remove o ufw** ao instalá-lo — o `INPUT` volta para a policy
+> `ACCEPT` e todas as portas do host ficam abertas, sem nenhum aviso. O `ufw`
+> persiste as regras dele sozinho; o serviço acima cuida só da cadeia dos
+> containers, que o `ufw` não gerencia.
+
+> **Sem o `-i eth0` no DROP, o build quebra.** A regra vale para os dois
+> sentidos do forwarding, então o `npm ci` do storefront falha com `ETIMEDOUT`
+> em todo pacote — e o erro que o npm imprime (`Exit handler never called!`)
+> não sugere firewall em momento nenhum. Se um build começar a falhar por
+> timeout de rede, confira o contador da regra: `iptables -L TOMENU-CF -n -v`.
+
+Quando o Cloudflare mudar as faixas (raro, mas acontece), atualize a lista e
+reinicie o serviço — ele relê o arquivo e reconstrói a cadeia:
+
+```bash
+curl -fsSL https://www.cloudflare.com/ips-v4 -o /etc/tomenu-cf-ips-v4
+curl -fsSL https://www.cloudflare.com/ips-v6 -o /etc/tomenu-cf-ips-v6
+systemctl restart tomenu-cf-rules
+iptables -S TOMENU-CF | wc -l          # confira que a contagem bateu
+```
+
+O `ufw` tem a própria cópia das faixas, então atualize os dois lados:
+
+```bash
+ufw status numbered | grep "80,443"    # veja o que existe hoje
+# remova as regras antigas e recrie com a lista nova (ver bloco acima)
+```
 
 ---
 
@@ -413,8 +518,80 @@ em tempo de build.
 
 ---
 
+## Problemas conhecidos
+
+Erros cujo sintoma não aponta para a causa. Todos já aconteceram num deploy
+real deste projeto.
+
+### `Command 'docker' not found` num droplet recém-criado
+
+O cloud-init não rodou. Confirme com `cloud-init status --long`: se o
+`extended_status` for `degraded done` com `Failed loading yaml blob`, o
+user-data chegou corrompido pelo painel e **nada** foi provisionado — nem
+Docker, nem swap, nem firewall, nem hardening do SSH. Ver passo 1.
+
+Não adianta `apt install docker.io`: a versão do Ubuntu não traz o plugin
+`docker compose` (v2), e todo comando `docker compose` deste guia falharia.
+
+### `npm ci` falha com `Exit handler never called!`
+
+Firewall, não npm. Rode com log completo para ver o erro real:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    build --progress=plain storefront 2>&1 | tail -60
+```
+
+Se aparecer `ETIMEDOUT` em todo pacote, o DROP da `TOMENU-CF` está sem
+`-i eth0` e bloqueia a saída dos containers — a `DOCKER-USER` é avaliada nos
+dois sentidos do forwarding. Confirme pelo contador:
+
+```bash
+iptables -L TOMENU-CF -n -v | grep DROP    # pkts > 0 e subindo
+iptables -S TOMENU-CF | grep DROP          # precisa ter -i eth0
+```
+
+Correção no passo 6. O erro do npm não menciona rede em nenhum momento, e o
+build morre com exit code 1 — não 137 —, então **não é OOM**.
+
+### `ufw: command not found` depois de configurar o firewall
+
+O `iptables-persistent` foi instalado e o apt removeu o `ufw` (os dois
+conflitam). O resultado é pior que o estado inicial: `INPUT` volta para a
+policy `ACCEPT` e todas as portas do host ficam abertas, sem aviso.
+
+```bash
+iptables -S INPUT | head -1     # -P INPUT ACCEPT = host desprotegido
+apt-get install -y ufw          # reinstala; iptables-persistent sai
+```
+
+Depois reaplique as regras do passo 6 e confirme que a `TOMENU-CF` sobreviveu
+(`iptables -S DOCKER-USER`). A persistência correta é o serviço
+`tomenu-cf-rules`, não o `iptables-persistent`.
+
+### Build do storefront morre sem mensagem (exit 137)
+
+Aí sim é OOM. `swapon --show` vazio num droplet de 2 GB:
+
+```bash
+fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+```
+
+### `required variable CLOUDFLARE_TUNNEL_TOKEN is missing`
+
+O droplet está num commit anterior ao que removeu o Cloudflare Tunnel. Faça
+`git pull` em `/opt/tomenu` — o `.env.prod` não é afetado, está no
+`.gitignore`. Se houver edição local no `01-app-role.sql` (a senha do passo 3),
+use `git stash` antes.
+
+---
+
 ## Checklist final
 
+- [ ] `cloud-init status --long`: `extended_status: done`, não `degraded done`
+      (se degradou, nada do user-data rodou — ver passo 1)
+- [ ] `swapon --show`: 2 GB (sem swap, o build da imagem PHP morre por OOM)
 - [ ] `TENANCY_TRUST_HEADER=false`
 - [ ] `APP_DEBUG=false`
 - [ ] `DB_USERNAME=tomenu_app` (não o owner) — RLS depende disso
@@ -424,9 +601,16 @@ em tempo de build.
 - [ ] SSL/TLS em **Full (strict)** + Always Use HTTPS
 - [ ] Redirect `www` → apex
 - [ ] Cache Rule de `/api/*`
-- [ ] `ufw status`: 22 aberta, 80/443 só para faixas do Cloudflare
+- [ ] `ufw status`: **active**, 22 aberta, 80/443 só para faixas do Cloudflare
+      (se `command not found`, o `iptables-persistent` o removeu — ver passo 6)
 - [ ] `iptables -L DOCKER-USER -n` salta para `TOMENU-CF` (o ufw sozinho não
       cobre porta publicada por container)
+- [ ] O DROP da `TOMENU-CF` tem `-i eth0` — sem isso o `npm ci` do build falha
+      com `ETIMEDOUT`: `iptables -S TOMENU-CF | grep DROP`
+- [ ] `systemctl is-enabled tomenu-cf-rules`: **enabled** (sem ele a cadeia
+      some no reboot e a origem fica exposta)
+- [ ] Um container alcança a internet:
+      `docker run --rm alpine sh -c "apk add -q curl && curl -sI https://registry.npmjs.org"`
 - [ ] `curl -k https://SEU_IP` **não** responde — origem fora do alcance direto
 - [ ] `chmod 600 .env.prod`
 - [ ] Backup testado com `pg_restore`

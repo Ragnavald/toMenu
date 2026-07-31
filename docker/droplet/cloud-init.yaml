@@ -42,6 +42,52 @@ write_files:
         "log-opts": { "max-size": "10m", "max-file": "3" }
       }
 
+  # Recria a TOMENU-CF a cada boot. O `-i $EXT` no DROP restringe a regra ao
+  # trafego de ENTRADA: a DOCKER-USER ve os dois sentidos do forwarding, e sem
+  # isso a saida dos containers para HTTPS externo tambem casa com `dports 443`
+  # e e bloqueada -- o `npm ci` do storefront falha com ETIMEDOUT em todo
+  # pacote, e o erro do npm nao sugere firewall em momento nenhum.
+  - path: /usr/local/sbin/tomenu-cf-rules
+    permissions: '0700'
+    content: |
+      #!/bin/bash
+      set -e
+      EXT=$(ip route show default | awk '{print $5; exit}')
+      [ -n "$EXT" ] || exit 1
+      [ -s /etc/tomenu-cf-ips-v4 ] || exit 1
+
+      iptables -N TOMENU-CF 2>/dev/null || iptables -F TOMENU-CF
+      while read -r ip; do [ -n "$ip" ] && iptables -A TOMENU-CF -s "$ip" -j RETURN; done < /etc/tomenu-cf-ips-v4
+      iptables -A TOMENU-CF -i "$EXT" -p tcp -m multiport --dports 80,443 -j DROP
+      iptables -A TOMENU-CF -j RETURN
+      while iptables -C DOCKER-USER -j TOMENU-CF 2>/dev/null; do iptables -D DOCKER-USER -j TOMENU-CF; done
+      iptables -I DOCKER-USER 1 -j TOMENU-CF
+
+      if [ -s /etc/tomenu-cf-ips-v6 ]; then
+          ip6tables -N TOMENU-CF 2>/dev/null || ip6tables -F TOMENU-CF
+          while read -r ip; do [ -n "$ip" ] && ip6tables -A TOMENU-CF -s "$ip" -j RETURN; done < /etc/tomenu-cf-ips-v6
+          ip6tables -A TOMENU-CF -i "$EXT" -p tcp -m multiport --dports 80,443 -j DROP
+          ip6tables -A TOMENU-CF -j RETURN
+          while ip6tables -C DOCKER-USER -j TOMENU-CF 2>/dev/null; do ip6tables -D DOCKER-USER -j TOMENU-CF; done
+          ip6tables -I DOCKER-USER 1 -j TOMENU-CF
+      fi
+
+  - path: /etc/systemd/system/tomenu-cf-rules.service
+    content: |
+      [Unit]
+      Description=Regras TOMENU-CF (restringe 80/443 da origem ao Cloudflare)
+      # A DOCKER-USER so existe depois que o daemon do Docker sobe.
+      After=docker.service network-online.target
+      Requires=docker.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/sbin/tomenu-cf-rules
+
+      [Install]
+      WantedBy=multi-user.target
+
 runcmd:
   # --- Docker (repositório oficial; o do Ubuntu fica muito atrás) ---
   - install -m 0755 -d /etc/apt/keyrings
@@ -72,20 +118,19 @@ runcmd:
   # próprias regras de DNAT antes da cadeia do ufw, e a 443 do nginx ficaria
   # aberta ao mundo mesmo com as regras acima. DOCKER-USER é avaliada antes das
   # regras do Docker e é o ponto de filtro suportado para isso.
-  - iptables -N TOMENU-CF 2>/dev/null || iptables -F TOMENU-CF
-  - while read -r ip; do [ -n "$ip" ] && iptables -A TOMENU-CF -s "$ip" -j RETURN; done < /etc/tomenu-cf-ips-v4
-  - iptables -A TOMENU-CF -p tcp -m multiport --dports 80,443 -j DROP
-  - iptables -A TOMENU-CF -j RETURN
-  - iptables -I DOCKER-USER 1 -j TOMENU-CF
-  - ip6tables -N TOMENU-CF 2>/dev/null || ip6tables -F TOMENU-CF
-  - while read -r ip; do [ -n "$ip" ] && ip6tables -A TOMENU-CF -s "$ip" -j RETURN; done < /etc/tomenu-cf-ips-v6
-  - ip6tables -A TOMENU-CF -p tcp -m multiport --dports 80,443 -j DROP
-  - ip6tables -A TOMENU-CF -j RETURN
-  - ip6tables -I DOCKER-USER 1 -j TOMENU-CF
-
-  # Sem isto as regras acima somem no primeiro reboot e a origem fica exposta.
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y iptables-persistent
-  - netfilter-persistent save
+  #
+  # As regras em si estao em /usr/local/sbin/tomenu-cf-rules (write_files
+  # acima), chamado pelo servico abaixo — mesmo caminho no boot e aqui, para
+  # nao existirem duas copias da mesma logica que possam divergir.
+  #
+  # Sem persistir, as regras somem no primeiro reboot e a origem fica exposta.
+  #
+  # NAO use iptables-persistent: o pacote conflita com o ufw, e o apt REMOVE o
+  # ufw ao instala-lo -- deixando INPUT com policy ACCEPT e todas as portas do
+  # host abertas, sem aviso. O ufw persiste as regras dele sozinho; o servico
+  # abaixo cuida so da cadeia dos containers, que o ufw nao gerencia.
+  - systemctl daemon-reload
+  - systemctl enable --now tomenu-cf-rules
 
   # Diretório do Origin Certificate. O conteúdo vai depois, por SSH: a chave
   # privada nunca entra no user-data, que é legível para sempre.
