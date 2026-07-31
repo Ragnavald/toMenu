@@ -73,6 +73,23 @@ export function OnboardingPage() {
   return (
     <div>
       <header className="mb-6">
+        {/* O texto do logo é escuro; no tema escuro entra a variante clara.
+            A troca segue a classe .dark do <html>, não a media query, senão
+            quem alterna o tema manualmente veria o logo errado. */}
+        <img
+          src="/tomenu-wordmark.png"
+          alt="ToMenu"
+          width={560}
+          height={133}
+          className="mb-5 h-8 w-auto dark:hidden"
+        />
+        <img
+          src="/tomenu-wordmark-dark.png"
+          alt="ToMenu"
+          width={560}
+          height={133}
+          className="mb-5 hidden h-8 w-auto dark:block"
+        />
         <h1 className="text-xl font-semibold tracking-tight">
           Vamos deixar sua loja pronta
         </h1>

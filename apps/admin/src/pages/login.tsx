@@ -55,9 +55,15 @@ export function LoginPage({
     <div className="grid min-h-full place-items-center px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-3 grid size-11 place-items-center rounded-xl bg-accent text-lg font-bold text-white">
-            T
-          </div>
+          {/* Só o símbolo: o título logo abaixo já diz o nome da marca. */}
+          <img
+            src="/tomenu-icon.png"
+            alt=""
+            aria-hidden
+            width={512}
+            height={512}
+            className="mx-auto mb-3 size-12"
+          />
           <h1 className="text-xl font-semibold tracking-tight">ToMenu Admin</h1>
           <p className="mt-1 text-sm text-muted">
             Gerencie o cardápio e os pedidos da sua loja.

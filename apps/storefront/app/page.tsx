@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import Link from 'next/link';
+import { BrandLogo } from '@/components/brand-logo';
 import { SignupForm } from '@/components/signup-form';
 
 export const metadata: Metadata = {
@@ -52,19 +54,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-dvh bg-[rgb(var(--surface))] text-[rgb(var(--ink))]">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
-        <span className="flex items-center gap-2 font-semibold tracking-tight">
-          <span
-            aria-hidden
-            className="grid size-7 place-items-center rounded-lg text-sm"
-            style={{
-              background: 'rgb(var(--brand))',
-              color: 'rgb(var(--brand-ink))',
-            }}
-          >
-            T
-          </span>
-          ToMenu
-        </span>
+        <BrandLogo priority className="h-8 w-auto sm:h-9" />
 
         <Link
           href="#comecar"
@@ -208,7 +198,17 @@ export default function LandingPage() {
       </main>
 
       <footer className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-6 py-8 text-xs text-subtle">
-        <span>© {new Date().getFullYear()} ToMenu</span>
+        <span className="flex items-center gap-2">
+          <Image
+            src="/tomenu-icon.png"
+            alt=""
+            aria-hidden
+            width={512}
+            height={512}
+            className="size-5 w-auto"
+          />
+          © {new Date().getFullYear()} ToMenu
+        </span>
         <span>Feito para quem vive de servir bem.</span>
       </footer>
     </div>
