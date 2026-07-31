@@ -102,6 +102,39 @@ class IdentifyTenant
             return strtolower($slug);
         }
 
+        /*
+         * Último recurso: o tenant do próprio usuário autenticado.
+         *
+         * O painel é servido de `app.{dominio}` e chama a API na mesma origem,
+         * justamente para dispensar CORS. Só que `app` é subdomínio reservado,
+         * a rota de admin não tem `{tenant}` no path, e o X-Tenant é ignorado em
+         * produção (`trust_header=false`) — nenhum dos três caminhos acima
+         * resolve, e toda chamada a /api/admin/* respondia 404 "Loja não
+         * encontrada". O painel inteiro ficava inacessível em produção.
+         *
+         * Este caminho não enfraquece o isolamento, ao contrário dos outros: o
+         * slug não vem da request, vem da coluna `tenant_id` do usuário já
+         * autenticado pelo Sanctum. Um usuário só alcança a própria loja, e o
+         * EnsureUserBelongsToTenant confere isso de novo logo em seguida.
+         *
+         * Staff da plataforma (tenant_id nulo) não resolve nada aqui e continua
+         * dependendo do host ou do path — para eles o vínculo não existe.
+         *
+         * Restrito às rotas de admin de propósito. Aplicado a toda rota, o
+         * cardápio público passaria a resolver a loja do usuário logado quando
+         * o host não identificasse nenhuma — uma rota anônima mudando de
+         * resposta por existir sessão. `AdminSameOriginTest` cobre esse caso.
+         */
+        if (! $request->routeIs('admin.*') && ! $request->is('api/admin/*')) {
+            return null;
+        }
+
+        $user = $request->user();
+
+        if ($user && $user->tenant_id !== null) {
+            return $user->tenant?->slug;
+        }
+
         return null;
     }
 }
