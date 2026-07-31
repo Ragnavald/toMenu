@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
-import { fetchMenu } from '@/lib/api';
+import { fetchMenuResult } from '@/lib/api';
+import { StoreSuspended } from '@/components/store-suspended';
 import { StoreHeader } from '@/components/store-header';
 import { MenuBrowser } from '@/components/menu-browser';
 import { CartBar } from '@/components/cart-bar';
@@ -19,9 +20,15 @@ type Props = { params: Promise<{ tenant: string }> };
 
 export default async function StorePage({ params }: Props) {
   const { tenant } = await params;
-  const menu = await fetchMenu(tenant);
+  const result = await fetchMenuResult(tenant);
 
-  if (!menu) notFound();
+  // O layout já intercepta a loja suspensa; repetir aqui evita depender dessa
+  // ordem de renderização e mantém a page correta se ela for usada isolada.
+  if (result.status === 'suspended') return <StoreSuspended />;
+
+  if (result.status === 'missing') notFound();
+
+  const { menu } = result;
 
   return (
     <>

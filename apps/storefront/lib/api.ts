@@ -46,19 +46,40 @@ function serverTenantHeaders(tenantSlug: string): HeadersInit {
  * cache de uma loja serviria o cardápio de outra.
  */
 export async function fetchMenu(tenantSlug: string): Promise<Menu | null> {
+  const result = await fetchMenuResult(tenantSlug);
+
+  return result.status === 'ok' ? result.menu : null;
+}
+
+/**
+ * Resultado da busca do cardápio, distinguindo loja suspensa de inexistente.
+ *
+ * A API responde 403 para loja suspensa (IdentifyTenant) e 404 para slug que
+ * não existe. Colapsar os dois em `null` faria a loja suspensa cair na página
+ * "Loja não encontrada", que é enganosa: o endereço existe e volta ao ar
+ * quando a pendência for resolvida.
+ */
+export type MenuResult =
+  | { status: 'ok'; menu: Menu }
+  | { status: 'suspended' }
+  | { status: 'missing' };
+
+export async function fetchMenuResult(tenantSlug: string): Promise<MenuResult> {
   try {
     const response = await fetch(`${INTERNAL_API_URL}/api/${tenantSlug}/menu`, {
       headers: serverTenantHeaders(tenantSlug),
       next: { revalidate: 60 },
     });
 
-    if (!response.ok) return null;
+    if (response.status === 403) return { status: 'suspended' };
 
-    return (await response.json()) as Menu;
+    if (!response.ok) return { status: 'missing' };
+
+    return { status: 'ok', menu: (await response.json()) as Menu };
   } catch {
     // A API pode estar fora do ar; a página trata com notFound() em vez de
     // derrubar o render inteiro.
-    return null;
+    return { status: 'missing' };
   }
 }
 

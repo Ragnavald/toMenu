@@ -3,6 +3,7 @@
 namespace Tests;
 
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -33,5 +34,14 @@ abstract class TestCase extends BaseTestCase
                 .'Confira DB_DATABASE no ambiente — o phpunit.xml espera tomenu_test.'
             );
         }
+
+        /*
+         * O cache é Redis e sobrevive ao RefreshDatabase, que só reverte o
+         * Postgres. O IdentifyTenant guarda slug -> id por uma hora: sem esta
+         * limpeza, um teste herda o id de um tenant criado (e já revertido) por
+         * outro, e a resolução do tenant devolve 404 dependendo da ORDEM em que
+         * os testes rodaram. Isolado passa, na suíte falha.
+         */
+        Cache::flush();
     }
 }

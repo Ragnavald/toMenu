@@ -1,9 +1,10 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { fetchMenu } from '@/lib/api';
+import { fetchMenuResult } from '@/lib/api';
 import { fontClassFor } from '@/lib/fonts';
 import { getContrastInk } from '@/lib/contrast';
 import { CartProvider } from '@/components/cart-provider';
+import { StoreSuspended } from '@/components/store-suspended';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -15,9 +16,17 @@ type Props = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { tenant } = await params;
-  const menu = await fetchMenu(tenant);
+  const result = await fetchMenuResult(tenant);
 
-  if (!menu) return { title: 'Loja não encontrada' };
+  if (result.status === 'suspended') {
+    // noindex: a loja pode voltar, e não convém que o buscador registre esta
+    // página como o conteúdo do endereço da loja.
+    return { title: 'Loja indisponível', robots: { index: false } };
+  }
+
+  if (result.status === 'missing') return { title: 'Loja não encontrada' };
+
+  const { menu } = result;
 
   return {
     title: `${menu.tenant.name} — Peça online`,
@@ -32,10 +41,19 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function TenantLayout({ params, children }: Props) {
   const { tenant } = await params;
-  const menu = await fetchMenu(tenant);
+  const result = await fetchMenuResult(tenant);
 
-  if (!menu) notFound();
+  /*
+   * Loja suspensa é renderizada aqui, e não delegada ao children: sem o
+   * cardápio não há tema, e o layout inteiro abaixo depende dele. Envolver a
+   * tela neutra na moldura da marca também seria contraditório — a loja está
+   * fora do ar, não decorada.
+   */
+  if (result.status === 'suspended') return <StoreSuspended />;
 
+  if (result.status === 'missing') notFound();
+
+  const { menu } = result;
   const { theme } = menu;
   const brandInk = theme.brandInk ?? getContrastInk(theme.brand);
 
