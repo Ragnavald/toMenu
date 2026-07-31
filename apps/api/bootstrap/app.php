@@ -18,14 +18,13 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         /*
          * Sem isto o Laravel ignora X-Forwarded-Proto e gera URLs http:// atrás
-         * do túnel — o navegador então barra o conteúdo misto. Não adianta pôr
-         * o Cloudflare em "Full" se a aplicação não confia no proxy.
+         * do proxy — o navegador então barra o conteúdo misto.
          *
-         * A requisição sempre chega pelo cloudflared na rede interna do compose,
-         * nunca direto da internet (a porta 80 do nginx escuta em loopback), e
-         * confiar na faixa privada dispensa manter a lista de IPs do Cloudflare
-         * em dia. `*` (confiar em qualquer origem) deixaria qualquer cliente
-         * capaz de forjar o esquema e o IP de origem.
+         * Quem fala com o PHP-FPM é sempre o nginx, pela rede interna do
+         * compose; o TLS e o contato com a internet terminam nele. Por isso a
+         * faixa privada basta aqui, e a lista de IPs do Cloudflare fica onde ela
+         * de fato importa (nginx e ufw). `*` (confiar em qualquer origem)
+         * deixaria qualquer cliente capaz de forjar o esquema e o IP de origem.
          */
         $middleware->trustProxies(
             at: ['127.0.0.1', '172.16.0.0/12'],

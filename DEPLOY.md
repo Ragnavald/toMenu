@@ -1,20 +1,29 @@
 # Deploy — to-menu.com
 
-Provisionamento de produção num droplet da DigitalOcean, com Cloudflare Tunnel
-terminando o TLS.
+Provisionamento de produção num droplet com IPv4 fixo, atrás do Cloudflare no
+plano **Free**. Não usa Cloudflare Tunnel nem Zero Trust: o droplet tem IP
+público estável, então o caminho direto resolve e não custa nada.
 
 Arquitetura resultante:
 
 ```
-                     ┌─ to-menu.com      ─┐
-navegador ──TLS──▶ Cloudflare ─túnel──▶ ├─ *.to-menu.com   ─┤──▶ storefront:3000
-                     └─ api.to-menu.com ──┘──▶ nginx:80 ──▶ php-fpm
+                                    ┌─ to-menu.com    ─┐
+navegador ──TLS──▶ Cloudflare ──TLS──▶ nginx:443 ──┤─ *.to-menu.com  ─┤──▶ storefront:3000
+                    (proxy)                         └─ api.to-menu.com ──▶ php-fpm
 
 storefront ──rede interna──▶ nginx:80        (render server-side, ~1ms)
 ```
 
-Nenhuma porta fica aberta à internet: o `cloudflared` disca de dentro para fora.
-O firewall libera apenas SSH.
+O nginx termina o TLS com um **Origin Certificate** do Cloudflare — wildcard,
+válido por 15 anos, sem ACME nem renovação para manter funcionando.
+
+As portas 80/443 ficam abertas **apenas às faixas de IP do Cloudflare**; o
+resto da internet não alcança a origem. Isso é o que impede alguém de bater no
+IP do droplet e contornar WAF, cache e rate limit.
+
+> **Custo:** o único item pago é o domínio. Cloudflare Free cobre DNS, CDN, TLS
+> e wildcard de um nível — que é exatamente o que o roteamento por subdomínio
+> de loja precisa.
 
 ---
 
@@ -22,16 +31,21 @@ O firewall libera apenas SSH.
 
 - **Imagem**: Ubuntu 24.04 LTS
 - **Região**: NYC1 ou NYC3 (a DigitalOcean não tem região no Brasil; ~120ms,
-  irrelevante para o cardápio, que é servido do edge — ver passo 8)
+  irrelevante para o cardápio, que é servido do edge — ver passo 9)
 - **Tamanho**: 2 GB / 1 vCPU no mínimo; 4 GB se quiser folga no build do Next
 - **Autenticação**: chave SSH (o cloud-init desativa senha; criar com senha
   deixaria você sem acesso)
 - **Backups**: ativar, diário
 - **User data**: cole o conteúdo de `docker/droplet/cloud-init.yaml`
 
-O cloud-init instala Docker, cria 2 GB de swap, fecha o firewall exceto SSH,
-endurece o SSH e liga `unattended-upgrades`. Leva 2–4 min após o droplet
-aparecer como ativo:
+Depois de criado, atribua um **Reserved IP** ao droplet (Networking → Reserved
+IPs). O IP efêmero do droplet muda se a máquina for destruída e recriada, e os
+registros `A` do passo 4 apontariam para o vazio; com o reservado, você reaponta
+para uma máquina nova sem tocar no DNS.
+
+O cloud-init instala Docker, cria 2 GB de swap, configura o firewall (SSH aberto,
+80/443 restritas às faixas do Cloudflare), endurece o SSH e liga
+`unattended-upgrades`. Leva 2–4 min após o droplet aparecer como ativo:
 
 ```bash
 ssh root@SEU_IP
@@ -101,8 +115,8 @@ sudo -u postgres psql -d tomenu -f docker/postgres/init/01-app-role.sql
 Permita que os containers alcancem o Postgres do host:
 
 ```bash
-# postgresql.conf: escutar em todas as interfaces. O ufw só libera a 22, então
-# a 5432 continua inacessível pela internet — o alcance real é a rede do Docker.
+# postgresql.conf: escutar em todas as interfaces. O ufw não libera a 5432, que
+# portanto continua inacessível pela internet — o alcance real é a rede do Docker.
 sed -i "s/^#*listen_addresses.*/listen_addresses = '*'/" \
     /etc/postgresql/16/main/postgresql.conf
 
@@ -120,31 +134,60 @@ systemctl restart postgresql
 > fixar o gateway do bridge padrão, `172.17.0.1`, faria as migrations falharem
 > com "connection refused".
 
-> O firewall (ufw) só libera SSH, então a porta 5432 continua inacessível pela
-> internet — as regras acima valem apenas para a rede interna do Docker.
+> O firewall abre apenas SSH e 80/443 (estas só para o Cloudflare), então a
+> 5432 continua inacessível pela internet — as regras acima valem apenas para a
+> rede interna do Docker. Para acessar o banco da sua máquina, use túnel SSH:
+> `ssh -L 5432:localhost:5432 root@SEU_IP`.
 
 ---
 
-## 4. Cloudflare: zona e túnel
+## 4. Cloudflare: DNS e certificado
 
-O domínio precisa estar com os **nameservers do Cloudflare**; sem a zona ativa
-lá, o túnel não cria os CNAMEs.
+O domínio precisa estar com os **nameservers do Cloudflare** (plano Free serve).
 
-Em **Zero Trust → Networks → Tunnels → Create a tunnel** (tipo `cloudflared`),
-copie o token e cadastre três *public hostnames*:
+### 4.1 Registros DNS
 
-| Hostname | Serviço |
-|---|---|
-| `to-menu.com` | `http://storefront:3000` |
-| `*.to-menu.com` | `http://storefront:3000` |
-| `api.to-menu.com` | `http://nginx:80` |
+Em **DNS → Records**, dois registros `A` apontando para o IP fixo do droplet,
+ambos com o **proxy ligado** (nuvem laranja):
 
-O apex não cobre subdomínio: `*` precisa ser entrada própria. `api` já está na
-lista `RESERVED` de `IdentifyTenant` e do `proxy.ts`, então não colide com slug
-de loja.
+| Tipo | Nome | Conteúdo | Proxy |
+|---|---|---|---|
+| A | `@` | `SEU_IP_FIXO` | Proxied |
+| A | `*` | `SEU_IP_FIXO` | Proxied |
 
-Em **SSL/TLS → Overview**, use **Full**. "Full (strict)" exigiria um Origin
-Certificate instalado no nginx, que hoje responde só HTTP interno.
+O apex não cobre subdomínio: o `*` precisa ser registro próprio. Ele atende
+tanto as lojas quanto `api`, que já está na lista `RESERVED` de `IdentifyTenant`
+e do `proxy.ts` e portanto nunca colide com slug de loja.
+
+> O proxy ligado não é detalhe estético: com a nuvem cinza, o IP do droplet fica
+> exposto no DNS público e o tráfego não passa por TLS de borda, cache nem WAF.
+
+### 4.2 Origin Certificate
+
+Em **SSL/TLS → Origin Server → Create Certificate**, aceite o padrão (RSA 2048,
+15 anos) e confirme que a lista de hostnames traz `to-menu.com` **e**
+`*.to-menu.com`. A tela mostra o certificado e a chave uma única vez.
+
+No droplet:
+
+```bash
+install -d -m 0700 /etc/tomenu/certs
+nano /etc/tomenu/certs/origin.pem   # cole o "Origin Certificate"
+nano /etc/tomenu/certs/origin.key   # cole a "Private Key"
+chmod 600 /etc/tomenu/certs/origin.key
+```
+
+Os caminhos são os que o `docker-compose.prod.yml` monta no nginx. A chave fica
+fora do repositório de propósito — nunca entra no git nem na imagem.
+
+### 4.3 Modo SSL
+
+Em **SSL/TLS → Overview**, use **Full (strict)**. Com o Origin Certificate
+instalado é o modo correto: o Cloudflare valida o certificado da origem, o que
+"Full" não faz. Ligue também **Always Use HTTPS**.
+
+> "Flexible" quebra a stack: o Cloudflare falaria HTTP com o nginx, que
+> responde 301 para https, e o resultado é loop de redirecionamento.
 
 ### www → apex
 
@@ -201,8 +244,6 @@ SESSION_DRIVER=redis
 NEXT_PUBLIC_API_URL=https://api.to-menu.com
 NEXT_PUBLIC_ROOT_DOMAIN=to-menu.com
 NEXT_PUBLIC_ADMIN_URL=https://app.to-menu.com
-
-CLOUDFLARE_TUNNEL_TOKEN=o_token_do_passo_4
 ```
 
 Gere a `APP_KEY` (sem ela a criptografia do `whatsapp_token` não funciona):
@@ -219,7 +260,44 @@ Stripe, se já tiver.
 
 ---
 
-## 6. Subir
+## 6. Firewall: só o Cloudflare alcança a origem
+
+O `cloud-init.yaml` já configura isto num droplet novo. Esta seção existe para
+conferir o resultado e para reaplicar quando as faixas do Cloudflare mudarem.
+
+Sem este passo o IP do droplet responde a qualquer um, e todo o valor do
+Cloudflare à frente (WAF, cache, rate limit, ocultação da origem) é contornável
+por quem descobrir o IP — o que é trivial via histórico de DNS.
+
+**O `ufw` sozinho não basta.** O Docker insere as próprias regras de DNAT antes
+da cadeia do ufw, então uma porta publicada por container fica aberta ao mundo
+mesmo com `ufw deny`. O filtro precisa estar na cadeia `DOCKER-USER`, que é
+avaliada antes:
+
+```bash
+ufw status                       # 22 aberta; 80/443 só para faixas do Cloudflare
+iptables -L DOCKER-USER -n       # primeira regra salta para TOMENU-CF
+iptables -L TOMENU-CF -n | tail  # DROP para 80,443 no final
+```
+
+Quando o Cloudflare mudar as faixas (raro, mas acontece), reaplique:
+
+```bash
+curl -fsSL https://www.cloudflare.com/ips-v4 -o /etc/tomenu-cf-ips-v4
+iptables -F TOMENU-CF
+while read -r ip; do [ -n "$ip" ] && iptables -A TOMENU-CF -s "$ip" -j RETURN; done \
+    < /etc/tomenu-cf-ips-v4
+iptables -A TOMENU-CF -p tcp -m multiport --dports 80,443 -j DROP
+iptables -A TOMENU-CF -j RETURN
+netfilter-persistent save
+```
+
+> O `netfilter-persistent save` no fim não é opcional: sem ele as regras somem
+> no próximo reboot e a origem fica exposta sem aviso.
+
+---
+
+## 7. Subir
 
 ```bash
 cd /opt/tomenu
@@ -246,14 +324,24 @@ $C run --rm api php artisan route:cache
 Verifique:
 
 ```bash
-$C ps                    # todos os serviços up
-$C logs cloudflared      # "Registered tunnel connection"
-curl -s https://api.to-menu.com/up
+$C ps                              # todos os serviços up
+$C logs nginx --tail=20            # sem erro de certificado
+curl -s https://api.to-menu.com/up # {"status":"ok"}
+curl -sI https://to-menu.com | head -1
+```
+
+E confirme que a origem **não** responde direto pelo IP — este é o teste que
+prova que o firewall está fazendo o trabalho:
+
+```bash
+curl -sk --max-time 5 https://SEU_IP_FIXO/ ; echo "exit=$?"
+# esperado: exit=28 (timeout). Se responder HTML, a origem está exposta:
+# reveja o passo 6.
 ```
 
 ---
 
-## 7. Admin (Vite)
+## 8. Admin (Vite)
 
 O admin é build estático e **não** está no compose. Publique como Static Site no
 App Platform, Cloudflare Pages ou similar, em `app.to-menu.com`:
@@ -266,7 +354,7 @@ App Platform, Cloudflare Pages ou similar, em `app.to-menu.com`:
 
 ---
 
-## 8. Cache Rule do cardápio
+## 9. Cache Rule do cardápio
 
 **Sem este passo o storefront fica lento**: o Cloudflare não cacheia
 `application/json` por padrão, então o `s-maxage=60` de `MenuController` é
@@ -282,7 +370,7 @@ o visitante lê do edge de São Paulo.
 
 ---
 
-## 9. Backup do banco
+## 10. Backup do banco
 
 O backup do droplet é snapshot de disco tirado com o Postgres rodando — restaura
 a máquina, mas não garante consistência transacional. O `pg_dump` complementa e
@@ -311,7 +399,7 @@ pg_restore --host=127.0.0.1 --username=tomenu_owner --dbname=tomenu \
 
 ---
 
-## 10. Atualizações
+## 11. Atualizações
 
 ```bash
 cd /opt/tomenu
@@ -331,9 +419,14 @@ em tempo de build.
 - [ ] `APP_DEBUG=false`
 - [ ] `DB_USERNAME=tomenu_app` (não o owner) — RLS depende disso
 - [ ] `01-app-role.sql` aplicado, com senha trocada
-- [ ] Três hostnames no túnel; SSL/TLS em Full
+- [ ] Registros `A` de `@` e `*` proxied (nuvem laranja), para o Reserved IP
+- [ ] Origin Certificate em `/etc/tomenu/certs`, chave em `chmod 600`
+- [ ] SSL/TLS em **Full (strict)** + Always Use HTTPS
 - [ ] Redirect `www` → apex
 - [ ] Cache Rule de `/api/*`
-- [ ] `ufw status` mostra só a 22
+- [ ] `ufw status`: 22 aberta, 80/443 só para faixas do Cloudflare
+- [ ] `iptables -L DOCKER-USER -n` salta para `TOMENU-CF` (o ufw sozinho não
+      cobre porta publicada por container)
+- [ ] `curl -k https://SEU_IP` **não** responde — origem fora do alcance direto
 - [ ] `chmod 600 .env.prod`
 - [ ] Backup testado com `pg_restore`

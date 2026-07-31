@@ -2,9 +2,9 @@
 # User-data do droplet toMenu.
 #
 # Só provisiona a máquina — nada de segredo aqui. O user-data fica legível
-# para sempre via metadata service (169.254.169.254) e no painel da DO, então
-# CLOUDFLARE_TUNNEL_TOKEN, senha do Postgres e APP_KEY vão depois, por SSH,
-# no .env.prod com permissão 600.
+# para sempre via metadata service (169.254.169.254) e no painel da DO, então a
+# senha do Postgres e a APP_KEY vão depois, por SSH, no .env.prod com permissão
+# 600 — e a chave do Origin Certificate em /etc/tomenu/certs.
 
 package_update: true
 package_upgrade: true
@@ -52,14 +52,44 @@ runcmd:
   - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   - systemctl enable --now docker
 
-  # --- Firewall: só SSH ---
-  # 80/443 ficam fechados de propósito. O cloudflared disca de dentro para
-  # fora, então não há nada escutando publicamente; manter as portas fechadas
-  # tira a origem do alcance de varredura.
+  # --- Firewall: SSH + 80/443 restritas ao Cloudflare ---
+  # O nginx termina TLS e é a entrada pública, mas só deve receber tráfego que
+  # passou pelo Cloudflare. Liberar 80/443 para 0.0.0.0/0 deixaria a origem
+  # acessível pelo IP direto, contornando WAF, rate limit e cache.
+  #
+  # A lista vem de https://www.cloudflare.com/ips-v4 e muda raramente; o
+  # cron abaixo a mantém em dia sozinho.
   - ufw default deny incoming
   - ufw default allow outgoing
   - ufw allow 22/tcp
+  - curl -fsSL https://www.cloudflare.com/ips-v4 -o /etc/tomenu-cf-ips-v4
+  - curl -fsSL https://www.cloudflare.com/ips-v6 -o /etc/tomenu-cf-ips-v6
+  - while read -r ip; do [ -n "$ip" ] && ufw allow from "$ip" to any port 80,443 proto tcp; done < /etc/tomenu-cf-ips-v4
+  - while read -r ip; do [ -n "$ip" ] && ufw allow from "$ip" to any port 80,443 proto tcp; done < /etc/tomenu-cf-ips-v6
   - ufw --force enable
+
+  # O ufw sozinho NÃO protege porta publicada por container: o Docker insere as
+  # próprias regras de DNAT antes da cadeia do ufw, e a 443 do nginx ficaria
+  # aberta ao mundo mesmo com as regras acima. DOCKER-USER é avaliada antes das
+  # regras do Docker e é o ponto de filtro suportado para isso.
+  - iptables -N TOMENU-CF 2>/dev/null || iptables -F TOMENU-CF
+  - while read -r ip; do [ -n "$ip" ] && iptables -A TOMENU-CF -s "$ip" -j RETURN; done < /etc/tomenu-cf-ips-v4
+  - iptables -A TOMENU-CF -p tcp -m multiport --dports 80,443 -j DROP
+  - iptables -A TOMENU-CF -j RETURN
+  - iptables -I DOCKER-USER 1 -j TOMENU-CF
+  - ip6tables -N TOMENU-CF 2>/dev/null || ip6tables -F TOMENU-CF
+  - while read -r ip; do [ -n "$ip" ] && ip6tables -A TOMENU-CF -s "$ip" -j RETURN; done < /etc/tomenu-cf-ips-v6
+  - ip6tables -A TOMENU-CF -p tcp -m multiport --dports 80,443 -j DROP
+  - ip6tables -A TOMENU-CF -j RETURN
+  - ip6tables -I DOCKER-USER 1 -j TOMENU-CF
+
+  # Sem isto as regras acima somem no primeiro reboot e a origem fica exposta.
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y iptables-persistent
+  - netfilter-persistent save
+
+  # Diretório do Origin Certificate. O conteúdo vai depois, por SSH: a chave
+  # privada nunca entra no user-data, que é legível para sempre.
+  - install -d -m 0700 /etc/tomenu/certs
 
   # --- SSH: só chave ---
   - sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config

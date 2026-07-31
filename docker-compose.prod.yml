@@ -65,14 +65,22 @@ services:
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
-    # Só na interface de loopback: quem termina TLS e expõe à internet é o
-    # cloudflared, que alcança este serviço pela rede interna do compose (como
-    # http://nginx:80, o valor a usar no ingress do túnel) e não por esta porta.
-    # Ela fica publicada apenas para debug no próprio host; em 0.0.0.0 a API
-    # ficaria acessível em HTTP puro pelo IP do droplet, contornando o túnel.
-    ports: ["127.0.0.1:${HTTP_PORT:-8000}:80"]
+    # Entrada pública da stack. O TLS termina aqui, com o Origin Certificate do
+    # Cloudflare (ver DEPLOY.md §4) — um wildcard de 15 anos, sem ACME nem
+    # renovação automática para manter funcionando.
+    #
+    # A 80 existe só para redirecionar ao https; o tráfego real entra pela 443.
+    # O ufw restringe ambas às faixas do Cloudflare, então o IP do droplet não
+    # responde a varredura direta.
+    ports:
+      - "80:80"
+      - "443:443"
     volumes:
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # Origin Certificate + chave, gerados no painel do Cloudflare e colados no
+      # droplet. Fora do repositório de propósito: a chave privada nunca entra
+      # no git nem na imagem.
+      - /etc/tomenu/certs:/etc/nginx/certs:ro
       # nginx serve os estáticos direto do disco, sem passar pelo PHP; por isso
       # precisa enxergar o mesmo public/ que o FPM. O conteúdo vem da imagem da
       # API — um volume nomeado aqui mascararia o diretório e deixaria o nginx
@@ -88,15 +96,6 @@ services:
       public-sync:
         condition: service_completed_successfully
 
-  # Terminação TLS e entrada pública. O túnel disca para fora, então o droplet
-  # não precisa de nenhuma porta aberta à internet — não há 80/443 para
-  # varredura encontrar.
-  #
-  # O certificado é o universal do Cloudflare: cobre `dominio` e `*.dominio`,
-  # renovado por eles. Não há certbot nem ACME nesta stack por isso. O wildcard
-  # cobre exatamente um nível (loja.dominio, não loja.staging.dominio), que é o
-  # que IdentifyTenant aceita como slug.
-  #
   # Storefront (Next.js) em modo standalone. Roda ao lado da API de propósito:
   # o render no servidor busca o cardápio a cada request (cache: 'no-store'), e
   # pela rede interna isso custa ~1ms em vez da ida e volta até o edge.
@@ -119,36 +118,6 @@ services:
       NEXT_PUBLIC_ROOT_DOMAIN: ${NEXT_PUBLIC_ROOT_DOMAIN}
     depends_on:
       nginx:
-        condition: service_started
-
-  # Configuração no painel (Zero Trust > Networks > Tunnels), em "Public
-  # hostnames" do túnel — três entradas:
-  #
-  #   dominio       -> http://storefront:3000   landing da plataforma
-  #   *.dominio     -> http://storefront:3000   lojas (o Next resolve pelo Host)
-  #   api.dominio   -> http://nginx:80          API; usada pelo browser
-  #
-  # `api` já está na lista RESERVED de IdentifyTenant e do proxy.ts, então não
-  # colide com slug de loja. O storefront chama a API pela rede interna e não
-  # passa por este hostname; ele existe para o JS no navegador.
-  #
-  # Cada entrada cria sozinha o CNAME proxied correspondente; não se cria
-  # registro DNS à mão, e o `*` precisa existir como hostname próprio porque o
-  # apex não cobre subdomínio.
-  #
-  # SSL/TLS em "Full" é o correto (a origem responde por HTTP interno, sem
-  # certificado — "Full (strict)" exigiria um Origin Certificate no nginx e
-  # quebraria). O nginx já força o esquema https para o Laravel, então o modo
-  # do painel não é o que sustenta a geração de URLs.
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    # O token carrega a rota do túnel; a configuração de ingress vive no painel.
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?defina CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on:
-      nginx:
-        condition: service_started
-      storefront:
         condition: service_started
 
   worker:
