@@ -61,6 +61,30 @@ Route::middleware(['identify.tenant'])->group(function () {
 
 /*
 |--------------------------------------------------------------------------
+| Storefront — mesmas rotas, tenant no path
+|--------------------------------------------------------------------------
+|
+| Existe para o render server-side do storefront, que chama a API pela rede
+| interna (INTERNAL_API_URL=http://nginx:80). Ali o Host é "nginx", e não dá
+| para corrigi-lo pelo header: o `fetch` do Node descarta Host por ser um
+| forbidden header, silenciosamente. O resultado seria 404 em toda loja.
+|
+| X-Tenant não substitui isto — em produção TENANCY_TRUST_HEADER é false,
+| porque um tenant escolhido pelo cliente é a falha de isolamento mais grave
+| possível. O path param passa pelo mesmo IdentifyTenant e não é forjável por
+| quem já não pudesse acessar a loja pelo subdomínio.
+|
+| O prefixo vem depois do grupo acima para que `/api/menu` continue resolvendo
+| pelo subdomínio no acesso do navegador.
+*/
+Route::prefix('{tenant}')
+    ->middleware(['identify.tenant'])
+    ->group(function () {
+        Route::get('menu', MenuController::class)->middleware('throttle:240,1');
+    });
+
+/*
+|--------------------------------------------------------------------------
 | Admin do tenant — autenticado E com vínculo verificado
 |--------------------------------------------------------------------------
 | A ordem importa: identify.tenant precisa rodar antes de tenant.member, que

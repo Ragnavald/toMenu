@@ -4,8 +4,16 @@ import { StoreHeader } from '@/components/store-header';
 import { MenuBrowser } from '@/components/menu-browser';
 import { CartBar } from '@/components/cart-bar';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+/**
+ * O cardápio muda com pouca frequência, mas é a página mais acessada: cada
+ * visitante do QR code cai aqui. Com `force-dynamic` todo acesso atravessava
+ * até a origem em NYC — e o `s-maxage=60` que a API envia era ignorado, porque
+ * o Next marcava a resposta como não-cacheável antes de chegar ao Cloudflare.
+ *
+ * 60s alinha as três camadas (ISR do Next, s-maxage da API, Edge TTL do
+ * Cloudflare): um preço editado no admin aparece em no máximo um minuto.
+ */
+export const revalidate = 60;
 
 type Props = { params: Promise<{ tenant: string }> };
 

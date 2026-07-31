@@ -533,17 +533,86 @@ carregado.
 
 ## 9. Cache Rule do cardápio
 
-**Sem este passo o storefront fica lento**: o Cloudflare não cacheia
-`application/json` por padrão, então o `s-maxage=60` de `MenuController` é
-ignorado e todo acesso atravessa até NYC.
+**Sem este passo o storefront fica lento**: o Cloudflare não cacheia HTML por
+padrão, então todo acesso ao cardápio atravessa até NYC.
+
+O que se cacheia aqui é o **HTML da página da loja**, não o JSON da API. O
+`/api/menu` é chamado apenas pelo render server-side, pela rede interna do
+Docker (`INTERNAL_API_URL`) — nunca passa pelo Cloudflare, e uma regra sobre
+`/api/*` não teria efeito nenhum sobre o cardápio.
 
 Em **Rules → Cache Rules → Create rule**:
 
-- Se `hostname` corresponde a `*.to-menu.com` **e** `URI Path` começa com `/api/`
-- Então **Eligible for cache**, Edge TTL = **Use cache-control header**
+- **Custom filter expression** (não "All incoming requests")
+- Em **Edit expression**, cole:
+
+  ```
+  (http.host wildcard "*.to-menu.com"
+   and not http.host in {"www.to-menu.com" "app.to-menu.com" "api.to-menu.com"})
+  ```
+
+- **Cache eligibility**: `Eligible for cache`
+- **Edge TTL**: `Use cache-control header` — a origem já envia
+  `s-maxage=60, stale-while-revalidate=300`; fixar um TTL aqui desalinharia as
+  camadas.
+- **Browser TTL**: escolha `Respect origin TTL`. **Não deixe em branco** — o
+  padrão do Cloudflare é 4 horas, e ele sobrescreve o `max-age=0` que a origem
+  envia. O resultado é o navegador do cliente guardando o cardápio por 4h, e o
+  *Purge Cache* **não alcança cache de navegador**: um preço corrigido
+  continuaria errado para quem já visitou. Pior no 404 — quem tentar o
+  subdomínio de uma loja antes dela ser cadastrada veria "Loja não encontrada"
+  por 4h.
+
+  O `max-age=0` da origem é deliberado: o navegador revalida sempre, e quem
+  absorve a carga é o edge, onde o purge funciona.
+
+O apex fica de fora da expressão porque o `wildcard` não casa `to-menu.com` sem
+subdomínio; `www`, `app` e `api` precisam ser excluídos explicitamente — a
+landing tem formulário de cadastro e o admin é sessão pura.
 
 Com a regra, uma loja com 500 acessos/min gera ~1 request por minuto à origem, e
 o visitante lê do edge de São Paulo.
+
+### As três camadas
+
+Cacheamento do cardápio acontece em três lugares, todos alinhados em 60s de
+propósito — desalinhá-los faz uma camada servir conteúdo que a outra já
+invalidou:
+
+| Camada | Onde | Efeito |
+|---|---|---|
+| ISR do Next | `revalidate = 60` em `app/[tenant]/page.tsx` | o servidor não refaz o render |
+| `s-maxage` da API | `MenuController` | o Data Cache do Next não refaz o fetch |
+| Edge TTL | esta Cache Rule | o visitante não atravessa até NYC |
+
+O nginx sobrescreve o `Cache-Control` da resposta HTML (`map
+$storefront_cacheable` em `docker/nginx/default.conf`). É necessário porque o
+Next marca a página como `no-store`: o `proxy.ts` reescreve por request, então
+do ponto de vista dele a rota é dinâmica — mesmo o conteúdo sendo idêntico para
+todo visitante da loja.
+
+**Consequência operacional:** uma loja suspensa ou um preço editado pode
+continuar visível por até 60s no edge. Para mudanças urgentes, use *Purge
+Cache* no painel do Cloudflare.
+
+### Verificação
+
+```bash
+# Loja: cacheável
+curl -sI https://SUA-LOJA.to-menu.com/ | grep -i 'cache-control\|cf-cache-status'
+# esperado: public, max-age=0, s-maxage=60, ... e HIT no segundo acesso
+
+# Landing e admin: precisam continuar DYNAMIC
+curl -sI https://to-menu.com/     | grep -i cf-cache-status
+curl -sI https://app.to-menu.com/ | grep -i cf-cache-status
+```
+
+O primeiro acesso após a regra vem `MISS`; o segundo precisa vir `HIT`. Se
+continuar `DYNAMIC`, a expressão não está casando o host.
+
+Confira o `max-age` na resposta: se vier `max-age=14400`, o Browser TTL ficou no
+padrão de 4h em vez de `Respect origin TTL` — corrija na regra, senão o cache do
+navegador fica fora do alcance do purge.
 
 ---
 
@@ -731,6 +800,10 @@ use `git stash` antes.
       some no reboot e a origem fica exposta)
 - [ ] Um container alcança a internet:
       `docker run --rm alpine sh -c "apk add -q curl && curl -sI https://registry.npmjs.org"`
+- [ ] Cardápio de uma loja responde 200 com `s-maxage=60`; `cf-cache-status`
+      vira `HIT` no segundo acesso (ver passo 9)
+- [ ] Landing e admin **sem** `s-maxage` — cachear qualquer um dos dois serviria
+      conteúdo de um visitante para outro
 - [ ] `app.to-menu.com` serve o admin (`<title>admin</title>`), não a landing
 - [ ] `app.to-menu.com/produtos` responde 200 — rewrite catch-all funcionando
 - [ ] `curl -k https://SEU_IP` **não** responde — origem fora do alcance direto

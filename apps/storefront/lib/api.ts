@@ -12,18 +12,13 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
  */
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL ?? API_URL;
 
-/** Domínio raiz, para reconstruir o Host da loja no fetch server-side. */
-const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'localhost';
-
 /**
  * Identifica o tenant para a API a partir do servidor.
  *
- * `IdentifyTenant` resolve pelo Host, e só aceita X-Tenant quando
- * TENANCY_TRUST_HEADER está ligado — o que vale apenas em desenvolvimento,
- * porque em produção um header escolhido pelo cliente permitiria trocar de
- * loja à vontade. Como o fetch server-side vai para a URL interna, o Host da
- * requisição seria o do container; enviá-lo explicitamente é o que faz a API
- * enxergar `pizzaria.tomenu.app` em vez de `nginx`.
+ * `IdentifyTenant` resolve pelo Host (subdomínio) ou pelo path param. No
+ * render server-side o Host não serve: a URL é a interna, e o `fetch` do Node
+ * descarta um Host definido à mão por ser forbidden header — a API veria
+ * "nginx" e devolveria 404. Por isso o slug vai no path.
  *
  * X-Tenant continua sendo enviado para que o ambiente de desenvolvimento, onde
  * não há wildcard DNS, siga funcionando; em produção a API o ignora.
@@ -31,7 +26,8 @@ const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'localhost';
 function serverTenantHeaders(tenantSlug: string): HeadersInit {
   return {
     Accept: 'application/json',
-    Host: `${tenantSlug}.${ROOT_DOMAIN}`,
+    // Só serve ao desenvolvimento, onde TENANCY_TRUST_HEADER está ligado por
+    // não haver wildcard DNS. Em produção a API ignora e usa o path.
     'X-Tenant': tenantSlug,
   };
 }
@@ -39,14 +35,21 @@ function serverTenantHeaders(tenantSlug: string): HeadersInit {
 /**
  * Busca o cardápio no servidor (RSC).
  *
+ * O tenant vai no PATH, não no Host. A rota interna existe exatamente para
+ * isto: o `fetch` do Node descarta um header `Host` definido à mão — é um
+ * forbidden header — e usaria "nginx", o host da URL interna, fazendo a API
+ * devolver 404 para toda loja.
+ *
  * `revalidate: 60` alinha o ISR do Next com o `s-maxage=60` que a API envia,
- * de modo que as duas camadas expiram juntas em vez de brigar.
+ * de modo que as duas camadas expiram juntas em vez de brigar. A URL contém o
+ * slug, então cada loja tem sua própria entrada no Data Cache — sem isso, o
+ * cache de uma loja serviria o cardápio de outra.
  */
 export async function fetchMenu(tenantSlug: string): Promise<Menu | null> {
   try {
-    const response = await fetch(`${INTERNAL_API_URL}/api/menu`, {
+    const response = await fetch(`${INTERNAL_API_URL}/api/${tenantSlug}/menu`, {
       headers: serverTenantHeaders(tenantSlug),
-      cache: 'no-store',
+      next: { revalidate: 60 },
     });
 
     if (!response.ok) return null;
