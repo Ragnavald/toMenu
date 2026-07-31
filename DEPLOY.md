@@ -123,15 +123,21 @@ apt-get install -y postgresql-16
 systemctl enable --now postgresql
 ```
 
-Crie o banco e o papel de migração:
+Crie o banco e o papel dono:
 
 ```bash
 sudo -u postgres psql <<'SQL'
 CREATE DATABASE tomenu;
-CREATE ROLE tomenu_owner WITH LOGIN PASSWORD 'TROQUE_ESTA_SENHA' SUPERUSER;
+CREATE ROLE tomenu_owner WITH LOGIN PASSWORD 'TROQUE_ESTA_SENHA';
 ALTER DATABASE tomenu OWNER TO tomenu_owner;
 SQL
 ```
+
+> **Sem `SUPERUSER`.** Nada no deploy precisa: as migrations rodam como
+> `tomenu_app` e não criam extensões (e `pgcrypto`, se vier a ser preciso, é
+> *trusted* no PG16 — dispensa superuser). Um papel superuser aqui ignora toda
+> a RLS se alguém conectar com ele por engano, que é exatamente o modo de falha
+> que a próxima seção existe para evitar.
 
 Agora o papel da aplicação. **Este passo não é opcional**: o
 `docker/postgres/init/01-app-role.sql` cria `tomenu_app` sem `BYPASSRLS`, e é o
@@ -144,6 +150,17 @@ Edite a senha no script antes de aplicar:
 ```bash
 nano docker/postgres/init/01-app-role.sql   # troque 'secret'
 sudo -u postgres psql -d tomenu -f docker/postgres/init/01-app-role.sql
+```
+
+Confira antes de seguir — nenhum papel pode ter `super` ou `bypassrls`, e o
+schema `public` precisa pertencer a `tomenu_app`, senão o `migrate` do passo 7
+falha com `permission denied for schema public`:
+
+```bash
+sudo -u postgres psql -d tomenu <<'SQL'
+SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname LIKE 'tomenu%';
+SELECT nspname, nspowner::regrole FROM pg_namespace WHERE nspname = 'public';
+SQL
 ```
 
 Permita que os containers alcancem o Postgres do host:
@@ -578,6 +595,21 @@ fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /
 echo '/swapfile none swap sw 0 0' >> /etc/fstab
 ```
 
+### `migrate` falha com `permission denied for schema public`
+
+Desde o PG15 o schema `public` não concede `CREATE` a todos, e seu dono é o
+dono do banco. Como as migrations rodam como `tomenu_app` (o `DB_USERNAME` do
+`.env.prod`), ele precisa ser dono do schema:
+
+```bash
+sudo -u postgres psql -d tomenu -c 'ALTER SCHEMA public OWNER TO tomenu_app;'
+sudo -u postgres psql -d tomenu -c 'GRANT ALL ON SCHEMA public TO tomenu_app;'
+```
+
+Ser dono das tabelas não enfraquece o isolamento: é justamente o que o
+`CREATE POLICY` da migration 000400 exige, e o `FORCE ROW LEVEL SECURITY` da
+mesma migration impede que a dona escape das policies.
+
 ### `required variable CLOUDFLARE_TUNNEL_TOKEN is missing`
 
 O droplet está num commit anterior ao que removeu o Cloudflare Tunnel. Faça
@@ -596,6 +628,10 @@ use `git stash` antes.
 - [ ] `APP_DEBUG=false`
 - [ ] `DB_USERNAME=tomenu_app` (não o owner) — RLS depende disso
 - [ ] `01-app-role.sql` aplicado, com senha trocada
+- [ ] Nenhum papel `tomenu*` com `rolsuper` ou `rolbypassrls` — um superuser
+      ignora a RLS em silêncio (`SELECT rolname, rolsuper, rolbypassrls FROM
+      pg_roles WHERE rolname LIKE 'tomenu%';`)
+- [ ] Schema `public` pertence a `tomenu_app`, senão o `migrate` não roda
 - [ ] Registros `A` de `@` e `*` proxied (nuvem laranja), para o Reserved IP
 - [ ] Origin Certificate em `/etc/tomenu/certs`, chave em `chmod 600`
 - [ ] SSL/TLS em **Full (strict)** + Always Use HTTPS
