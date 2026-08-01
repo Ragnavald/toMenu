@@ -56,5 +56,40 @@ services:
       REDIS_HOST: redis
     command: php artisan serve --host=0.0.0.0 --port=8000
 
+  # Servidor WebSocket que entrega o evento de pedido novo ao painel.
+  #
+  # A porta é publicada porque quem conecta é o navegador do lojista, direto —
+  # não passa pelo serviço `api`.
+  reverb:
+    build: ./docker/php
+    working_dir: /app
+    volumes: ["./apps/api:/app"]
+    ports: ["8080:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+    # Host e porta vêm de REVERB_SERVER_HOST/PORT no .env — mantê-los lá evita
+    # que o endereço de escuta divirja do que o cliente usa para conectar.
+    command: php artisan reverb:start
+
+  # Sem este worker o NotifyNewOrder fica parado na fila e o alerta nunca sai:
+  # o evento é despachado de dentro do job, não do request.
+  queue:
+    build: ./docker/php
+    working_dir: /app
+    volumes: ["./apps/api:/app"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+    command: php artisan queue:work --tries=3
+
 volumes:
   pgdata:

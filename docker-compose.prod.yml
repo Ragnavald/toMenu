@@ -76,6 +76,16 @@ services:
         # Sitekey pública do Turnstile — protege o login contra brute force.
         # Sem ela o widget não aparece e a verificação de robô fica desligada.
         VITE_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+        # Alerta de pedido novo. A chave é a mesma REVERB_APP_KEY da API e é
+        # pública por natureza — a autorização de cada canal é do backend.
+        # Sem ela o painel não conecta e a cozinha não é avisada.
+        VITE_REVERB_APP_KEY: ${REVERB_APP_KEY:?defina REVERB_APP_KEY}
+        # Host público do WebSocket, com TLS terminado no nginx. Porta 443 e
+        # esquema https porque quem o navegador enxerga é o proxy, não o
+        # processo do Reverb.
+        VITE_REVERB_HOST: ${VITE_REVERB_HOST:?defina VITE_REVERB_HOST}
+        VITE_REVERB_PORT: "443"
+        VITE_REVERB_SCHEME: https
     restart: "no"
     # O volume nasce pertencendo ao root; a imagem alpine já roda como root, mas
     # explicitar evita surpresa se a base mudar.
@@ -190,6 +200,23 @@ services:
     # `schedule:work` bloqueia e dispara os comandos agendados no minuto certo,
     # sem depender de cron no host.
     command: php artisan schedule:work
+
+  # Servidor WebSocket que leva o pedido novo até o painel da cozinha.
+  #
+  # `expose` e não `ports`: quem termina o TLS é o nginx, que faz o upgrade da
+  # conexão em ws.to-menu.com. Publicar a porta no host abriria o Reverb sem
+  # TLS direto na internet, e o navegador recusaria o ws:// numa página https.
+  reverb:
+    <<: *api
+    # Endereço de escuta vem de REVERB_SERVER_HOST/PORT no .env.prod, separado
+    # do REVERB_HOST que o worker usa para publicar o evento.
+    command: php artisan reverb:start
+    expose: ["8080"]
+    healthcheck:
+      test: ["CMD-SHELL", "tr '\\0' ' ' < /proc/1/cmdline | grep -q 'reverb:start' || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
 
   redis:
     image: redis:7-alpine

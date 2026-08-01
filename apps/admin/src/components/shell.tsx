@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTheme } from '@/lib/theme';
 import { NavLink } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch, clearSession, type Session } from '@/lib/api';
+import { isUnlocked, unlock } from '@/lib/alert-sound';
+import { disconnectEcho } from '@/lib/echo';
+import { useOrderAlert } from '@/lib/use-order-alert';
 import type { Settings } from '@/lib/types';
 
 type NavItem = {
@@ -90,6 +93,28 @@ export function Shell({
   });
 
   const storefrontUrl = settings?.store.storefrontUrl;
+
+  // Alerta de pedido novo. Só onde há pedidos: no plano somente-cardápio não
+  // existe operação para avisar.
+  const alertEnabled = settings?.plan.allowsOrders === true;
+  const { lastOrderNumber, dismiss } = useOrderAlert(
+    alertEnabled ? settings?.store.id : undefined,
+  );
+
+  // O navegador bloqueia áudio até um gesto do usuário. Enquanto isso não
+  // acontece o painel oferece o botão abaixo — sem ele o pedido chegaria mudo
+  // e ninguém entenderia o porquê.
+  const [soundReady, setSoundReady] = useState(isUnlocked);
+
+  useEffect(() => {
+    if (!lastOrderNumber) return;
+
+    // O aviso some sozinho: quem está na cozinha não volta ao painel para
+    // fechar um toast.
+    const timer = setTimeout(dismiss, 20_000);
+
+    return () => clearTimeout(timer);
+  }, [lastOrderNumber, dismiss]);
 
   return (
     <div className="flex min-h-full">
@@ -191,6 +216,9 @@ export function Shell({
             <button
               type="button"
               onClick={() => {
+                // Antes de limpar a sessão: o socket foi autenticado com o
+                // token que está prestes a ser descartado.
+                disconnectEcho();
                 clearSession();
                 onLogout();
               }}
@@ -216,6 +244,55 @@ export function Shell({
             {settings?.store.name ?? session.tenantName}
           </p>
         </header>
+
+        {/* O alerta sonoro depende de um gesto do usuário para poder tocar.
+            Enquanto o som não é liberado a faixa fica visível — um pedido que
+            chega em silêncio é indistinguível de nenhum pedido. */}
+        {alertEnabled && !soundReady && (
+          <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+            <span className="min-w-0 flex-1">
+              O aviso sonoro de pedido novo está desligado.
+            </span>
+            <button
+              type="button"
+              onClick={async () => {
+                await unlock();
+                setSoundReady(isUnlocked());
+              }}
+              className="shrink-0 rounded-lg bg-amber-900 px-2.5 py-1 font-medium text-amber-50 transition-opacity hover:opacity-90 dark:bg-amber-200 dark:text-amber-950"
+            >
+              Ativar som
+            </button>
+          </div>
+        )}
+
+        {/* Pedido novo. `aria-live` faz o leitor de tela anunciar sem que o
+            foco saia de onde o operador estava. */}
+        {lastOrderNumber !== null && (
+          <div
+            aria-live="assertive"
+            className="flex items-center gap-3 border-b border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
+          >
+            <span className="min-w-0 flex-1 font-medium">
+              Pedido #{lastOrderNumber} acabou de chegar.
+            </span>
+            <NavLink
+              to="/pedidos"
+              onClick={dismiss}
+              className="shrink-0 rounded-lg bg-emerald-900 px-2.5 py-1 font-medium text-emerald-50 transition-opacity hover:opacity-90 dark:bg-emerald-200 dark:text-emerald-950"
+            >
+              Ver pedidos
+            </NavLink>
+            <button
+              type="button"
+              onClick={dismiss}
+              aria-label="Dispensar aviso"
+              className="shrink-0 rounded-lg px-1.5 py-1 text-emerald-900/70 transition-colors hover:bg-emerald-900/10 dark:text-emerald-200/70"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Faixa de pendência: a loja não aparece publicamente até o wizard
             terminar, e o dono precisa saber disso sem procurar. */}

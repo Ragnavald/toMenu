@@ -311,7 +311,10 @@ export function StorePage() {
               />
             </Field>
 
-            <Field label="WhatsApp" hint="Recebe o aviso de cada pedido.">
+            <Field
+              label="WhatsApp"
+              hint="Aparece no cardápio para o cliente falar com a loja."
+            >
               <input
                 value={form.whatsapp}
                 onChange={(e) =>

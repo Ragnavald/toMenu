@@ -294,6 +294,24 @@ QUEUE_CONNECTION=redis
 CACHE_STORE=redis
 SESSION_DRIVER=redis
 
+# Alerta de pedido novo no painel. Com `log` (o padrão do Laravel) o evento é
+# escrito no arquivo de log e a cozinha nunca é avisada.
+BROADCAST_CONNECTION=reverb
+REVERB_APP_ID=tomenu
+REVERB_APP_KEY=                      # gere: openssl rand -hex 16
+REVERB_APP_SECRET=                   # gere: openssl rand -hex 16
+# Três endereços distintos. Confundi-los é a falha mais comum aqui, e ela é
+# silenciosa: o job roda, o evento "sai", e nada chega ao painel.
+REVERB_SERVER_HOST=0.0.0.0           # o que o processo ESCUTA no container
+REVERB_SERVER_PORT=8080
+REVERB_HOST=reverb                   # para onde o worker CONECTA (nome do serviço)
+REVERB_PORT=8080
+REVERB_SCHEME=http                   # interno ao compose; o TLS termina no nginx
+
+# Host público do WebSocket, congelado no bundle do admin durante o build.
+# REVERB_APP_KEY acima é reaproveitada como VITE_REVERB_APP_KEY pelo compose.
+VITE_REVERB_HOST=ws.to-menu.com
+
 # Congeladas no bundle durante o build da imagem: alterá-las exige rebuild do
 # storefront, não apenas restart.
 NEXT_PUBLIC_API_URL=https://api.to-menu.com
@@ -305,7 +323,7 @@ NEXT_PUBLIC_ADMIN_URL=https://app.to-menu.com
 TURNSTILE_SITE_KEY=0x4AAAAAAA...
 ```
 
-Gere a `APP_KEY` (sem ela a criptografia do `whatsapp_token` não funciona):
+Gere a `APP_KEY` (sem ela a criptografia de sessão e cookies não funciona):
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.prod \
@@ -680,8 +698,13 @@ Em **Rules → Cache Rules → Create rule**:
 
   ```
   (http.host wildcard "*.to-menu.com"
-   and not http.host in {"www.to-menu.com" "app.to-menu.com" "api.to-menu.com"})
+   and not http.host in {"www.to-menu.com" "app.to-menu.com" "api.to-menu.com" "ws.to-menu.com"})
   ```
+
+  `ws.to-menu.com` precisa estar na exclusão: marcar o WebSocket como
+  "eligible for cache" faz o Cloudflare tratar o handshake como resposta
+  cacheável, e a conexão do painel passa a falhar de forma intermitente —
+  sintoma difícil de rastrear, porque depende de qual edge atendeu.
 
 - **Cache eligibility**: `Eligible for cache`
 - **Edge TTL**: `Use cache-control header` — a origem já envia
@@ -1194,6 +1217,23 @@ use `git stash` antes.
       conteúdo de um visitante para outro
 - [ ] `app.to-menu.com` serve o admin (`<title>admin</title>`), não a landing
 - [ ] `app.to-menu.com/produtos` responde 200 — rewrite catch-all funcionando
+- [ ] `REVERB_APP_KEY`/`REVERB_APP_SECRET` preenchidos e `BROADCAST_CONNECTION=reverb`
+      — com `log` o pedido novo nunca chega ao painel, sem erro em lugar nenhum
+- [ ] Containers `reverb` e `worker` **healthy** (`docker compose ps`): sem o
+      worker o job não roda, sem o Reverb o evento é descartado
+- [ ] WebSocket sobe de verdade — o handshake responde 101, não 200/502. O
+      `--max-time` é necessário porque a conexão fica aberta em caso de
+      sucesso; `curl` sai com código 28 e o 101 é o que importa. Não use `-I`:
+      o HEAD devolve 405 mesmo com tudo funcionando.
+      ```
+      curl -s -o /dev/null -w '%{http_code}\n' --max-time 5 \
+        -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+        -H 'Sec-WebSocket-Version: 13' \
+        -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+        'https://ws.to-menu.com/app/SUA_REVERB_APP_KEY?protocol=7&client=js&version=8.4.0'
+      ```
+- [ ] Um pedido de teste faz o painel tocar e mostrar a faixa verde. É o único
+      teste que cobre a corrente inteira (fila → Reverb → nginx → navegador)
 - [ ] `curl -k https://SEU_IP` **não** responde — origem fora do alcance direto
 - [ ] `TURNSTILE_SECRET` preenchido em `apps/api/.env` e `TURNSTILE_SITE_KEY`
       em `.env.prod` — sem o secret, login e cadastro ficam **sem** verificação

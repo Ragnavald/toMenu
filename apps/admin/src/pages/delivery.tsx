@@ -14,7 +14,6 @@ import {
   Section,
   Toggle,
 } from '@/components/ui';
-import { formatPhone } from '@/lib/masks';
 
 export function DeliveryPage() {
   const queryClient = useQueryClient();
@@ -160,21 +159,6 @@ export function DeliveryPage() {
                 description="O cliente busca o pedido e não paga taxa."
               />
             </div>
-
-            <Field
-              label="WhatsApp que recebe os pedidos"
-              hint="Cada pedido novo chega neste número."
-            >
-              <input
-                value={form.merchantPhone ?? ''}
-                onChange={(e) =>
-                  update({ merchantPhone: formatPhone(e.target.value) })
-                }
-                className="field"
-                placeholder="(11) 99999-9999"
-                maxLength={15}
-              />
-            </Field>
           </div>
         </Section>
 

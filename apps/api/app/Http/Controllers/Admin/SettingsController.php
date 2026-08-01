@@ -27,6 +27,10 @@ class SettingsController extends Controller
 
         return response()->json([
             'store' => [
+                // O painel usa o id para assinar o canal privado de pedidos
+                // (tenant.{id}.orders). Não é segredo: a autorização do canal é
+                // que decide o acesso, e ela compara o tenant do usuário.
+                'id' => $tenant->id,
                 'name' => $tenant->name,
                 'slug' => $tenant->slug,
                 'storefrontUrl' => $tenant->storefrontUrl(),
@@ -144,7 +148,6 @@ class SettingsController extends Controller
             'radiusKm' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'acceptsPickup' => ['boolean'],
             'acceptsDelivery' => ['boolean'],
-            'merchantPhone' => ['nullable', 'string', 'max:20'],
         ]);
 
         $settings = TenantSettings::firstOrNew(['tenant_id' => $tenant->id]);
@@ -156,7 +159,6 @@ class SettingsController extends Controller
             'radius_km' => $data['radiusKm'] ?? null,
             'accepts_pickup' => $data['acceptsPickup'] ?? true,
             'accepts_delivery' => $data['acceptsDelivery'] ?? true,
-            'merchant_phone' => $data['merchantPhone'] ?? null,
         ];
         $settings->save();
 
@@ -269,7 +271,6 @@ class SettingsController extends Controller
             'radiusKm' => $config['radius_km'] ?? null,
             'acceptsPickup' => (bool) ($config['accepts_pickup'] ?? true),
             'acceptsDelivery' => (bool) ($config['accepts_delivery'] ?? true),
-            'merchantPhone' => $config['merchant_phone'] ?? null,
         ];
     }
 

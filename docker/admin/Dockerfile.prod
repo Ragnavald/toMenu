@@ -30,6 +30,21 @@ ENV VITE_API_URL=$VITE_API_URL
 ARG VITE_TURNSTILE_SITE_KEY=""
 ENV VITE_TURNSTILE_SITE_KEY=$VITE_TURNSTILE_SITE_KEY
 
+# Alerta de pedido novo. Sem estas quatro o painel não abre o WebSocket e a
+# cozinha deixa de ser avisada — falha silenciosa, sem erro na tela. A chave é
+# pública: quem autoriza cada canal é o backend.
+ARG VITE_REVERB_APP_KEY=""
+ENV VITE_REVERB_APP_KEY=$VITE_REVERB_APP_KEY
+
+ARG VITE_REVERB_HOST=""
+ENV VITE_REVERB_HOST=$VITE_REVERB_HOST
+
+ARG VITE_REVERB_PORT="443"
+ENV VITE_REVERB_PORT=$VITE_REVERB_PORT
+
+ARG VITE_REVERB_SCHEME="https"
+ENV VITE_REVERB_SCHEME=$VITE_REVERB_SCHEME
+
 # VITE_PLATFORM_HOST e VITE_STORE_ADMIN_URL não aparecem aqui de propósito.
 # Em produção os dois painéis são irmãos (`admin.` e `app.` do mesmo domínio),
 # e o App.tsx deriva um do outro pelo hostname. Elas existem para o ambiente

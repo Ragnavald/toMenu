@@ -33,9 +33,6 @@ return new class extends Migration
             $table->string('stripe_account_id')->nullable();
             $table->boolean('stripe_charges_enabled')->default(false);
 
-            $table->string('whatsapp_phone_id')->nullable();
-            $table->text('whatsapp_token')->nullable(); // encrypted cast
-
             // Versionamento de cache: bump invalida o cardápio sem race condition.
             $table->unsignedBigInteger('menu_version')->default(1);
 

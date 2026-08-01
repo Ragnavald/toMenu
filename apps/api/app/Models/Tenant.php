@@ -14,10 +14,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 #[Fillable([
     'name', 'slug', 'plan_id', 'status', 'trial_ends_at', 'deletion_reason',
     'stripe_customer_id', 'stripe_account_id', 'stripe_charges_enabled',
-    'whatsapp_phone_id', 'whatsapp_token',
     'onboarding_step', 'onboarding_completed_at',
 ])]
-#[Hidden(['whatsapp_token', 'stripe_customer_id'])]
+#[Hidden(['stripe_customer_id'])]
 class Tenant extends Model
 {
     use HasFactory, SoftDeletes;
@@ -29,9 +28,6 @@ class Tenant extends Model
             'onboarding_completed_at' => 'datetime',
             'onboarding_step' => 'integer',
             'stripe_charges_enabled' => 'boolean',
-            // Token de terceiro nunca em texto plano: vazamento do dump do banco
-            // daria acesso ao WhatsApp do cliente.
-            'whatsapp_token' => 'encrypted',
         ];
     }
 

@@ -5,7 +5,7 @@ tenant com seu próprio site de pedidos, tema visual e painel administrativo.
 
 ```
 apps/
-  api/         Laravel 13 — tenancy, catálogo, pedidos, Stripe Connect, WhatsApp
+  api/         Laravel 13 — tenancy, catálogo, pedidos, Stripe Connect, Reverb
   storefront/  Next.js 16 — site público da loja (SSR/ISR, tema por tenant)
   admin/       React 19 + Vite — painel do estabelecimento (SPA)
 docker/        Postgres com papel de aplicação restrito; imagem PHP
@@ -99,7 +99,7 @@ enviado ao servidor nem registrado em logs de acesso.
 | Preço | R$ 29/mês | R$ 89/mês |
 | Cardápio, tema e subdomínio | sim | sim |
 | Carrinho e pedido pelo site | **não** | sim |
-| Entrega, WhatsApp, pagamento online | **não** | sim |
+| Entrega e pagamento online | **não** | sim |
 | Painel de pedidos e financeiro | **não** | sim |
 
 As capacidades são colunas em `plans` (`allows_orders`, `allows_delivery`,
@@ -127,8 +127,8 @@ Operação e a tela de Entrega não são renderizados, e a rota padrão passa a 
 `/cardapio` em vez de `/pedidos`.
 
 Configurações de entrega cobrem taxa, pedido mínimo, tempo estimado, frete
-grátis acima de um valor, raio, retirada no local e o WhatsApp que recebe os
-pedidos. Horários são por dia da semana, com suporte a faixas que cruzam a
+grátis acima de um valor, raio e retirada no local.
+Horários são por dia da semana, com suporte a faixas que cruzam a
 meia-noite (19:00–02:00) e um override manual de "fechar agora" que tem
 precedência sobre a agenda.
 
@@ -222,9 +222,33 @@ podem nunca ser pagos. Os webhooks verificam assinatura sobre o corpo bruto,
 gravam `webhook_events` para idempotência, respondem rápido e processam em fila.
 O valor pago é revalidado contra o total do pedido antes de confirmar.
 
-WhatsApp isoladamente não é canal confiável para cozinha em horário de pico. O
-alerta primário é o WebSocket (`OrderReceived` → Laravel Reverb) com som no
-painel; o WhatsApp é redundância.
+### Alerta de pedido novo
+
+O painel é o único canal de aviso. `NotifyNewOrder` roda na fila e dispara
+`OrderReceived` no canal privado `tenant.{id}.orders`; o Laravel Reverb entrega,
+o painel toca um bipe e mostra a faixa com o número do pedido.
+
+Três coisas precisam estar de pé para o alerta sair, e o silêncio de qualquer
+uma delas é indistinguível de "nenhum pedido":
+
+| Peça | Sem ela |
+|---|---|
+| `queue:work` | o job nunca roda e o evento não é despachado |
+| `reverb:start` + `BROADCAST_CONNECTION=reverb` | o evento é despachado e descartado |
+| `VITE_REVERB_APP_KEY` no build do admin | o painel não conecta |
+
+O navegador só permite áudio depois de um gesto do usuário. Enquanto o som não
+foi liberado o painel mostra uma faixa com "Ativar som" — sem isso o pedido
+chegaria mudo e ninguém saberia por quê.
+
+A assinatura do canal é autorizada em `routes/channels.php`, comparando o tenant
+do usuário. A rota fica em `/api/broadcasting/auth` sob `auth:sanctum`, e não na
+padrão do Laravel: o painel é um SPA com token Bearer, e a rota padrão autentica
+por sessão.
+
+Cuidado ao testar: com `BROADCAST_CONNECTION=null` (o valor do `phpunit.xml`) a
+rota de autorização responde 200 para qualquer canal sem consultar o callback.
+`OrderAlertTest` exercita o callback direto por isso.
 
 ## Pontos de atenção antes de produção
 
@@ -259,8 +283,10 @@ painel; o WhatsApp é redundância.
 - **Octane**: se ativar, o reset de contexto por request é obrigatório —
   `TenancyServiceProvider::registerOctaneReset()` já trata, mas o worker
   persistente é a origem mais provável de vazamento entre tenants.
-- **Templates do WhatsApp** levam de 24 a 48h para aprovação da Meta. Aprove
-  antes do lançamento.
+- **O WebSocket precisa de rota própria no proxy.** O Reverb é um processo
+  separado (porta 8080), não passa pelo PHP-FPM. Sem um `location` no nginx que
+  faça upgrade da conexão para `websocket`, o painel cai no polling e o alerta
+  sonoro nunca toca — falha silenciosa, sem erro visível na tela.
 - **Pix via Stripe Connect no Brasil**: confirmar disponibilidade para
   destination charges antes de assumir no roadmap. A abstração de gateway
   existe justamente para permitir um PSP nacional sem reescrever o checkout.

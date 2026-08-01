@@ -28,6 +28,25 @@ interface ImportMetaEnv {
 
   /** Sitekey pública do Turnstile; ausente desliga o widget. */
   readonly VITE_TURNSTILE_SITE_KEY?: string;
+
+  /**
+   * Chave pública do Reverb — a mesma `REVERB_APP_KEY` da API. Ausente,
+   * o painel funciona sem tempo real e o alerta de pedido novo não toca.
+   */
+  readonly VITE_REVERB_APP_KEY?: string;
+
+  /**
+   * Endereço público do servidor WebSocket. Em produção é o host que termina o
+   * TLS na frente do Reverb (`ws.to-menu.com`), não o `0.0.0.0` que o processo
+   * escuta. Ausente, assume o hostname do próprio painel.
+   */
+  readonly VITE_REVERB_HOST?: string;
+
+  /** Porta do WebSocket: 8080 em desenvolvimento, 443 atrás do proxy TLS. */
+  readonly VITE_REVERB_PORT?: string;
+
+  /** `https` liga o wss. Qualquer outro valor mantém ws puro. */
+  readonly VITE_REVERB_SCHEME?: string;
 }
 
 interface ImportMeta {

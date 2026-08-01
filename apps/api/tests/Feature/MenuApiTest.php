@@ -152,14 +152,14 @@ it('muda o ETag quando o cardápio é alterado', function () {
     expect($after)->not->toBe($before);
 });
 
-it('não expõe tokens sensíveis do tenant no payload público', function () {
-    $this->tenantA->update(['whatsapp_token' => 'segredo-do-whatsapp']);
+it('não expõe dados sensíveis do tenant no payload público', function () {
+    $this->tenantA->update(['stripe_customer_id' => 'cus_segredo_do_tenant']);
 
     $response = $this->withHeader('X-Tenant', 'loja-a')->getJson('/api/menu');
 
     expect(json_encode($response->json()))
-        ->not->toContain('segredo-do-whatsapp')
-        ->not->toContain('whatsapp_token');
+        ->not->toContain('cus_segredo_do_tenant')
+        ->not->toContain('stripe_customer_id');
 });
 
 it('sanitiza tema malicioso antes de servir ao storefront', function () {

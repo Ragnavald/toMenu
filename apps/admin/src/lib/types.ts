@@ -114,7 +114,6 @@ export type DeliveryConfig = {
   radiusKm?: number | null;
   acceptsPickup: boolean;
   acceptsDelivery: boolean;
-  merchantPhone: string | null;
 };
 
 export type DaySchedule = {
@@ -148,6 +147,7 @@ export type Settings = {
     slug: string;
     storefrontUrl: string;
     status: string;
+    id: number;
     onboardingStep: number;
     onboardingCompleted: boolean;
     acceptsOnlinePayment: boolean;

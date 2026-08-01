@@ -2,10 +2,14 @@ FROM php:8.3-cli
 
 # gd + freetype: o dompdf usa a GD para rasterizar o logo da loja no cabeçalho
 # do relatório financeiro. Sem ela a imagem é silenciosamente ignorada no PDF.
+#
+# pcntl: o `reverb:start` registra handlers de SIGINT/SIGTERM para encerrar sem
+# derrubar conexões abertas. Sem a extensão o servidor WebSocket nem inicia —
+# morre com "Undefined constant SIGINT".
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git unzip libpq-dev libicu-dev libzip-dev libpng-dev libjpeg-dev libfreetype6-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j"$(nproc)" pdo_pgsql bcmath intl zip opcache gd \
+    && docker-php-ext-install -j"$(nproc)" pdo_pgsql bcmath intl zip opcache gd pcntl \
     && pecl install redis && docker-php-ext-enable redis \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 

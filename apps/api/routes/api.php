@@ -14,7 +14,21 @@ use App\Http\Controllers\Platform\StoreManagementController;
 use App\Http\Controllers\Storefront\MenuController;
 use App\Http\Controllers\Storefront\OrderController;
 use App\Http\Controllers\Webhooks\StripeWebhookController;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| Autorização dos canais privados de WebSocket
+|--------------------------------------------------------------------------
+| O painel é um SPA que autentica por token Bearer, não por cookie de sessão.
+| A rota padrão do Laravel (`/broadcasting/auth`, no grupo `web`) usaria a
+| sessão e responderia 403 para o painel; por isso ela é registrada aqui, sob
+| `auth:sanctum`, e o Echo aponta para `/api/broadcasting/auth`.
+|
+| Quem decide o acesso é routes/channels.php.
+*/
+Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
 /*
 |--------------------------------------------------------------------------

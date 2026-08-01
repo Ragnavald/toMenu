@@ -25,7 +25,7 @@ const CAPABILITIES = [
   { label: 'Cores, tipografia e layout da sua marca', menu: true, pro: true },
   { label: 'Atualização do cardápio na hora, por você', menu: true, pro: true },
   { label: 'Carrinho e pedido pelo site', menu: false, pro: true },
-  { label: 'Pedidos no WhatsApp da cozinha', menu: false, pro: true },
+  { label: 'Aviso sonoro de pedido novo no painel', menu: false, pro: true },
   { label: 'Entrega: taxa, raio, mínimo e tempo', menu: false, pro: true },
   { label: 'Pagamento online com cartão e Pix', menu: false, pro: true },
   { label: 'Painel de pedidos em tempo real', menu: false, pro: true },
@@ -74,8 +74,8 @@ const FEATURES = [
     body: 'Escolha cores, tipografia e layout. Sem template genérico que parece de outra marca.',
   },
   {
-    title: 'Pedidos direto no WhatsApp',
-    body: 'Cada pedido chega no painel e no WhatsApp da cozinha, com endereço e forma de pagamento.',
+    title: 'A cozinha sabe na hora',
+    body: 'Cada pedido aparece no painel com aviso sonoro, endereço e forma de pagamento — sem recarregar a página.',
     proOnly: true,
   },
   {
