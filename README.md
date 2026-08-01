@@ -80,15 +80,37 @@ Sem isso a API veria `Host: nginx` e nenhuma loja resolveria, porque
 
 ### Criar uma loja pelo cadastro público
 
-A landing em `/` vende o plano único e cria a loja. O fluxo é:
+A landing em `/` compara os dois planos e cria a loja. O fluxo é:
 
-1. Cadastro devolve token e slug; a loja nasce em `trial`, `onboarding_step = 1`.
-2. O usuário é levado ao Admin já autenticado, direto no wizard de 5 passos
-   (dados da loja → entrega → pagamento → horários → cardápio).
+1. Cadastro devolve token e slug; a loja nasce em `trial`, `onboarding_step = 1`,
+   no plano escolhido (`plan`; ausente = `pro`).
+2. O usuário é levado ao Admin já autenticado, direto no wizard — 5 passos no
+   Pro (dados da loja → entrega → pagamento → horários → cardápio) e 3 no
+   Cardápio digital, que não tem entrega nem pagamento.
 3. Ao concluir, `onboarding_completed_at` é gravado e a loja está publicada.
 
 O token viaja no fragmento (`#`) da URL, não na query string: o fragmento não é
 enviado ao servidor nem registrado em logs de acesso.
+
+### Planos
+
+| | Cardápio digital | Pro |
+|---|---|---|
+| Preço | R$ 29/mês | R$ 89/mês |
+| Cardápio, tema e subdomínio | sim | sim |
+| Carrinho e pedido pelo site | **não** | sim |
+| Entrega, WhatsApp, pagamento online | **não** | sim |
+| Painel de pedidos e financeiro | **não** | sim |
+
+As capacidades são colunas em `plans` (`allows_orders`, `allows_delivery`,
+`allows_online_payment`), nunca comparações com o slug: um terceiro plano é uma
+linha na tabela, não uma varredura pelo código. O default das colunas é `true`,
+então a migração não mexeu em nenhuma loja existente.
+
+No plano somente-cardápio a loja é **vitrine pura** — o storefront não monta
+carrinho nem checkout, e o middleware `plan.orders` recusa `POST /api/orders` e
+as rotas de operação com 403. Esconder o botão não é impedir: a rota é pública
+e adivinhável para quem já visitou uma loja Pro.
 
 ### Painel do lojista
 
@@ -96,9 +118,13 @@ Sidebar com três grupos:
 
 | Grupo | Telas |
 |---|---|
-| Operação | Pedidos (com contador de ativos em tempo real) |
+| Operação | Pedidos (com contador de ativos em tempo real), Financeiro |
 | Cardápio | Produtos (agrupados por seção), Categorias (com reordenação) |
 | Configurações | Dados da loja, Entrega e pagamento, Horários, Aparência |
+
+A navegação é montada a partir de `settings.plan`: no Cardápio digital o grupo
+Operação e a tela de Entrega não são renderizados, e a rota padrão passa a ser
+`/cardapio` em vez de `/pedidos`.
 
 Configurações de entrega cobrem taxa, pedido mínimo, tempo estimado, frete
 grátis acima de um valor, raio, retirada no local e o WhatsApp que recebe os

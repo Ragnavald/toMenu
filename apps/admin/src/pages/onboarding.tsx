@@ -14,12 +14,29 @@ import {
   type AddressFields,
 } from '@/lib/masks';
 
-const STEPS = [
-  { n: 1, title: 'Sua loja', hint: 'Como os clientes vão te encontrar' },
-  { n: 2, title: 'Entrega', hint: 'Taxa, pedido mínimo e tempo' },
-  { n: 3, title: 'Pagamento', hint: 'Como você recebe' },
-  { n: 4, title: 'Horários', hint: 'Quando aceita pedidos' },
-  { n: 5, title: 'Cardápio', hint: 'Primeiros itens' },
+/**
+ * Identidade de cada passo do wizard.
+ *
+ * O passo é identificado por `key` e não pela posição, porque o plano
+ * somente-cardápio não tem entrega nem pagamento: com a posição valendo como
+ * identidade, o passo 2 seria "Entrega" num plano e "Horários" no outro, e o
+ * `onboarding_step` gravado no banco passaria a significar coisas diferentes
+ * conforme o plano.
+ */
+type StepKey = 'store' | 'delivery' | 'payment' | 'hours' | 'menu';
+
+const STEPS: {
+  key: StepKey;
+  n: number;
+  title: string;
+  hint: string;
+  needsOrders?: boolean;
+}[] = [
+  { key: 'store', n: 1, title: 'Sua loja', hint: 'Como os clientes vão te encontrar' },
+  { key: 'delivery', n: 2, title: 'Entrega', hint: 'Taxa, pedido mínimo e tempo', needsOrders: true },
+  { key: 'payment', n: 3, title: 'Pagamento', hint: 'Como você recebe', needsOrders: true },
+  { key: 'hours', n: 4, title: 'Horários', hint: 'Quando o cardápio fica disponível' },
+  { key: 'menu', n: 5, title: 'Cardápio', hint: 'Primeiros itens' },
 ];
 
 export function OnboardingPage() {
@@ -38,9 +55,21 @@ export function OnboardingPage() {
     queryFn: () => apiFetch<{ data: Category[] }>('/admin/categories'),
   });
 
-  // Retoma de onde o dono parou, em vez de recomeçar do primeiro passo.
+  const allowsOrders = settings?.plan.allowsOrders !== false;
+
+  // Passos do plano contratado. No somente-cardápio o wizard tem três.
+  const steps = STEPS.filter((item) => allowsOrders || !item.needsOrders);
+
+  // Retoma de onde o dono parou. O valor salvo é o `n` canônico, que pode ser
+  // um passo que este plano não tem (uma loja rebaixada, por exemplo): cai no
+  // primeiro passo do plano que ainda não foi vencido.
   useEffect(() => {
-    if (settings) setStep(Math.min(Math.max(settings.store.onboardingStep, 1), 5));
+    if (!settings) return;
+
+    const saved = settings.store.onboardingStep;
+    const resume = steps.find((item) => item.n >= saved) ?? steps[steps.length - 1];
+
+    setStep(resume.n);
   }, [settings]);
 
   const advance = useMutation({
@@ -56,16 +85,24 @@ export function OnboardingPage() {
     return <p className="text-sm text-muted">Carregando…</p>;
   }
 
-  async function goTo(next: number) {
+  const index = Math.max(steps.findIndex((item) => item.n === step), 0);
+  const current = steps[index];
+  const isLast = index === steps.length - 1;
+
+  /** Avança para o próximo passo do plano, ou publica se este era o último. */
+  async function goForward() {
     setError(null);
 
-    if (next > 5) {
-      await advance.mutateAsync({ step: 5, complete: true });
+    if (isLast) {
+      await advance.mutateAsync({ step: current.n, complete: true });
       queryClient.invalidateQueries();
-      navigate('/pedidos');
+      // Sem pedidos não existe tela de operação: o lojista cai no cardápio,
+      // que é o que ele acabou de montar.
+      navigate(allowsOrders ? '/pedidos' : '/cardapio');
       return;
     }
 
+    const next = steps[index + 1].n;
     await advance.mutateAsync({ step: next });
     setStep(next);
   }
@@ -94,18 +131,19 @@ export function OnboardingPage() {
           Vamos deixar sua loja pronta
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Cinco passos rápidos. Você pode mudar tudo depois em Configurações.
+          {steps.length} passos rápidos. Você pode mudar tudo depois em
+          Configurações.
         </p>
       </header>
 
       {/* Trilha de progresso: mostra onde está e o que falta. */}
       <ol className="mb-6 flex items-center gap-1.5">
-        {STEPS.map((item) => {
+        {steps.map((item) => {
           const done = item.n < step;
-          const current = item.n === step;
+          const isCurrent = item.n === step;
 
           return (
-            <li key={item.n} className="flex-1">
+            <li key={item.key} className="flex-1">
               <button
                 type="button"
                 // Só permite voltar: pular passos à frente deixaria a loja
@@ -115,11 +153,11 @@ export function OnboardingPage() {
                 className="w-full text-left"
               >
                 <span
-                  className={`block h-1 rounded-full transition-colors ${done || current ? 'bg-accent' : 'bg-line'
+                  className={`block h-1 rounded-full transition-colors ${done || isCurrent ? 'bg-accent' : 'bg-line'
                     }`}
                 />
                 <span
-                  className={`mt-1.5 hidden text-[11px] font-medium sm:block ${current ? 'text-accent' : 'text-muted'
+                  className={`mt-1.5 hidden text-[11px] font-medium sm:block ${isCurrent ? 'text-accent' : 'text-muted'
                     }`}
                 >
                   {item.title}
@@ -132,17 +170,17 @@ export function OnboardingPage() {
 
       <div className="panel p-5">
         <p className="text-xs font-medium uppercase tracking-wide text-muted">
-          Passo {step} de 5
+          Passo {index + 1} de {steps.length}
         </p>
-        <h2 className="mt-1 text-base font-semibold">{STEPS[step - 1].title}</h2>
-        <p className="mt-0.5 text-sm text-muted">{STEPS[step - 1].hint}</p>
+        <h2 className="mt-1 text-base font-semibold">{current.title}</h2>
+        <p className="mt-0.5 text-sm text-muted">{current.hint}</p>
 
         <div className="mt-5">
-          {step === 1 && <StoreStep settings={settings} onError={setError} />}
-          {step === 2 && <DeliveryStep settings={settings} onError={setError} />}
-          {step === 3 && <PaymentStep settings={settings} onError={setError} />}
-          {step === 4 && <HoursStep settings={settings} onError={setError} />}
-          {step === 5 && (
+          {current.key === 'store' && <StoreStep settings={settings} onError={setError} />}
+          {current.key === 'delivery' && <DeliveryStep settings={settings} onError={setError} />}
+          {current.key === 'payment' && <PaymentStep settings={settings} onError={setError} />}
+          {current.key === 'hours' && <HoursStep settings={settings} onError={setError} />}
+          {current.key === 'menu' && (
             <MenuStep
               categories={categories?.data ?? []}
               storefrontUrl={settings.store.storefrontUrl}
@@ -160,18 +198,20 @@ export function OnboardingPage() {
         <div className="mt-6 flex items-center justify-between gap-3 border-t border-line pt-4">
           <button
             type="button"
-            onClick={() => setStep((s) => Math.max(1, s - 1))}
-            disabled={step === 1}
+            // Pelo índice na lista do plano: `step - 1` cairia num passo que
+            // este plano não tem (voltar de Horários daria "Pagamento").
+            onClick={() => index > 0 && setStep(steps[index - 1].n)}
+            disabled={index === 0}
             className="rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-line disabled:opacity-40"
           >
             Voltar
           </button>
 
           <div className="flex items-center gap-2">
-            {step < 5 && (
+            {!isLast && (
               <button
                 type="button"
-                onClick={() => goTo(step + 1)}
+                onClick={goForward}
                 className="rounded-lg px-3 py-2 text-sm text-muted hover:bg-line"
               >
                 Pular
@@ -180,11 +220,11 @@ export function OnboardingPage() {
 
             <button
               type="button"
-              onClick={() => goTo(step + 1)}
+              onClick={goForward}
               disabled={advance.isPending}
               className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
             >
-              {step === 5 ? 'Concluir e publicar' : 'Continuar'}
+              {isLast ? 'Concluir e publicar' : 'Continuar'}
             </button>
           </div>
         </div>

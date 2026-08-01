@@ -24,7 +24,9 @@ export DEBIAN_FRONTEND=noninteractive
 
 echo "==> pacotes base"
 apt-get update
-apt-get install -y ca-certificates curl git ufw fail2ban postgresql-client-16
+# `make` entra aqui porque os alvos `make deploy*` são o caminho documentado de
+# deploy (DEPLOY.md §11) e a imagem Ubuntu Server não o traz por padrão.
+apt-get install -y ca-certificates curl git make ufw fail2ban postgresql-client-16
 
 # --- Swap ---------------------------------------------------------------
 # 2 GB: o `docker compose build` da imagem PHP e o pico de memoria do deploy e

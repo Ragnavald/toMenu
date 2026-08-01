@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsurePlanAllowsOrders;
 use App\Http\Middleware\EnsurePlatformAdmin;
 use App\Http\Middleware\EnsureUserBelongsToTenant;
 use App\Http\Middleware\IdentifyTenant;
@@ -40,6 +41,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'identify.tenant' => IdentifyTenant::class,
             'tenant.member' => EnsureUserBelongsToTenant::class,
             'platform.admin' => EnsurePlatformAdmin::class,
+            'plan.orders' => EnsurePlanAllowsOrders::class,
             'turnstile' => VerifyTurnstile::class,
         ]);
 

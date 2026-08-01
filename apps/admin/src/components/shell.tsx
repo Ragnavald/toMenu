@@ -10,14 +10,16 @@ type NavItem = {
   label: string;
   icon: React.ReactNode;
   badge?: 'orders';
+  /** Item que só existe onde a loja recebe pedidos. */
+  needsOrders?: boolean;
 };
 
 const NAV: { section: string; items: NavItem[] }[] = [
   {
     section: 'Operação',
     items: [
-      { to: '/pedidos', label: 'Pedidos', icon: <IconReceipt />, badge: 'orders' },
-      { to: '/financeiro', label: 'Financeiro', icon: <IconChart /> },
+      { to: '/pedidos', label: 'Pedidos', icon: <IconReceipt />, badge: 'orders', needsOrders: true },
+      { to: '/financeiro', label: 'Financeiro', icon: <IconChart />, needsOrders: true },
     ],
   },
   {
@@ -31,12 +33,28 @@ const NAV: { section: string; items: NavItem[] }[] = [
     section: 'Configurações',
     items: [
       { to: '/loja', label: 'Dados da loja', icon: <IconStore /> },
-      { to: '/entrega', label: 'Entrega e pagamento', icon: <IconTruck /> },
+      { to: '/entrega', label: 'Entrega e pagamento', icon: <IconTruck />, needsOrders: true },
       { to: '/horarios', label: 'Horários', icon: <IconClock /> },
       { to: '/aparencia', label: 'Aparência', icon: <IconPalette /> },
     ],
   },
 ];
+
+/**
+ * Navegação do plano contratado.
+ *
+ * Enquanto as configurações não chegam, `allowsOrders` é indefinido e o menu
+ * mostra tudo — piscar o menu completo e encolher é menos ruim para o lojista
+ * Pro (a maioria) do que a navegação aparecer vazia e depois crescer.
+ */
+function navFor(allowsOrders: boolean): typeof NAV {
+  if (allowsOrders) return NAV;
+
+  return NAV.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !item.needsOrders),
+  })).filter((group) => group.items.length > 0);
+}
 
 export function Shell({
   session,
@@ -56,12 +74,19 @@ export function Shell({
     staleTime: 60_000,
   });
 
+  // `!== false` e não `=== true`: enquanto as configurações carregam o plano é
+  // desconhecido, e assumir o completo evita o menu encolher depois.
+  const allowsOrders = settings?.plan.allowsOrders !== false;
+  const nav = navFor(allowsOrders);
+
   // Contador de pedidos ativos no menu lateral: em horário de pico é o número
-  // que o operador mais precisa ver sem trocar de tela.
+  // que o operador mais precisa ver sem trocar de tela. No plano
+  // somente-cardápio a rota responde 403 — não vale pedir a cada 20s.
   const { data: activeOrders } = useQuery({
     queryKey: ['orders', 'confirmed'],
     queryFn: () => apiFetch<{ total: number }>('/admin/orders?status=confirmed'),
     refetchInterval: 20_000,
+    enabled: settings?.plan.allowsOrders === true,
   });
 
   const storefrontUrl = settings?.store.storefrontUrl;
@@ -98,7 +123,7 @@ export function Shell({
         </div>
 
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
-          {NAV.map((group) => (
+          {nav.map((group) => (
             <div key={group.section} className="mb-4">
               <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
                 {group.section}

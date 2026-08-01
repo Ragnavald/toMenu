@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { loadSession, saveSession, type Session } from '@/lib/api';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { apiFetch, loadSession, saveSession, type Session } from '@/lib/api';
+import type { Settings } from '@/lib/types';
 import { LoginPage } from '@/pages/login';
 import { Shell } from '@/components/shell';
 import { OrdersPage } from '@/pages/orders';
@@ -134,23 +135,53 @@ function StoreAdminApp() {
             path="*"
             element={
               <Shell session={session} onLogout={() => setSession(null)}>
-                <Routes>
-                  <Route path="/pedidos" element={<OrdersPage />} />
-                  <Route path="/financeiro" element={<FinancePage />} />
-                  <Route path="/cardapio" element={<MenuPage />} />
-                  <Route path="/categorias" element={<CategoriesPage />} />
-                  <Route path="/loja" element={<StorePage />} />
-                  <Route path="/entrega" element={<DeliveryPage />} />
-                  <Route path="/horarios" element={<HoursPage />} />
-                  <Route path="/aparencia" element={<AppearancePage />} />
-                  <Route path="*" element={<Navigate to="/pedidos" replace />} />
-                </Routes>
+                <StoreRoutes />
               </Shell>
             }
           />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
+  );
+}
+
+/**
+ * Rotas do painel, recortadas pelo plano.
+ *
+ * As telas de pedido, financeiro e entrega não são montadas no plano
+ * somente-cardápio: as rotas por trás delas respondem 403, e renderizar uma
+ * tela que só sabe mostrar erro é pior do que não ter a rota. O destino padrão
+ * acompanha — sem pedidos, a casa do lojista é o cardápio.
+ *
+ * A query é a mesma do Shell (chave `settings`): o React Query devolve o cache,
+ * sem segunda requisição.
+ */
+function StoreRoutes() {
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => apiFetch<Settings>('/admin/settings'),
+    staleTime: 60_000,
+  });
+
+  const allowsOrders = settings?.plan.allowsOrders !== false;
+  const home = allowsOrders ? '/pedidos' : '/cardapio';
+
+  return (
+    <Routes>
+      {allowsOrders && (
+        <>
+          <Route path="/pedidos" element={<OrdersPage />} />
+          <Route path="/financeiro" element={<FinancePage />} />
+          <Route path="/entrega" element={<DeliveryPage />} />
+        </>
+      )}
+      <Route path="/cardapio" element={<MenuPage />} />
+      <Route path="/categorias" element={<CategoriesPage />} />
+      <Route path="/loja" element={<StorePage />} />
+      <Route path="/horarios" element={<HoursPage />} />
+      <Route path="/aparencia" element={<AppearancePage />} />
+      <Route path="*" element={<Navigate to={home} replace />} />
+    </Routes>
   );
 }
 

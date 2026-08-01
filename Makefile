@@ -1,4 +1,5 @@
-.PHONY: up down dev build test fresh api-shell logs
+.PHONY: up down dev build test fresh api-shell logs \
+        deploy deploy-admin deploy-migrate platform-admin prod-logs prod-ps
 
 COMPOSE = docker compose
 API = $(COMPOSE) run --rm api
@@ -6,6 +7,13 @@ API = $(COMPOSE) run --rm api
 # conecta com o papel restrito (sem BYPASSRLS), que é o que faz o RLS valer.
 API_ADMIN = $(COMPOSE) run --rm -e DB_USERNAME=tomenu -e DB_PASSWORD=secret api
 API_TEST = $(COMPOSE) run --rm -e DB_DATABASE=tomenu_test -e DB_USERNAME=tomenu_app api
+
+# --- Produção --------------------------------------------------------------
+# Os alvos `deploy-*` rodam NO DROPLET, a partir de /opt/tomenu. Não funcionam
+# na máquina de desenvolvimento: dependem do .env.prod e dos certificados que
+# só existem no servidor.
+PROD = $(COMPOSE) -f docker-compose.prod.yml --env-file .env.prod
+PROD_API = $(PROD) run --rm api
 
 up:
 	$(COMPOSE) up -d postgres redis
@@ -42,3 +50,62 @@ logs:
 
 down:
 	$(COMPOSE) down
+
+# --- Produção (rodar no droplet, em /opt/tomenu) ----------------------------
+
+# Deploy completo. A ordem dos passos não é intercambiável:
+#
+#   1. migrate ANTES do build — o código novo consulta colunas e tabelas que a
+#      migration cria. Subir primeiro abriria uma janela de 500 em toda
+#      requisição que tocasse o schema novo.
+#   2. restart do nginx DEPOIS do up — `up -d` só recria o container quando a
+#      imagem ou a definição do serviço muda, e editar o default.conf montado
+#      por volume não é nenhum dos dois. Sem o restart, um server block novo
+#      simplesmente não existe (o host cai no wildcard e serve outra coisa).
+#   3. purge por último — limpa do edge qualquer resposta ruim guardada na
+#      janela entre o container novo subir e o nginx reconhecê-lo.
+#
+# `git pull` fica de fora de propósito: o deploy não deve decidir sozinho qual
+# commit vai para produção.
+deploy: deploy-migrate
+	$(PROD) up -d --build
+	$(PROD) restart nginx
+	@# O purge é instalado à mão no provisionamento (DEPLOY.md §12), então pode
+	@# não existir. Cache sujo é degradação passageira; abortar aqui deixaria o
+	@# deploy "falhado" depois de já ter subido tudo com sucesso — pior leitura.
+	@if [ -x /usr/local/bin/tomenu-purge ]; then \
+		/usr/local/bin/tomenu-purge; \
+	else \
+		echo "aviso: tomenu-purge não encontrado; purgue o cache do Cloudflare à mão."; \
+	fi
+	@echo "Deploy concluído."
+
+# Migrations isoladas, para quando o deploy já rodou e faltou só o schema.
+deploy-migrate:
+	$(PROD_API) php artisan migrate --force
+
+# Republica só os painéis (lojista e plataforma), sem tocar em API nem
+# storefront. É o caminho para uma mudança que só existe no bundle do Vite.
+#
+# O admin-build roda uma vez e sai com Exited (0) — é o esperado, não é falha.
+# O restart do nginx é o que faz ele enxergar o dist novo no volume.
+deploy-admin:
+	$(PROD) up -d --build admin-build
+	$(PROD) restart nginx
+	@echo "Painéis republicados em app. e admin.{domínio}."
+
+# Cria (ou atualiza a senha de) uma conta de staff da plataforma.
+#
+#   make platform-admin EMAIL=voce@to-menu.com NAME="Seu Nome"
+#
+# A senha é pedida sem eco. O guard existe porque sem EMAIL o artisan abriria
+# um prompt interativo confuso em vez de dizer o que falta.
+platform-admin:
+	@test -n "$(EMAIL)" || { echo "Uso: make platform-admin EMAIL=voce@to-menu.com [NAME=\"Seu Nome\"]"; exit 1; }
+	$(PROD_API) php artisan platform:admin "$(EMAIL)" --name="$(NAME)"
+
+prod-ps:
+	$(PROD) ps
+
+prod-logs:
+	$(PROD) logs -f --tail=100 api nginx

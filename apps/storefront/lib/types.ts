@@ -47,7 +47,19 @@ export type TenantInfo = {
   slug: string;
   logoUrl: string | null;
   coverUrl: string | null;
+  /**
+   * A loja recebe pedidos pelo site?
+   *
+   * `false` no plano somente-cardápio: a página vira vitrine — sem carrinho,
+   * sem checkout, sem acompanhamento de pedido. A API recusa o POST de
+   * qualquer forma, então isto é o que evita oferecer o que não funciona.
+   */
+  acceptsOrders: boolean;
   acceptsOnlinePayment: boolean;
+  description: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  address: string | null;
   paymentMethods: string[];
   deliveryConfig: {
     fee_cents?: number;

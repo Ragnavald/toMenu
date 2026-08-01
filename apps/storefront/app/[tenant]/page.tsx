@@ -35,8 +35,16 @@ export default async function StorePage({ params }: Props) {
       {/* Header e cardápio são Server Components: o HTML já chega pronto,
           indexável e com LCP baixo. Só carrinho e modal são client. */}
       <StoreHeader tenant={menu.tenant} />
-      <MenuBrowser categories={menu.categories} layout={menu.theme.layout} />
-      <CartBar tenant={menu.tenant} tenantSlug={tenant} />
+      <MenuBrowser
+        categories={menu.categories}
+        layout={menu.theme.layout}
+        acceptsOrders={menu.tenant.acceptsOrders}
+      />
+
+      {/* Plano somente-cardápio: a barra do carrinho não existe. */}
+      {menu.tenant.acceptsOrders && (
+        <CartBar tenant={menu.tenant} tenantSlug={tenant} />
+      )}
     </>
   );
 }

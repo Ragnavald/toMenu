@@ -13,6 +13,10 @@ packages:
   - ca-certificates
   - curl
   - git
+  # Os alvos `make deploy*` do Makefile são o caminho documentado de deploy.
+  # A imagem Ubuntu Server não traz make por padrão — sem esta linha, o
+  # DEPLOY.md manda rodar um comando que não existe na máquina.
+  - make
   - ufw
   - fail2ban
   - postgresql-client-16

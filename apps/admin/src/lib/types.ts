@@ -125,6 +125,23 @@ export type DaySchedule = {
 
 export type BusinessHours = Record<string, DaySchedule>;
 
+/**
+ * Capacidades contratadas.
+ *
+ * O painel monta navegação, wizard e telas a partir daqui, e nunca a partir do
+ * slug do plano: um plano novo entra pelas mesmas flags, sem varrer o código
+ * atrás de comparações de string.
+ */
+export type PlanInfo = {
+  slug: string | null;
+  name: string | null;
+  priceCents: number | null;
+  maxProducts: number | null;
+  allowsOrders: boolean;
+  allowsDelivery: boolean;
+  allowsOnlinePayment: boolean;
+};
+
 export type Settings = {
   store: {
     name: string;
@@ -136,6 +153,7 @@ export type Settings = {
     acceptsOnlinePayment: boolean;
     trialEndsAt: string | null;
   };
+  plan: PlanInfo;
   profile: {
     segment: string | null;
     phone: string | null;

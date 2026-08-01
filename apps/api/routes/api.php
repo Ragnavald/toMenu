@@ -61,11 +61,14 @@ Route::post('auth/logout', [LoginController::class, 'logout'])
 Route::middleware(['identify.tenant'])->group(function () {
     Route::get('menu', MenuController::class)->middleware('throttle:240,1');
 
+    // `plan.orders` recusa a loja no plano somente-cardápio. A UI já não
+    // oferece o carrinho ali, mas a rota é pública e adivinhável — esconder
+    // não é impedir.
     Route::post('orders', [OrderController::class, 'store'])
-        ->middleware('throttle:20,1'); // Limite mais baixo: cria registro e cobra.
+        ->middleware(['plan.orders', 'throttle:20,1']); // Limite mais baixo: cria registro e cobra.
 
     Route::get('orders/{order}', [OrderController::class, 'show'])
-        ->middleware('throttle:60,1');
+        ->middleware(['plan.orders', 'throttle:60,1']);
 });
 
 /*
@@ -157,25 +160,31 @@ Route::prefix('admin')
         Route::apiResource('categories', CategoryAdminController::class)
             ->only(['index', 'store', 'update', 'destroy']);
 
-        Route::get('orders', [OrderAdminController::class, 'index']);
-        Route::patch('orders/{order}/status', [OrderAdminController::class, 'updateStatus']);
+        // Operação e dinheiro só existem onde há pedido. No plano
+        // somente-cardápio estas telas não aparecem no painel, e o
+        // `plan.orders` garante que também não respondam a chamada direta.
+        Route::middleware('plan.orders')->group(function () {
+            Route::get('orders', [OrderAdminController::class, 'index']);
+            Route::patch('orders/{order}/status', [OrderAdminController::class, 'updateStatus']);
 
-        // Financeiro. As rotas de exportação vêm antes de {report} para não
-        // serem capturadas pelo route model binding.
-        Route::get('finance/overview', [FinanceAdminController::class, 'overview']);
-        Route::get('finance/orders', [FinanceAdminController::class, 'orders']);
-        Route::get('finance/exports', [FinanceAdminController::class, 'exports']);
-        Route::post('finance/exports', [FinanceAdminController::class, 'requestExport'])
-            ->middleware('throttle:20,1'); // Cada chamada enfileira trabalho pesado.
-        Route::get('finance/exports/{report}', [FinanceAdminController::class, 'showExport']);
-        Route::get('finance/exports/{report}/download', [FinanceAdminController::class, 'download']);
+            // Financeiro. As rotas de exportação vêm antes de {report} para não
+            // serem capturadas pelo route model binding.
+            Route::get('finance/overview', [FinanceAdminController::class, 'overview']);
+            Route::get('finance/orders', [FinanceAdminController::class, 'orders']);
+            Route::get('finance/exports', [FinanceAdminController::class, 'exports']);
+            Route::post('finance/exports', [FinanceAdminController::class, 'requestExport'])
+                ->middleware('throttle:20,1'); // Cada chamada enfileira trabalho pesado.
+            Route::get('finance/exports/{report}', [FinanceAdminController::class, 'showExport']);
+            Route::get('finance/exports/{report}/download', [FinanceAdminController::class, 'download']);
+
+            Route::put('settings/delivery', [SettingsController::class, 'updateDelivery']);
+            Route::put('settings/payments', [SettingsController::class, 'updatePayments']);
+        });
 
         Route::get('settings', [SettingsController::class, 'show']);
         Route::put('settings/profile', [SettingsController::class, 'updateProfile']);
         Route::post('settings/logo', [SettingsController::class, 'uploadLogo']);
-        Route::put('settings/delivery', [SettingsController::class, 'updateDelivery']);
         Route::put('settings/hours', [SettingsController::class, 'updateHours']);
-        Route::put('settings/payments', [SettingsController::class, 'updatePayments']);
         Route::put('settings/theme', [SettingsController::class, 'updateTheme']);
         Route::put('settings/onboarding', [SettingsController::class, 'updateOnboarding']);
 

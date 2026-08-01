@@ -15,9 +15,16 @@ import { useCart } from './cart-provider';
 export function ProductSheet({
   product,
   onClose,
+  acceptsOrders = true,
 }: {
   product: Product;
   onClose: () => void;
+  /**
+   * Vitrine (false): sem rodapé de quantidade e "Adicionar". Os grupos de
+   * opções continuam visíveis — eles explicam o que o prato tem e quanto cada
+   * adicional custa, e isso é informação de cardápio, não de pedido.
+   */
+  acceptsOrders?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const { add } = useCart();
@@ -182,6 +189,16 @@ export function ProductSheet({
           </div>
         </div>
 
+        {!acceptsOrders && (
+          <div className="flex items-baseline justify-between gap-3 border-t border-[var(--hairline)] bg-[rgb(var(--surface))] p-4">
+            <span className="text-sm text-muted">Preço</span>
+            <span className="text-lg font-semibold tabular-nums">
+              {formatMoney(product.promoPriceCents ?? product.priceCents)}
+            </span>
+          </div>
+        )}
+
+        {acceptsOrders && (
         <div className="flex items-center gap-3 border-t border-[var(--hairline)] bg-[rgb(var(--surface))] p-4">
           <div
             className="flex items-center gap-1 border"
@@ -228,6 +245,7 @@ export function ProductSheet({
             </span>
           </button>
         </div>
+        )}
       </div>
     </dialog>
   );

@@ -16,9 +16,12 @@ import { ProductSheet } from './product-sheet';
 export function MenuBrowser({
   categories,
   layout = 'classic',
+  acceptsOrders = true,
 }: {
   categories: Category[];
   layout?: string;
+  /** Vitrine (false): o detalhe do produto abre sem controles de carrinho. */
+  acceptsOrders?: boolean;
 }) {
   const [activeId, setActiveId] = useState<number | null>(
     categories[0]?.id ?? null,
@@ -173,7 +176,9 @@ export function MenuBrowser({
         </nav>
       )}
 
-      <main className="mx-auto max-w-3xl px-4 pb-40">
+      {/* pb-40 abre espaço para a barra do carrinho; sem ela, o vão vira
+          rodapé vazio no fim do cardápio. */}
+      <main className={`mx-auto max-w-3xl px-4 ${acceptsOrders ? 'pb-40' : 'pb-16'}`}>
         {filteredCategories.length === 0 ? (
           <div className="py-16 text-center">
             <p className="text-base font-semibold">Nenhum produto encontrado</p>
@@ -229,7 +234,11 @@ export function MenuBrowser({
       </main>
 
       {selected && (
-        <ProductSheet product={selected} onClose={() => setSelected(null)} />
+        <ProductSheet
+          product={selected}
+          acceptsOrders={acceptsOrders}
+          onClose={() => setSelected(null)}
+        />
       )}
     </>
   );

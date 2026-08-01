@@ -7,6 +7,7 @@ use App\Models\Tenant;
 use App\Models\TenantSettings;
 use App\Models\User;
 use App\Tenancy\TenantContext;
+use Database\Seeders\PlanSeeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -30,15 +31,7 @@ class TenantRegistrar
     public function register(array $data): array
     {
         return DB::transaction(function () use ($data) {
-            $plan = Plan::firstOrCreate(
-                ['slug' => 'pro'],
-                [
-                    'name' => 'Pro',
-                    'price_cents' => 9900,
-                    'max_products' => 500,
-                    'allows_online_payment' => true,
-                ]
-            );
+            $plan = $this->resolvePlan($data['plan'] ?? Plan::PRO);
 
             $tenant = Tenant::create([
                 'name' => $data['store_name'],
@@ -81,6 +74,26 @@ class TenantRegistrar
                 'user' => $user,
             ];
         });
+    }
+
+    /**
+     * Plano escolhido no cadastro, garantido em banco.
+     *
+     * O `firstOrCreate` cobre o ambiente onde o seed nunca rodou — sem ele o
+     * primeiro cadastro numa base recém-migrada morreria por falta da linha.
+     * Slug desconhecido cai no Pro em vez de estourar: o controller já valida
+     * a entrada, então chegar aqui com outra coisa é bug nosso, e degradar
+     * para o plano completo erra a favor do lojista.
+     */
+    private function resolvePlan(string $slug): Plan
+    {
+        $definitions = PlanSeeder::definitions();
+
+        if (! isset($definitions[$slug])) {
+            $slug = Plan::PRO;
+        }
+
+        return Plan::firstOrCreate(['slug' => $slug], $definitions[$slug]);
     }
 
     /** Slug único, previsível e livre de colisão com rotas da plataforma. */

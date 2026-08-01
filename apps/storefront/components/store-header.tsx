@@ -63,11 +63,43 @@ export function StoreHeader({ tenant }: { tenant: TenantInfo }) {
             </div>
           </div>
 
-          <div className="pb-1">
-            <OrderTrackingButton tenantSlug={tenant.slug} />
-          </div>
+          {/* Vitrine não tem pedido para acompanhar. */}
+          {tenant.acceptsOrders && (
+            <div className="pb-1">
+              <OrderTrackingButton tenantSlug={tenant.slug} />
+            </div>
+          )}
         </div>
 
+        {/* No plano somente-cardápio o cabeçalho troca as condições de entrega
+            — que não existem ali — pelo contato e endereço da loja, que é o que
+            o visitante precisa para chegar até ela ou ligar. */}
+        {!tenant.acceptsOrders ? (
+          <dl className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-medium">
+            {tenant.phone ? (
+              <div className="flex items-center gap-2">
+                <span
+                  aria-hidden
+                  className="size-1.5 rounded-full"
+                  style={{ background: 'rgb(var(--brand))' }}
+                />
+                <dt className="sr-only">Telefone</dt>
+                <dd>
+                  <a href={`tel:${tenant.phone.replace(/\D/g, '')}`} className="text-muted">
+                    {tenant.phone}
+                  </a>
+                </dd>
+              </div>
+            ) : null}
+
+            {tenant.address ? (
+              <div>
+                <dt className="sr-only">Endereço</dt>
+                <dd className="text-muted">{tenant.address}</dd>
+              </div>
+            ) : null}
+          </dl>
+        ) : (
         <dl className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-medium">
           {config.eta_minutes ? (
             <div className="flex items-center gap-2">
@@ -101,6 +133,7 @@ export function StoreHeader({ tenant }: { tenant: TenantInfo }) {
             </div>
           ) : null}
         </dl>
+        )}
       </div>
     </header>
   );

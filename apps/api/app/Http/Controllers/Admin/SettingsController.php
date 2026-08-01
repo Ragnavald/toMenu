@@ -23,6 +23,7 @@ class SettingsController extends Controller
     {
         $tenant = $context->getOrFail();
         $settings = $tenant->settings;
+        $plan = $tenant->plan;
 
         return response()->json([
             'store' => [
@@ -34,6 +35,17 @@ class SettingsController extends Controller
                 'onboardingCompleted' => $tenant->onboarding_completed_at !== null,
                 'acceptsOnlinePayment' => $tenant->acceptsOnlinePayment(),
                 'trialEndsAt' => $tenant->trial_ends_at?->toIso8601String(),
+            ],
+            // O painel monta a navegação a partir daqui: sem pedidos, as telas
+            // de operação, financeiro, entrega e pagamento não são renderizadas.
+            'plan' => [
+                'slug' => $plan?->slug,
+                'name' => $plan?->name,
+                'priceCents' => $plan?->price_cents,
+                'maxProducts' => $plan?->max_products,
+                'allowsOrders' => $tenant->allowsOrders(),
+                'allowsDelivery' => $tenant->allowsDelivery(),
+                'allowsOnlinePayment' => (bool) ($plan?->allows_online_payment ?? true),
             ],
             'profile' => [
                 'segment' => $settings?->segment,
@@ -223,6 +235,9 @@ class SettingsController extends Controller
     {
         $tenant = $context->getOrFail();
 
+        // O wizard tem 5 passos no Pro e 3 no plano somente-cardápio, onde
+        // entrega e pagamento não existem. O `max` cobre o maior dos dois; um
+        // "concluir" chegando com step 3 é legítimo e passa.
         $data = $request->validate([
             'step' => ['required', 'integer', 'min:1', 'max:5'],
             'complete' => ['boolean'],

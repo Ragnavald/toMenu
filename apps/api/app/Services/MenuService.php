@@ -104,6 +104,9 @@ class MenuService
                 'whatsapp' => $settings?->whatsapp,
                 'address' => $settings?->address,
                 'acceptsOnlinePayment' => $tenant->acceptsOnlinePayment(),
+                // Plano somente-cardápio: a loja é uma vitrine. O storefront
+                // não monta carrinho nem checkout, e a API recusa o POST.
+                'acceptsOrders' => $tenant->allowsOrders(),
                 'paymentMethods' => $settings?->payment_methods ?? ['cash'],
                 'deliveryConfig' => $settings?->delivery_config ?? [],
                 'businessHours' => $settings?->business_hours ?? [],

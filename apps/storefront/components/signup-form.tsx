@@ -13,6 +13,37 @@ const ADMIN_URL = process.env.NEXT_PUBLIC_ADMIN_URL ?? 'http://localhost:5173';
 
 type SlugState = 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
 
+type PlanSlug = 'cardapio' | 'pro';
+
+/**
+ * Os planos como o formulário precisa deles: rótulo, preço e a única frase que
+ * separa um do outro. A lista completa de capacidades fica na seção de planos;
+ * repeti-la aqui só afastaria o botão de enviar.
+ */
+const PLAN_CHOICES: { slug: PlanSlug; name: string; price: string; note: string }[] = [
+  {
+    slug: 'cardapio',
+    name: 'Cardápio digital',
+    price: 'R$ 29/mês',
+    note: 'Mostra o cardápio. Sem pedidos pelo site.',
+  },
+  {
+    slug: 'pro',
+    name: 'Pro',
+    price: 'R$ 89/mês',
+    note: 'Cardápio + pedidos, entrega e pagamento.',
+  },
+];
+
+/** Plano vindo do link dos cards (`/?plano=cardapio`); Pro se não vier nada. */
+function initialPlan(): PlanSlug {
+  if (typeof window === 'undefined') return 'pro';
+
+  const value = new URLSearchParams(window.location.search).get('plano');
+
+  return value === 'cardapio' ? 'cardapio' : 'pro';
+}
+
 /** Espelha a normalização do backend para que a prévia não minta ao usuário. */
 function slugify(value: string): string {
   return value
@@ -35,6 +66,10 @@ export function SignupForm() {
   const [confirmation, setConfirmation] = useState('');
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [submitting, setSubmitting] = useState(false);
+  // 'pro' na primeira renderização e ajustado no efeito abaixo: ler a query
+  // string no estado inicial divergiria do HTML gerado no servidor, e o React
+  // descartaria a hidratação da árvore inteira.
+  const [plan, setPlan] = useState<PlanSlug>('pro');
   const [turnstileToken, setTurnstileToken] = useState('');
   const turnstileRef = useRef<TurnstileHandle | null>(null);
 
@@ -46,6 +81,11 @@ export function SignupForm() {
     () => `${effectiveSlug || 'sualoja'}.${ROOT_DOMAIN}`,
     [effectiveSlug],
   );
+
+  // Aplica o plano escolhido no card que trouxe o visitante até aqui.
+  useEffect(() => {
+    setPlan(initialPlan());
+  }, []);
 
   useEffect(() => {
     if (effectiveSlug.length < 3) {
@@ -101,6 +141,7 @@ export function SignupForm() {
           email,
           password,
           password_confirmation: confirmation,
+          plan,
           'cf-turnstile-response': turnstileToken,
         }),
       });
@@ -141,6 +182,60 @@ export function SignupForm() {
 
   return (
     <form onSubmit={handleSubmit} className="grid gap-3.5">
+      <fieldset className="grid gap-1.5">
+        <legend className="mb-1.5 text-xs font-medium text-muted">
+          Seu plano
+        </legend>
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          {PLAN_CHOICES.map((choice) => {
+            const isSelected = plan === choice.slug;
+
+            return (
+              <label
+                key={choice.slug}
+                className="cursor-pointer border p-3 transition-colors"
+                style={{
+                  borderRadius: 'calc(var(--radius) * 0.55)',
+                  borderColor: isSelected
+                    ? 'rgb(var(--brand))'
+                    : 'var(--hairline)',
+                  background: isSelected
+                    ? 'rgb(var(--brand-soft) / 0.45)'
+                    : 'transparent',
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="plano"
+                    value={choice.slug}
+                    checked={isSelected}
+                    onChange={() => setPlan(choice.slug)}
+                    className="size-3.5 shrink-0 accent-[rgb(var(--brand))]"
+                  />
+                  <span className="text-sm font-semibold">{choice.name}</span>
+                </span>
+
+                <span className="mt-1 block text-sm font-medium tabular-nums">
+                  {choice.price}
+                </span>
+                <span className="mt-0.5 block text-xs leading-relaxed text-muted">
+                  {choice.note}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+
+        <p className="text-xs text-subtle">
+          Os 14 dias grátis valem nos dois. Trocar de plano depois não apaga
+          nada do que você já cadastrou.
+        </p>
+      </fieldset>
+
+      <div className="border-t border-[var(--hairline)] pt-3.5" />
+
       <Field label="Nome do restaurante" error={errors.store_name?.[0]}>
         <input
           required

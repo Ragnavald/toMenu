@@ -46,7 +46,10 @@ class StoreManagementController extends Controller
         ]);
 
         $query = Tenant::withTrashed()
-            ->with('plan:id,name,slug')
+            // As colunas de capacidade entram no select porque os accessors do
+            // Tenant leem `allows_orders`; ausente, o atributo vem null e uma
+            // loja Pro passaria por somente-cardápio.
+            ->with('plan:id,name,slug,allows_orders,allows_delivery,allows_online_payment')
             /*
              * Subqueries em vez de withCount: as relações passam pelo model, e
              * `Order`/`Product` usam BelongsToTenant. Fora de contexto o escopo
@@ -326,6 +329,10 @@ class StoreManagementController extends Controller
             // existe só para a UI não precisar cruzar dois campos.
             'status' => $tenant->trashed() ? 'deleted' : $tenant->status,
             'plan' => $tenant->plan?->name,
+            'planSlug' => $tenant->plan?->slug,
+            // Uma loja vitrine nunca terá pedidos; sem esta marca, o staff leria
+            // "0 pedidos" como problema em vez de característica do plano.
+            'menuOnly' => $tenant->isMenuOnly(),
             'storefrontUrl' => $tenant->storefrontUrl(),
             'ordersCount' => (int) ($tenant->orders_count ?? 0),
             'productsCount' => (int) ($tenant->products_count ?? 0),

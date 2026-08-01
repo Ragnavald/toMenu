@@ -65,9 +65,39 @@ class Tenant extends Model
         return $this->status === 'suspended';
     }
 
+    /**
+     * A loja recebe pedidos pelo site?
+     *
+     * Capacidade do plano. O `?? true` cobre o tenant cujo plano não foi
+     * carregado — nenhuma loja deve perder a operação por um eager load
+     * esquecido; o default erra a favor de quem paga o plano completo.
+     */
+    public function allowsOrders(): bool
+    {
+        return $this->plan?->allows_orders ?? true;
+    }
+
+    /** A loja configura entrega própria? Sem pedidos, entrega não existe. */
+    public function allowsDelivery(): bool
+    {
+        return $this->plan?->allows_delivery ?? true;
+    }
+
+    /** Só cardápio: vitrine publicada, sem carrinho, checkout ou operação. */
+    public function isMenuOnly(): bool
+    {
+        return ! $this->allowsOrders();
+    }
+
+    /**
+     * Pagamento online exige duas coisas independentes: o plano permitir e o
+     * onboarding do Stripe Connect ter concluído. Sem a primeira, o checkout
+     * nem existe; sem a segunda, ele existiria e falharia na cobrança.
+     */
     public function acceptsOnlinePayment(): bool
     {
-        return $this->stripe_charges_enabled
+        return ($this->plan?->allows_online_payment ?? true)
+            && $this->stripe_charges_enabled
             && $this->stripe_account_id !== null;
     }
 

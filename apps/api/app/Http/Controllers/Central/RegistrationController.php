@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Central;
 
 use App\Http\Controllers\Controller;
+use App\Models\Plan;
 use App\Services\TenantRegistrar;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -46,6 +47,10 @@ class RegistrationController extends Controller
             'owner_name' => ['required', 'string', 'max:120'],
             'email' => ['required', 'email', 'max:180'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
+            // Ausente = Pro, o plano que existia quando o cadastro só tinha uma
+            // opção. Validado contra a lista de contratáveis e não contra a
+            // tabela: um plano interno não deve virar contratável por existir.
+            'plan' => ['nullable', Rule::in(Plan::PUBLIC_SLUGS)],
         ], [
             'slug.regex' => 'Use apenas letras minúsculas, números e hífens.',
             'slug.unique' => 'Este endereço já está em uso.',
@@ -69,6 +74,7 @@ class RegistrationController extends Controller
                 'slug' => $tenant->slug,
                 'onboardingStep' => $tenant->onboarding_step,
                 'storefrontUrl' => $this->storefrontUrl($tenant->slug),
+                'plan' => $tenant->plan?->slug,
             ],
         ], 201);
     }
