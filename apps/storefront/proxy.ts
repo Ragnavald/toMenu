@@ -39,10 +39,15 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // As rotas próprias do storefront (/api/revalidate) não pertencem a loja
-  // nenhuma. Sem esta saída, um POST para loja.to-menu.com/api/revalidate
-  // viraria /loja/api/revalidate e responderia 404.
-  if (pathname.startsWith('/api/')) {
+  // A rota própria do storefront não pertence a loja nenhuma. Sem esta saída,
+  // um POST para loja.to-menu.com/api/revalidate viraria
+  // /loja/api/revalidate e responderia 404.
+  //
+  // A exceção é só para este caminho, e não para todo /api/: as demais rotas
+  // sob /api/ são do Laravel (/api/{slug}/menu) e precisam da reescrita para
+  // que o nginx as encaminhe à API. Excluir o prefixo inteiro fazia o Next
+  // responder 404 em HTML para o cardápio de todas as lojas.
+  if (pathname === '/api/revalidate') {
     return NextResponse.next();
   }
 
