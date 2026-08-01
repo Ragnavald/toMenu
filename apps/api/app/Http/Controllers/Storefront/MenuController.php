@@ -21,12 +21,20 @@ class MenuController extends Controller
         $response = response()->json($payload);
 
         // Camada de cache HTTP — o item de maior impacto de toda a stack.
-        // Com s-maxage=60 na CDN, uma loja com 500 acessos/min gera ~1 request
-        // por minuto até o Laravel. stale-while-revalidate mantém a resposta
-        // instantânea durante a revalidação em background.
+        // Uma loja com 500 acessos/min continua gerando pouquíssimos requests
+        // até o Laravel, e stale-while-revalidate mantém a resposta instantânea
+        // durante a revalidação em background.
+        //
+        // O TTL é curto e serve de rede de proteção: quem invalida de verdade
+        // é o PurgeMenuCache, no instante da edição. max-age (browser) fica em
+        // 0 porque não há como purgar o cache do visitante — era ele que fazia
+        // o lojista recarregar a própria loja e continuar vendo o cardápio
+        // antigo mesmo depois de a origem já ter atualizado.
+        $ttl = (int) config('tenancy.cache.cdn_ttl', 30);
+
         $response->headers->set(
             'Cache-Control',
-            'public, s-maxage=60, max-age=15, stale-while-revalidate=300'
+            "public, s-maxage={$ttl}, max-age=0, stale-while-revalidate=300"
         );
 
         // ETag permite 304 e economiza banda no mobile, que é a maior parte

@@ -39,6 +39,13 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // As rotas próprias do storefront (/api/revalidate) não pertencem a loja
+  // nenhuma. Sem esta saída, um POST para loja.to-menu.com/api/revalidate
+  // viraria /loja/api/revalidate e responderia 404.
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.next();
+  }
+
   const url = request.nextUrl.clone();
   url.pathname = `/${sub}${pathname}`;
 

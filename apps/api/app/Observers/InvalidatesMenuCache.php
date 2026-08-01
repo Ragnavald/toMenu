@@ -2,6 +2,7 @@
 
 namespace App\Observers;
 
+use App\Jobs\PurgeMenuCache;
 use App\Models\Tenant;
 use Illuminate\Database\Eloquent\Model;
 
@@ -37,5 +38,14 @@ class InvalidatesMenuCache
         Tenant::withoutGlobalScopes()
             ->whereKey($tenantId)
             ->increment('menu_version');
+
+        // O bump acima só resolve o cache do Redis. Next e Cloudflare guardam
+        // suas próprias cópias e precisam ser avisados, senão o lojista salva
+        // e não vê a mudança no site.
+        //
+        // afterCommit é essencial: despachado dentro da transação, o worker
+        // poderia rodar antes do commit, reconstruir o cardápio lendo o estado
+        // antigo e recachear justamente o dado obsoleto que viemos invalidar.
+        PurgeMenuCache::dispatch($tenantId)->afterCommit();
     }
 }

@@ -192,15 +192,21 @@ Tráfego de cardápio é bursty (almoço e jantar) e assimétrico: leituras supe
 escritas em cerca de 100:1.
 
 ```
-Browser  →  CDN (s-maxage=60)  →  ISR do Next  →  Redis  →  Postgres
+Browser  →  CDN (s-maxage=30)  →  ISR do Next  →  Redis  →  Postgres
+                    ▲                  ▲
+                    └── PurgeMenuCache ┘   invalida as duas na edição
 ```
 
 - **Chave versionada** (`menu:{id}:v{n}`): invalidar é trocar a chave, operação
   atômica. `Cache::forget` com escrita concorrente pode repovoar dado obsoleto.
 - **Lock + stale fallback**: quando a chave expira às 12h05 com centenas de
   requests, apenas uma reconstrói; as demais recebem a versão anterior.
-- **`s-maxage=60` + ETag**: uma loja com 500 acessos/min gera ~1 request/min até
-  o Laravel. É o item de maior impacto de toda a stack.
+- **`s-maxage` + ETag**: uma loja com 500 acessos/min gera pouquíssimos requests
+  até o Laravel. É o item de maior impacto de toda a stack.
+- **Invalidação por evento, não por TTL** (`PurgeMenuCache`): salvar no admin
+  expira a tag do cardápio no Next e purga o host no Cloudflare. Sem isso as
+  camadas só expirariam por tempo, e como não estão sincronizadas o atraso
+  somava — uma edição levava até ~2min para chegar ao cliente.
 - **Payload normalizado antes de cachear**: Collections aninhadas sobrevivem ao
   `json_encode` direto, mas voltam do cache como objeto tipado e quebram o
   cliente. `MenuService::toArray()` evita isso.
@@ -267,7 +273,7 @@ rota de autorização responde 200 para qualquer canal sem consultar o callback.
 - **`NEXT_PUBLIC_*` são congeladas no build.** Entram no bundle do navegador
   durante o `docker build`, não são lidas em runtime: alterá-las exige rebuild
   da imagem do storefront, não apenas `restart`.
-- **Cache Rule para o cardápio no Cloudflare.** O `s-maxage=60` de
+- **Cache Rule para o cardápio no Cloudflare.** O `s-maxage` de
   `MenuController` só vale se o edge tratar a resposta como cacheável — e o
   padrão do Cloudflare ignora `application/json`, tratando `/api/*` como
   dinâmico. Sem uma Cache Rule (hostname `*.dominio` + URI `/api/`, "Eligible

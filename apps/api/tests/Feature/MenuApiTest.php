@@ -71,11 +71,17 @@ it('bloqueia loja suspensa', function () {
 });
 
 it('envia headers de cache e ETag', function () {
+    config()->set('tenancy.cache.cdn_ttl', 30);
+
     $response = $this->withHeader('X-Tenant', 'loja-a')->getJson('/api/menu');
 
     $response->assertOk();
 
-    expect($response->headers->get('Cache-Control'))->toContain('s-maxage=60')
+    // max-age=0 é intencional: o cache do browser é a única camada que o purge
+    // não alcança, e era ele que fazia o lojista recarregar a própria loja e
+    // continuar vendo o cardápio antigo depois de a origem já ter atualizado.
+    expect($response->headers->get('Cache-Control'))->toContain('s-maxage=30')
+        ->and($response->headers->get('Cache-Control'))->toContain('max-age=0')
         ->and($response->headers->get('Cache-Control'))->toContain('stale-while-revalidate')
         ->and($response->headers->get('ETag'))->not->toBeNull();
 });

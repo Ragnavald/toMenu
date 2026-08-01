@@ -156,6 +156,10 @@ services:
       # para a internet. O browser continua usando NEXT_PUBLIC_API_URL.
       INTERNAL_API_URL: http://nginx:80
       NEXT_PUBLIC_ROOT_DOMAIN: ${NEXT_PUBLIC_ROOT_DOMAIN}
+      # Segredo compartilhado com a API, que chama /api/revalidate para expirar
+      # o cardápio no instante da edição. Sem ele a rota responde 503 e o
+      # cardápio volta a depender só do TTL.
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
     depends_on:
       nginx:
         condition: service_started

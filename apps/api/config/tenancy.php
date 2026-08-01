@@ -31,5 +31,42 @@ return [
         // Janela em que a versão obsoleta é servida enquanto outro processo
         // reconstrói o cache — evita stampede no pico do almoço.
         'stale_ttl' => env('TENANCY_STALE_TTL', 86400),
+
+        /*
+         * Quanto tempo a CDN pode servir o cardápio sem consultar a origem.
+         *
+         * Curto por ser apenas rede de proteção: a invalidação real acontece
+         * por evento (ver 'purge'), no instante da edição. Antes eram 60s aqui
+         * e 60s de ISR no Next — dois TTLs independentes que se somavam no
+         * pior caso e faziam uma alteração demorar até ~2min para aparecer.
+         */
+        'cdn_ttl' => env('TENANCY_CDN_TTL', 30),
+    ],
+
+    /*
+     * Invalidação sob demanda das camadas de cache que ficam fora do Laravel.
+     *
+     * Sem isto o cardápio só atualiza por expiração de TTL, e a loja edita um
+     * preço sem ver o resultado — o motivo de existir este bloco é derrubar
+     * esse tempo de minutos para segundos.
+     *
+     * Ambos os alvos são opcionais: sem configuração, o purge é ignorado em
+     * silêncio e o sistema volta a depender do TTL, que continua correto.
+     */
+    'purge' => [
+        // URL interna do storefront (ex.: http://storefront:3000). Interna
+        // porque a chamada não precisa sair para a internet e voltar.
+        'storefront_url' => env('STOREFRONT_INTERNAL_URL'),
+        // Segredo compartilhado com REVALIDATE_SECRET do storefront.
+        'revalidate_secret' => env('REVALIDATE_SECRET'),
+
+        // Purge do cache de borda. Sem o token, só o Next é invalidado — e o
+        // visitante ainda espera o cdn_ttl acima.
+        'cloudflare_zone_id' => env('CLOUDFLARE_ZONE_ID'),
+        'cloudflare_api_token' => env('CLOUDFLARE_API_TOKEN'),
+
+        // Timeout curto: isto roda numa fila, mas um alvo inacessível não pode
+        // segurar o worker e atrasar os outros jobs.
+        'timeout' => (int) env('TENANCY_PURGE_TIMEOUT', 5),
     ],
 ];

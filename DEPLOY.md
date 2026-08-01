@@ -714,8 +714,8 @@ Em **Rules → Cache Rules → Create rule**:
 
 - **Cache eligibility**: `Eligible for cache`
 - **Edge TTL**: `Use cache-control header` — a origem já envia
-  `s-maxage=60, stale-while-revalidate=300`; fixar um TTL aqui desalinharia as
-  camadas.
+  `s-maxage=30, stale-while-revalidate=300`; fixar um TTL aqui desalinharia as
+  camadas e, pior, tornaria o purge automático do passo 9.1 menos eficaz.
 - **Browser TTL**: escolha `Respect origin TTL`. **Não deixe em branco** — o
   padrão do Cloudflare é 4 horas, e ele sobrescreve o `max-age=0` que a origem
   envia. O resultado é o navegador do cliente guardando o cardápio por 4h, e o
@@ -736,14 +736,12 @@ o visitante lê do edge de São Paulo.
 
 ### As três camadas
 
-Cacheamento do cardápio acontece em três lugares, todos alinhados em 60s de
-propósito — desalinhá-los faz uma camada servir conteúdo que a outra já
-invalidou:
+Cacheamento do cardápio acontece em três lugares:
 
 | Camada | Onde | Efeito |
 |---|---|---|
-| ISR do Next | `revalidate = 60` em `app/[tenant]/page.tsx` | o servidor não refaz o render |
-| `s-maxage` da API | `MenuController` | o Data Cache do Next não refaz o fetch |
+| ISR do Next | `revalidate` em `app/[tenant]/page.tsx` | o servidor não refaz o render |
+| `s-maxage` | `MenuController` (JSON) e o `map` do nginx (HTML) | o edge e o Data Cache não refazem o fetch |
 | Edge TTL | esta Cache Rule | o visitante não atravessa até NYC |
 
 O nginx sobrescreve o `Cache-Control` da resposta HTML (`map
@@ -752,16 +750,63 @@ Next marca a página como `no-store`: o `proxy.ts` reescreve por request, então
 do ponto de vista dele a rota é dinâmica — mesmo o conteúdo sendo idêntico para
 todo visitante da loja.
 
-**Consequência operacional:** uma loja suspensa ou um preço editado pode
-continuar visível por até 60s no edge. Para mudanças urgentes, use *Purge
-Cache* no painel do Cloudflare.
+**Os TTLs não são mais o que controla a atualização do cardápio.** Eles eram, e
+o efeito era ruim: 60s de ISR e 60s de edge são camadas independentes que se
+somam no pior caso, então o lojista salvava um preço e podia esperar ~2min para
+vê-lo no site — tempo suficiente para concluir que o sistema tinha perdido a
+edição. Hoje quem invalida é o `PurgeMenuCache` (passo 9.1), no instante da
+edição, e os TTLs ficaram curtos apenas como rede de proteção para o caso de um
+purge se perder.
+
+### 9.1 Purge automático do cardápio
+
+Quando algo do cardápio muda, o observer `InvalidatesMenuCache` enfileira o job
+`PurgeMenuCache`, que faz duas chamadas independentes:
+
+1. `POST /api/revalidate` no storefront, pela rede interna, expirando a tag
+   `menu:{slug}` no Data Cache do Next;
+2. `POST .../purge_cache` na API do Cloudflare, purgando o **host** da loja.
+
+O purge é por host, e não `purge_everything`, porque a zona é compartilhada por
+todas as lojas: esvaziá-la inteira a cada edição penalizaria todo mundo.
+
+Para ligar, no `.env.prod`:
+
+```bash
+STOREFRONT_INTERNAL_URL=http://storefront:3000
+REVALIDATE_SECRET=$(openssl rand -hex 32)   # o mesmo valor vai ao storefront
+CLOUDFLARE_ZONE_ID=...                      # Overview da zona, coluna direita
+CLOUDFLARE_API_TOKEN=...                    # permissão: Zone → Cache Purge
+```
+
+O `REVALIDATE_SECRET` precisa ser idêntico nos dois serviços — é o que autentica
+a chamada. Sem ele a rota responde 503; com valor errado, 401. O compose já
+repassa a variável ao storefront.
+
+Tudo é opcional e degrada em silêncio: sem as variáveis do Cloudflare só o Next
+é invalidado, e o visitante ainda espera o `s-maxage`. Sem nenhuma delas, o
+sistema volta ao comportamento antigo, por TTL. Falha de purge vira `warning` no
+log, nunca erro para o lojista que salvou.
+
+**Como conferir que está funcionando** (troque o slug):
+
+```bash
+docker compose -f docker-compose.prod.yml exec api \
+  php artisan tinker --execute="app(\App\Services\MenuCachePurger::class)->purge(
+    \App\Models\Tenant::where('slug','SUA-LOJA')->first());"
+
+docker compose -f docker-compose.prod.yml logs api --tail=20 | grep -i purge
+```
+
+Sem linhas de `warning`, os dois purges passaram. Na prática: edite um preço no
+admin e recarregue a loja — a alteração aparece em poucos segundos.
 
 ### Verificação
 
 ```bash
 # Loja: cacheável
 curl -sI https://SUA-LOJA.to-menu.com/ | grep -i 'cache-control\|cf-cache-status'
-# esperado: public, max-age=0, s-maxage=60, ... e HIT no segundo acesso
+# esperado: public, max-age=0, s-maxage=30, ... e HIT no segundo acesso
 
 # Landing e admin: precisam continuar DYNAMIC
 curl -sI https://to-menu.com/     | grep -i cf-cache-status
@@ -966,8 +1011,9 @@ pelo edge por todo o `s-maxage` — visitantes veriam erro com o site já no ar.
 
 O 404 continua cacheável de propósito: é resposta legítima de loja inexistente,
 e cacheá-la protege a origem de quem enumera slugs. A contrapartida é que uma
-loja recém-criada pode levar até 60s para aparecer; se precisar antes, use
-**Purge Cache** no painel.
+loja recém-criada pode levar até 30s para aparecer; se precisar antes, use
+**Purge Cache** no painel. (O purge automático do passo 9.1 cobre edições de
+cardápio, não o 404 de um subdomínio que ainda não existia.)
 
 Para distinguir cache do edge de problema na origem:
 
@@ -1217,8 +1263,10 @@ use `git stash` antes.
       some no reboot e a origem fica exposta)
 - [ ] Um container alcança a internet:
       `docker run --rm alpine sh -c "apk add -q curl && curl -sI https://registry.npmjs.org"`
-- [ ] Cardápio de uma loja responde 200 com `s-maxage=60`; `cf-cache-status`
+- [ ] Cardápio de uma loja responde 200 com `s-maxage=30`; `cf-cache-status`
       vira `HIT` no segundo acesso (ver passo 9)
+- [ ] Editar um preço no admin reflete no site em segundos — se demorar ~30s,
+      o purge automático não está configurado (ver passo 9.1)
 - [ ] Landing e admin **sem** `s-maxage` — cachear qualquer um dos dois serviria
       conteúdo de um visitante para outro
 - [ ] `app.to-menu.com` serve o admin (`<title>admin</title>`), não a landing

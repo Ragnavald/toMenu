@@ -33,6 +33,17 @@ function serverTenantHeaders(tenantSlug: string): HeadersInit {
 }
 
 /**
+ * Tag de cache do cardápio de uma loja.
+ *
+ * A API chama /api/revalidate com esta tag sempre que algo do cardápio muda,
+ * o que derruba a entrada do Data Cache na hora. É por tenant: invalidar a
+ * loja A não pode custar um re-render da loja B.
+ */
+export function menuCacheTag(tenantSlug: string): string {
+  return `menu:${tenantSlug}`;
+}
+
+/**
  * Busca o cardápio no servidor (RSC).
  *
  * O tenant vai no PATH, não no Host. A rota interna existe exatamente para
@@ -40,10 +51,14 @@ function serverTenantHeaders(tenantSlug: string): HeadersInit {
  * forbidden header — e usaria "nginx", o host da URL interna, fazendo a API
  * devolver 404 para toda loja.
  *
- * `revalidate: 60` alinha o ISR do Next com o `s-maxage=60` que a API envia,
- * de modo que as duas camadas expiram juntas em vez de brigar. A URL contém o
- * slug, então cada loja tem sua própria entrada no Data Cache — sem isso, o
- * cache de uma loja serviria o cardápio de outra.
+ * O TTL é longo de propósito: quem invalida é a API, por tag, no instante da
+ * edição. Antes eram 60s aqui e 60s na CDN, camadas dessincronizadas que
+ * somavam e faziam uma alteração levar até ~2min para aparecer. Com a
+ * invalidação por evento o tempo cai para segundos, e o TTL passa a ser
+ * apenas a rede de proteção para o caso de um webhook se perder.
+ *
+ * A URL contém o slug, então cada loja tem sua própria entrada no Data Cache
+ * — sem isso, o cache de uma loja serviria o cardápio de outra.
  */
 export async function fetchMenu(tenantSlug: string): Promise<Menu | null> {
   const result = await fetchMenuResult(tenantSlug);
@@ -68,7 +83,7 @@ export async function fetchMenuResult(tenantSlug: string): Promise<MenuResult> {
   try {
     const response = await fetch(`${INTERNAL_API_URL}/api/${tenantSlug}/menu`, {
       headers: serverTenantHeaders(tenantSlug),
-      next: { revalidate: 60 },
+      next: { revalidate: 3600, tags: [menuCacheTag(tenantSlug)] },
     });
 
     if (response.status === 403) return { status: 'suspended' };

@@ -8,13 +8,16 @@ import { CartBar } from '@/components/cart-bar';
 /**
  * O cardápio muda com pouca frequência, mas é a página mais acessada: cada
  * visitante do QR code cai aqui. Com `force-dynamic` todo acesso atravessava
- * até a origem em NYC — e o `s-maxage=60` que a API envia era ignorado, porque
+ * até a origem em NYC — e o `s-maxage` que a API envia era ignorado, porque
  * o Next marcava a resposta como não-cacheável antes de chegar ao Cloudflare.
  *
- * 60s alinha as três camadas (ISR do Next, s-maxage da API, Edge TTL do
- * Cloudflare): um preço editado no admin aparece em no máximo um minuto.
+ * O TTL é longo porque a invalidação não depende mais dele: a API chama
+ * /api/revalidate com a tag da loja no instante em que o cardápio muda, e a
+ * mesma requisição purga o Cloudflare. O tempo até a alteração aparecer passa
+ * a ser de segundos em vez do encadeamento de dois TTLs de 60s, que somavam
+ * até ~2min no pior caso. O TTL só sustenta o caso raro do webhook perdido.
  */
-export const revalidate = 60;
+export const revalidate = 3600;
 
 type Props = { params: Promise<{ tenant: string }> };
 

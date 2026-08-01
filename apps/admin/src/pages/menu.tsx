@@ -281,6 +281,15 @@ export function MenuPage() {
             </p>
           )}
 
+          {/* Salvar dispara a invalidação do cardápio no Next e no Cloudflare
+              (PurgeMenuCache), então a alteração aparece em segundos. O aviso
+              continua porque o purge roda numa fila: não é instantâneo, e sem
+              ele o lojista que recarrega a loja no mesmo segundo acha que o
+              sistema perdeu o item. */}
+          <p className="text-xs text-muted">
+            Alterações no cardápio aparecem para os clientes em alguns segundos.
+          </p>
+
           <div className="flex gap-2">
             <button
               type="submit"
