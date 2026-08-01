@@ -64,6 +64,33 @@ class TenantContext
         }
     }
 
+    /**
+     * Executa um callback deliberadamente FORA de qualquer tenant, restaurando
+     * o contexto anterior depois.
+     *
+     * O inverso do runFor. Serve às rotas da plataforma, que operam sobre
+     * lojas das quais o staff não é membro: com um tenant no contexto, o global
+     * scope e as policies de RLS recortariam as consultas ao tenant errado e
+     * devolveriam contagens zeradas em vez de erro — falha silenciosa, que é o
+     * modo pior de errar aqui.
+     *
+     * O `finally` é o que impede um vazamento: sem ele, uma exceção no meio da
+     * purga deixaria a request seguindo sem tenant, e o global scope pararia de
+     * filtrar em tudo que viesse depois.
+     */
+    public function runWithoutTenant(callable $callback): mixed
+    {
+        $previous = $this->tenant;
+
+        $this->forget();
+
+        try {
+            return $callback();
+        } finally {
+            $previous ? $this->set($previous) : $this->forget();
+        }
+    }
+
     public function forget(): void
     {
         $this->tenant = null;

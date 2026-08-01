@@ -8,6 +8,9 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\StoreDeletionController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Central\RegistrationController;
+use App\Http\Controllers\Platform\ImpersonationController;
+use App\Http\Controllers\Platform\PlatformAuthController;
+use App\Http\Controllers\Platform\StoreManagementController;
 use App\Http\Controllers\Storefront\MenuController;
 use App\Http\Controllers\Storefront\OrderController;
 use App\Http\Controllers\Webhooks\StripeWebhookController;
@@ -64,6 +67,51 @@ Route::middleware(['identify.tenant'])->group(function () {
     Route::get('orders/{order}', [OrderController::class, 'show'])
         ->middleware('throttle:60,1');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Plataforma — painel do staff (admin.to-menu.com)
+|--------------------------------------------------------------------------
+|
+| Precisa vir ANTES do grupo `{tenant}` abaixo. Aquele prefixo é um curinga de
+| um segmento: registrado primeiro, `/api/platform/stores` casaria com ele,
+| `platform` seria interpretado como slug de loja e toda rota daqui responderia
+| 404 "Loja não encontrada" — sem nenhuma pista de conflito de rotas.
+|
+| Nenhuma rota daqui passa por identify.tenant, de propósito: o staff opera
+| sobre lojas das quais não é membro, e um tenant no contexto faria o global
+| scope e o RLS recortarem as consultas para o tenant errado.
+|
+| A consequência é que o EnsureUserBelongsToTenant não protege nada aqui —
+| `platform.admin` é a única barreira entre um token Sanctum qualquer e o
+| controle de todas as lojas.
+*/
+Route::post('platform/auth/login', [PlatformAuthController::class, 'login'])
+    ->middleware(['throttle:5,1', 'turnstile']); // Mesma dupla de defesas do login do lojista.
+
+Route::prefix('platform')
+    ->middleware(['auth:sanctum', 'platform.admin'])
+    ->group(function () {
+        Route::post('auth/logout', [PlatformAuthController::class, 'logout']);
+
+        Route::get('stores', [StoreManagementController::class, 'index']);
+        Route::get('stores/{slug}', [StoreManagementController::class, 'show']);
+
+        Route::post('stores/{slug}/suspend', [StoreManagementController::class, 'suspend']);
+        Route::post('stores/{slug}/reactivate', [StoreManagementController::class, 'reactivate']);
+
+        // Emite credencial de acesso ao painel de outra loja: o throttle limita
+        // o estrago de um token de staff vazado.
+        Route::post('stores/{slug}/impersonate', [ImpersonationController::class, 'store'])
+            ->middleware('throttle:20,1');
+        Route::delete('stores/{slug}/impersonate', [ImpersonationController::class, 'destroy']);
+
+        // Exclusão permanente. O controller ainda exige a senha do staff e o
+        // slug digitado; o throttle limita a tentativa de adivinhar a senha.
+        Route::get('stores/{slug}/purge-preview', [StoreManagementController::class, 'purgePreview']);
+        Route::delete('stores/{slug}', [StoreManagementController::class, 'purge'])
+            ->middleware('throttle:5,1');
+    });
 
 /*
 |--------------------------------------------------------------------------

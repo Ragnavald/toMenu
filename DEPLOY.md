@@ -592,6 +592,78 @@ carregado.
 
 ---
 
+## 8.1. Painel da plataforma (`admin.to-menu.com`)
+
+Onde a equipe gerencia as lojas já criadas: acessar como admin, suspender,
+reativar e excluir permanentemente.
+
+É o **mesmo build** do admin — nenhum serviço, imagem ou passo de deploy novo.
+O `App.tsx` escolhe entre o painel do lojista e o da plataforma pelo prefixo
+`admin.` do hostname, e o `docker/nginx/default.conf` tem o server block que faz
+esse host existir. Sem DNS novo: o wildcard `*.to-menu.com` do passo 4 já
+resolve, e o Origin Certificate já cobre.
+
+> `admin` é subdomínio reservado em `IdentifyTenant::RESERVED` e em
+> `TenantRegistrar::RESERVED_SLUGS`, então nenhuma loja pode registrá-lo — o
+> host não colide com um slug legítimo.
+
+### Criar a conta de acesso
+
+Não há cadastro público, e isso é deliberado: a conta administra todas as lojas.
+O caminho é sempre o console do servidor, que exige acesso ao droplet.
+
+```bash
+cd /opt/tomenu
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    run --rm api php artisan platform:admin voce@to-menu.com --name="Seu Nome"
+```
+
+A senha é pedida sem eco (mínimo de 12 caracteres); `--password` existe para
+automação, mas deixa a senha no histórico do shell. Rodar de novo com o mesmo
+e-mail troca a senha.
+
+O e-mail **não pode** ser o de um usuário de loja: uma constraint `CHECK` no
+banco impede que a mesma conta seja lojista e staff da plataforma.
+
+### O que cada ação faz
+
+| Ação | Efeito | Reversível |
+|---|---|---|
+| Acessar como admin | Token de 30 min do dono da loja, aberto em outra aba | expira sozinho |
+| Suspender | Storefront responde 403; nada é apagado | sim, pelo botão Reativar |
+| Excluir permanentemente | `DELETE` no tenant; cascata leva pedidos, produtos, usuários e pagamentos; imagens do R2 e cache também | **não** — só restore de backup |
+
+A exclusão permanente exige a senha do staff **e** o slug digitado, e apaga o
+histórico fiscal de pedidos junto. Quando o histórico precisar ser preservado,
+suspenda em vez de excluir.
+
+### Auditoria
+
+Toda ação vai para `platform_audit_logs`, que sobrevive à purga da loja — é o
+único registro que resta do que existia ali. A tabela é append-only no banco
+(RLS com `FORCE` e sem policy de `UPDATE`/`DELETE`), então nem a aplicação
+reescreve a trilha.
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    run --rm api php artisan tinker --execute='
+        App\Models\PlatformAuditLog::latest()->limit(20)->get(
+            ["created_at","action","actor_email","tenant_slug"]
+        )->each(fn($l) => print("$l->created_at  $l->action  $l->actor_email  $l->tenant_slug\n"));'
+```
+
+### Verificação
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://admin.to-menu.com/           # 200
+curl -s -o /dev/null -w '%{http_code}\n' https://admin.to-menu.com/api/platform/stores
+# 401 — a rota existe e exige autenticação. Um 404 aqui significa que o grupo
+# de rotas foi registrado DEPOIS do prefixo curinga {tenant} em routes/api.php,
+# e "platform" está sendo lido como slug de loja.
+```
+
+---
+
 ## 9. Cache Rule do cardápio
 
 **Sem este passo o storefront fica lento**: o Cloudflare não cacheia HTML por

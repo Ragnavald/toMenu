@@ -24,7 +24,8 @@ make dev       # storefront em :3000 e admin em :5173
 |---|---|
 | Landing da plataforma | http://localhost:3000 |
 | API | http://localhost:8000 |
-| Admin | http://localhost:5173 |
+| Admin da loja | http://localhost:5173 |
+| Painel da plataforma | http://admin.localhost:5173 |
 
 Duas lojas de demonstração são criadas pelo seed, com identidades visuais
 deliberadamente distintas:

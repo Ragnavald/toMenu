@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsurePlatformAdmin;
 use App\Http\Middleware\EnsureUserBelongsToTenant;
 use App\Http\Middleware\IdentifyTenant;
 use App\Http\Middleware\VerifyTurnstile;
@@ -38,6 +39,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'identify.tenant' => IdentifyTenant::class,
             'tenant.member' => EnsureUserBelongsToTenant::class,
+            'platform.admin' => EnsurePlatformAdmin::class,
             'turnstile' => VerifyTurnstile::class,
         ]);
 

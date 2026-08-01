@@ -13,6 +13,7 @@ import { DeliveryPage } from '@/pages/delivery';
 import { HoursPage } from '@/pages/hours';
 import { AppearancePage } from '@/pages/appearance';
 import { OnboardingPage } from '@/pages/onboarding';
+import { PlatformApp } from '@/pages/platform/app';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,11 +26,12 @@ const queryClient = new QueryClient({
 });
 
 /**
- * Recebe a sessão criada no cadastro da landing.
+ * Recebe uma sessão entregue por fora do login.
  *
- * O token chega no fragmento (#) e não na query string de propósito: o
- * fragmento não é enviado ao servidor nem gravado em logs de acesso. É
- * consumido e apagado da barra de endereço imediatamente.
+ * São duas origens hoje: o cadastro na landing e a impersonação pelo painel da
+ * plataforma. As duas passam o token no fragmento (#) e não na query string de
+ * propósito — o fragmento não é enviado ao servidor nem gravado em log de
+ * acesso. É consumido e apagado da barra de endereço imediatamente.
  */
 function consumeHandoff(): Session | null {
   const hash = window.location.hash.slice(1);
@@ -46,6 +48,11 @@ function consumeHandoff(): Session | null {
     tenantSlug: tenant,
     tenantName: params.get('name') ?? tenant,
     userName: params.get('user') ?? '',
+    // Sem o papel, `isOwner()` devolve false e a sessão perde as telas de dono
+    // — na impersonação isso esconderia justamente o que o suporte precisa ver.
+    // Continua opcional: o backend é quem decide, este valor só controla o que
+    // a interface oferece.
+    role: params.get('role') ?? undefined,
   };
 
   saveSession(session);
@@ -55,6 +62,44 @@ function consumeHandoff(): Session | null {
 }
 
 export default function App() {
+  // O painel da plataforma vive no MESMO bundle, servido em admin.{domínio}.
+  // A escolha é feita pelo host e não por rota porque as duas áreas têm
+  // sessões, identidades visuais e superfícies de risco distintas — e porque o
+  // nginx já separa os dois hosts em server blocks diferentes.
+  if (isPlatformHost()) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <PlatformApp />
+        </BrowserRouter>
+      </QueryClientProvider>
+    );
+  }
+
+  return <StoreAdminApp />;
+}
+
+/**
+ * O host atual é o do painel da plataforma?
+ *
+ * `admin` é subdomínio reservado (ver `IdentifyTenant::RESERVED` e
+ * `TenantRegistrar::RESERVED_SLUGS`), então nenhuma loja pode ocupá-lo — a
+ * checagem não colide com um slug legítimo.
+ *
+ * O prefixo cobre desenvolvimento e produção sem configuração: `*.localhost`
+ * resolve nativamente, então `admin.localhost:5173` já cai aqui.
+ * `VITE_PLATFORM_HOST` fica como escape para hospedagens em que o painel não
+ * mora num subdomínio `admin.`.
+ */
+function isPlatformHost(): boolean {
+  const configured = import.meta.env.VITE_PLATFORM_HOST;
+
+  if (configured) return window.location.host === configured;
+
+  return window.location.hostname.startsWith('admin.');
+}
+
+function StoreAdminApp() {
   const [session, setSession] = useState<Session | null>(
     () => consumeHandoff() ?? loadSession(),
   );

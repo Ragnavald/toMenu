@@ -1,5 +1,7 @@
-# Build estático do Admin (Vite + React), servido pelo nginx em
-# app.to-menu.com.
+# Build estático do Admin (Vite + React), servido pelo nginx em dois hosts:
+# app.to-menu.com (painel do lojista) e admin.to-menu.com (painel da
+# plataforma). É o MESMO dist nos dois: o App.tsx escolhe a área pelo prefixo
+# `admin.` do hostname, então não há segundo build a manter.
 #
 # Não há imagem de runtime: o resultado é um punhado de arquivos estáticos que
 # o nginx serve direto. Este Dockerfile existe só para produzir o dist/ dentro
@@ -27,6 +29,11 @@ ENV VITE_API_URL=$VITE_API_URL
 # verificação de robô — o par dela é TURNSTILE_SECRET na API.
 ARG VITE_TURNSTILE_SITE_KEY=""
 ENV VITE_TURNSTILE_SITE_KEY=$VITE_TURNSTILE_SITE_KEY
+
+# VITE_PLATFORM_HOST e VITE_STORE_ADMIN_URL não aparecem aqui de propósito.
+# Em produção os dois painéis são irmãos (`admin.` e `app.` do mesmo domínio),
+# e o App.tsx deriva um do outro pelo hostname. Elas existem para o ambiente
+# local, onde tudo divide localhost:5173 e não há subdomínio a inspecionar.
 
 RUN npm run build
 
