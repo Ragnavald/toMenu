@@ -296,6 +296,12 @@ SESSION_DRIVER=redis
 
 # Alerta de pedido novo no painel. Com `log` (o padrão do Laravel) o evento é
 # escrito no arquivo de log e a cozinha nunca é avisada.
+#
+# ATENÇÃO: este bloco (BROADCAST_CONNECTION + REVERB_*) precisa ser repetido em
+# `apps/api/.env`. É de lá que o compose injeta o ambiente dos containers
+# (`env_file` do âncora x-api); o `.env.prod` serve para interpolar ${...} no
+# YAML e para o build do admin. Só aqui, o Reverb sobe sem credencial e
+# reinicia em ciclo. VITE_REVERB_HOST, abaixo, é o oposto: só faz sentido aqui.
 BROADCAST_CONNECTION=reverb
 REVERB_APP_ID=tomenu
 REVERB_APP_KEY=                      # gere: openssl rand -hex 16
@@ -1219,14 +1225,30 @@ use `git stash` antes.
 - [ ] `app.to-menu.com/produtos` responde 200 — rewrite catch-all funcionando
 - [ ] `REVERB_APP_KEY`/`REVERB_APP_SECRET` preenchidos e `BROADCAST_CONNECTION=reverb`
       — com `log` o pedido novo nunca chega ao painel, sem erro em lugar nenhum
-- [ ] Containers `reverb` e `worker` **healthy** (`docker compose ps`): sem o
-      worker o job não roda, sem o Reverb o evento é descartado
-- [ ] WebSocket sobe de verdade — o handshake responde 101, não 200/502. O
-      `--max-time` é necessário porque a conexão fica aberta em caso de
-      sucesso; `curl` sai com código 28 e o 101 é o que importa. Não use `-I`:
-      o HEAD devolve 405 mesmo com tudo funcionando.
+- [ ] As variáveis do Reverb estão em **`apps/api/.env`**, não só no
+      `.env.prod`. É esse o arquivo que o compose injeta nos containers
+      (`env_file` do âncora `x-api`); o `--env-file .env.prod` só resolve
+      `${...}` no YAML e alimenta o build do admin. Confira o que de fato
+      chegou ao container — não o que está no arquivo:
       ```
-      curl -s -o /dev/null -w '%{http_code}\n' --max-time 5 \
+      docker inspect tomenu-prod-reverb-1 \
+        --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E 'REVERB|BROADCAST'
+      ```
+      `BROADCAST_CONNECTION=log` ou ausência de `REVERB_APP_KEY` aqui significa
+      que o Reverb sobe e morre em ciclo, e todo evento é descartado
+- [ ] `reverb` e `worker` **healthy** (`docker compose ps`) e `reverb` **não**
+      reiniciando em ciclo. `Up` sozinho não basta: um restart a cada 60s também
+      mostra `Up` e derruba toda conexão do painel. Compare o `StartedAt` com
+      ~2min entre as leituras:
+      `docker inspect tomenu-prod-reverb-1 --format '{{.State.StartedAt}} {{.RestartCount}}'`
+- [ ] WebSocket sobe de verdade — o handshake responde 101, não 200/502. Force
+      **HTTP/1.1**: sob HTTP/2 o mesmo endpoint devolve 500, porque o upgrade é
+      mecanismo do 1.1 — não é defeito de configuração, e navegadores sempre
+      usam 1.1 para WebSocket. O `--max-time` é necessário porque a conexão fica
+      aberta em caso de sucesso; `curl` sai com código 28 e o 101 é o que
+      importa. Não use `-I`: o HEAD devolve 405 mesmo com tudo funcionando.
+      ```
+      curl -s -o /dev/null -w '%{http_code}\n' --max-time 5 --http1.1 \
         -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
         -H 'Sec-WebSocket-Version: 13' \
         -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \

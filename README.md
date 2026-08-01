@@ -287,6 +287,18 @@ rota de autorização responde 200 para qualquer canal sem consultar o callback.
   separado (porta 8080), não passa pelo PHP-FPM. Sem um `location` no nginx que
   faça upgrade da conexão para `websocket`, o painel cai no polling e o alerta
   sonoro nunca toca — falha silenciosa, sem erro visível na tela.
+- **Os containers leem `apps/api/.env`, não o `.env.prod`.** O `env_file` do
+  âncora `x-api` aponta para o primeiro; o `--env-file .env.prod` do compose só
+  resolve `${...}` dentro do YAML e alimenta o build do admin. Configurar
+  apenas o `.env.prod` faz o Reverb subir sem `REVERB_APP_*`, morrer em
+  seguida e reiniciar em ciclo — com `BROADCAST_CONNECTION` ainda em `log`, o
+  que descarta todo evento. **As duas cópias precisam concordar.**
+- **`pcntl` precisa estar nas duas imagens PHP.** Produção usa
+  `docker/php/Dockerfile.prod`, não o `Dockerfile` de desenvolvimento; sem a
+  extensão lá, o Reverb morre com `Undefined constant SIGINT`.
+- **Ao testar o handshake com `curl`, force `--http1.1`.** Sob HTTP/2 o mesmo
+  endpoint devolve 500 — o upgrade é mecanismo do HTTP/1.1. Não indica defeito:
+  navegadores sempre negociam 1.1 para WebSocket.
 - **Pix via Stripe Connect no Brasil**: confirmar disponibilidade para
   destination charges antes de assumir no roadmap. A abstração de gateway
   existe justamente para permitir um PSP nacional sem reescrever o checkout.
