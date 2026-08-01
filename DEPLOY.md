@@ -1254,6 +1254,13 @@ use `git stash` antes.
         -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
         'https://ws.to-menu.com/app/SUA_REVERB_APP_KEY?protocol=7&client=js&version=8.4.0'
       ```
+- [ ] Se o handshake responder **502**, reinicie o nginx antes de investigar
+      qualquer outra coisa: ele resolve o nome `reverb` uma vez, na
+      inicialização, e guarda o IP. Recriar só o container do Reverb muda o IP e
+      deixa o nginx apontando para o endereço morto — `connect() failed
+      (111: Connection refused)` no log, com o Reverb perfeitamente saudável.
+      O `make deploy` já reinicia o nginx por último; o problema aparece quando
+      se recria o `reverb` isoladamente
 - [ ] Um pedido de teste faz o painel tocar e mostrar a faixa verde. É o único
       teste que cobre a corrente inteira (fila → Reverb → nginx → navegador)
 - [ ] `curl -k https://SEU_IP` **não** responde — origem fora do alcance direto
