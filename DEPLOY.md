@@ -299,6 +299,10 @@ SESSION_DRIVER=redis
 NEXT_PUBLIC_API_URL=https://api.to-menu.com
 NEXT_PUBLIC_ROOT_DOMAIN=to-menu.com
 NEXT_PUBLIC_ADMIN_URL=https://app.to-menu.com
+
+# Sitekey do Turnstile (pública). Uma só cobre o cadastro no storefront e o
+# login no admin; o build de cada frontend a consome. Ver passo 5.1.
+TURNSTILE_SITE_KEY=0x4AAAAAAA...
 ```
 
 Gere a `APP_KEY` (sem ela a criptografia do `whatsapp_token` não funciona):
@@ -329,6 +333,46 @@ Stripe, se já tiver — ver passo 10 para o R2.
 > docker compose -f docker-compose.prod.yml --env-file .env.prod \
 >     exec -T api printenv CLOUDFLARE_R2_ENDPOINT   # o que o container VÊ
 > ```
+
+### 5.1 Turnstile: verificação de robô no login e no cadastro
+
+Protege as duas rotas públicas onde um bot causa dano real: brute force de
+senha em `/api/auth/login` e criação de lojas em massa em `/api/register`. O
+rate limit por IP continua valendo em cima disto — trocar de IP é barato para
+quem automatiza, então as duas defesas se somam.
+
+No painel da Cloudflare, **Turnstile → Add widget**:
+
+| Campo | Valor |
+|---|---|
+| Domains | `to-menu.com`, `app.to-menu.com` |
+| Widget Mode | Managed |
+
+Um widget só atende os dois frontends — daí uma única `TURNSTILE_SITE_KEY`.
+Incluir os dois domínios é obrigatório: o widget recusa carregar em host fora
+da lista, e o sintoma é o botão de entrar permanentemente desabilitado.
+
+As duas chaves vão em arquivos diferentes, pelo motivo do quadro acima:
+
+| Chave | Arquivo | Por quê |
+|---|---|---|
+| `TURNSTILE_SITE_KEY` (pública) | `.env.prod` | inlined no build dos frontends |
+| `TURNSTILE_SECRET` | `apps/api/.env` | lida pelo Laravel em runtime |
+
+> **Sem `TURNSTILE_SECRET` a API não exige o token.** É o que permite rodar em
+> desenvolvimento e na suíte de testes sem chaves da Cloudflare, mas em
+> produção significa login e cadastro sem verificação nenhuma — e sem erro
+> visível, porque tudo continua funcionando. Confira depois do deploy:
+>
+> ```bash
+> docker compose -f docker-compose.prod.yml --env-file .env.prod \
+>     exec -T api php artisan tinker --execute \
+>     "echo config('services.turnstile.secret') ? 'ligado' : 'DESLIGADO';"
+> ```
+
+Trocar a sitekey exige **rebuild** dos dois frontends, não só restart. A
+verificação falha aberta se o siteverify da Cloudflare estiver inacessível: uma
+indisponibilidade lá não pode derrubar o login da plataforma inteira.
 
 ---
 
@@ -1050,6 +1094,11 @@ use `git stash` antes.
 - [ ] `app.to-menu.com` serve o admin (`<title>admin</title>`), não a landing
 - [ ] `app.to-menu.com/produtos` responde 200 — rewrite catch-all funcionando
 - [ ] `curl -k https://SEU_IP` **não** responde — origem fora do alcance direto
+- [ ] `TURNSTILE_SECRET` preenchido em `apps/api/.env` e `TURNSTILE_SITE_KEY`
+      em `.env.prod` — sem o secret, login e cadastro ficam **sem** verificação
+      de robô e nada indica isso (ver passo 5.1)
+- [ ] O widget aparece no login em `app.to-menu.com` e no cadastro da landing —
+      se o botão fica desabilitado, o domínio não está na lista do widget
 - [ ] `chmod 600 .env.prod`
 - [ ] Credenciais do `CLOUDFLARE_R2_*` preenchidas no `.env.prod` (sem elas o
       backup aborta)

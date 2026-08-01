@@ -1,5 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { API_BASE, ApiError, saveSession, type Session } from '@/lib/api';
+import {
+  Turnstile,
+  isTurnstileEnabled,
+  type TurnstileHandle,
+} from '@/components/turnstile';
 
 export function LoginPage({
   onAuthenticated,
@@ -11,6 +16,8 @@ export function LoginPage({
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileRef = useRef<TurnstileHandle | null>(null);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -24,12 +31,20 @@ export function LoginPage({
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
-        body: JSON.stringify({ email, password, tenant }),
+        body: JSON.stringify({
+          email,
+          password,
+          tenant,
+          'cf-turnstile-response': turnstileToken,
+        }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
+        // O token vale uma verificação só: sem resetar, a segunda tentativa
+        // reenviaria um token gasto e falharia mesmo com a senha certa.
+        turnstileRef.current?.reset();
         throw new ApiError(data?.message ?? 'Falha ao entrar.', response.status);
       }
 
@@ -117,6 +132,8 @@ export function LoginPage({
             />
           </div>
 
+          <Turnstile onToken={setTurnstileToken} handleRef={turnstileRef} />
+
           {error && (
             <p
               role="alert"
@@ -128,7 +145,9 @@ export function LoginPage({
 
           <button
             type="submit"
-            disabled={loading}
+            // Sem token o backend recusaria de qualquer forma; desabilitar
+            // evita a ida perdida enquanto o widget ainda resolve.
+            disabled={loading || (isTurnstileEnabled() && turnstileToken === '')}
             className="mt-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
           >
             {loading ? 'Entrando…' : 'Entrar'}

@@ -23,6 +23,11 @@ COPY apps/admin ./
 ARG VITE_API_URL=""
 ENV VITE_API_URL=$VITE_API_URL
 
+# Sitekey do Turnstile no login. Vazia derruba o widget e o login fica sem
+# verificação de robô — o par dela é TURNSTILE_SECRET na API.
+ARG VITE_TURNSTILE_SITE_KEY=""
+ENV VITE_TURNSTILE_SITE_KEY=$VITE_TURNSTILE_SITE_KEY
+
 RUN npm run build
 
 # Estágio final: só o dist. O `command` do compose copia daqui para o volume

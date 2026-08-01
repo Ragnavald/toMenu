@@ -1,6 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Turnstile,
+  isTurnstileEnabled,
+  type TurnstileHandle,
+} from './turnstile';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'localhost';
@@ -30,6 +35,8 @@ export function SignupForm() {
   const [confirmation, setConfirmation] = useState('');
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileRef = useRef<TurnstileHandle | null>(null);
 
   // Enquanto o usuário não editar o endereço manualmente, ele acompanha o nome
   // da loja — a maioria nunca vai querer que sejam diferentes.
@@ -94,6 +101,7 @@ export function SignupForm() {
           email,
           password,
           password_confirmation: confirmation,
+          'cf-turnstile-response': turnstileToken,
         }),
       });
 
@@ -101,6 +109,9 @@ export function SignupForm() {
 
       if (!response.ok) {
         setErrors(data.errors ?? { geral: [data.message ?? 'Não foi possível criar a loja.'] });
+        // O token queima a cada verificação: sem resetar, uma segunda tentativa
+        // reenviaria um token já gasto e falharia mesmo com os dados corrigidos.
+        turnstileRef.current?.reset();
         return;
       }
 
@@ -240,6 +251,14 @@ export function SignupForm() {
         </Field>
       </div>
 
+      <Turnstile onToken={setTurnstileToken} handleRef={turnstileRef} />
+
+      {errors['cf-turnstile-response'] && (
+        <p role="alert" className="text-xs text-red-600">
+          {errors['cf-turnstile-response'][0]}
+        </p>
+      )}
+
       {errors.geral && (
         <p role="alert" className="text-xs text-red-600">
           {errors.geral[0]}
@@ -248,7 +267,13 @@ export function SignupForm() {
 
       <button
         type="submit"
-        disabled={submitting || slugState === 'taken'}
+        // Sem token o backend recusaria de qualquer forma; desabilitar evita a
+        // ida perdida ao servidor enquanto o widget ainda resolve.
+        disabled={
+          submitting ||
+          slugState === 'taken' ||
+          (isTurnstileEnabled() && turnstileToken === '')
+        }
         className="mt-1 px-4 py-3 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-55"
         style={{
           background: 'rgb(var(--brand))',

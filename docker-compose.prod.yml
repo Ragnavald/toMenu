@@ -73,6 +73,9 @@ services:
         # o caminho relativo funciona e não há CORS envolvido. Preencher só se
         # o admin passar a ser hospedado fora do droplet.
         VITE_API_URL: ${VITE_API_URL:-}
+        # Sitekey pública do Turnstile — protege o login contra brute force.
+        # Sem ela o widget não aparece e a verificação de robô fica desligada.
+        VITE_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
     restart: "no"
     # O volume nasce pertencendo ao root; a imagem alpine já roda como root, mas
     # explicitar evita surpresa se a base mudar.
@@ -133,6 +136,9 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?defina NEXT_PUBLIC_API_URL}
         NEXT_PUBLIC_ROOT_DOMAIN: ${NEXT_PUBLIC_ROOT_DOMAIN:?defina NEXT_PUBLIC_ROOT_DOMAIN}
         NEXT_PUBLIC_ADMIN_URL: ${NEXT_PUBLIC_ADMIN_URL:-}
+        # Mesma sitekey do admin: a Cloudflare aceita vários domínios por
+        # widget, então uma chave só cobre o cadastro e o login.
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
     restart: unless-stopped
     expose: ["3000"]
     environment:

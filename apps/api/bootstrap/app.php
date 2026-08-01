@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureUserBelongsToTenant;
 use App\Http\Middleware\IdentifyTenant;
+use App\Http\Middleware\VerifyTurnstile;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -37,6 +38,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'identify.tenant' => IdentifyTenant::class,
             'tenant.member' => EnsureUserBelongsToTenant::class,
+            'turnstile' => VerifyTurnstile::class,
         ]);
 
         // Webhooks são autenticados por assinatura HMAC do provedor, não por

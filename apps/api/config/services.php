@@ -35,6 +35,19 @@ return [
         ],
     ],
 
+    /*
+     * Cloudflare Turnstile — verificação de robô no login e no cadastro.
+     *
+     * Sem `secret` a verificação fica desligada (dev e testes). Em produção as
+     * duas chaves são obrigatórias: a sitekey é pública e vai no build dos
+     * frontends, o secret nunca sai do servidor.
+     */
+    'turnstile' => [
+        'secret' => env('TURNSTILE_SECRET'),
+        // Curto de propósito: é uma chamada síncrona no caminho do login.
+        'timeout' => env('TURNSTILE_TIMEOUT', 5),
+    ],
+
     'stripe' => [
         'key' => env('STRIPE_KEY'),
         'secret' => env('STRIPE_SECRET'),

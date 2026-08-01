@@ -30,7 +30,7 @@ Route::post('webhooks/stripe', StripeWebhookController::class)
 | Fora do escopo de tenant por definição: a loja está sendo criada agora.
 */
 Route::post('register', [RegistrationController::class, 'store'])
-    ->middleware('throttle:10,1');
+    ->middleware(['throttle:10,1', 'turnstile']);
 
 Route::get('register/check-slug', [RegistrationController::class, 'checkSlug'])
     ->middleware('throttle:60,1');
@@ -40,8 +40,12 @@ Route::get('register/check-slug', [RegistrationController::class, 'checkSlug'])
 | Autenticação
 |--------------------------------------------------------------------------
 */
+// Rate limit apertado + Turnstile: as duas defesas da superfície de brute
+// force. O limite por IP não basta sozinho — trocar de IP é barato para quem
+// automatiza — e o Turnstile não basta sozinho porque cada token é uma
+// tentativa legítima a mais.
 Route::post('auth/login', [LoginController::class, 'login'])
-    ->middleware('throttle:5,1'); // Rate limit apertado: superfície de brute force.
+    ->middleware(['throttle:5,1', 'turnstile']);
 
 Route::post('auth/logout', [LoginController::class, 'logout'])
     ->middleware('auth:sanctum');
