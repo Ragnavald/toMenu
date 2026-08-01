@@ -614,8 +614,7 @@ O caminho é sempre o console do servidor, que exige acesso ao droplet.
 
 ```bash
 cd /opt/tomenu
-docker compose -f docker-compose.prod.yml --env-file .env.prod \
-    run --rm api php artisan platform:admin voce@to-menu.com --name="Seu Nome"
+make platform-admin EMAIL=voce@to-menu.com NAME="Seu Nome"
 ```
 
 A senha é pedida sem eco (mínimo de 12 caracteres); `--password` existe para
@@ -861,8 +860,21 @@ sudo -u postgres psql -d restore_test -c \
 ```bash
 cd /opt/tomenu
 git pull
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+make deploy
+```
+
+> **Droplet provisionado antes de agosto/2026:** `make` passou a ser instalado
+> pelo provisionamento só depois, e a imagem Ubuntu Server não o traz por
+> padrão. Uma vez, no servidor: `apt-get install -y make`. Sem isso o comando
+> acima falha com `make: command not found` — os `docker compose` explícitos
+> abaixo continuam válidos.
+
+O `make deploy` encadeia os quatro passos abaixo na ordem correta — é o caminho
+recomendado, porque a ordem entre eles não é intercambiável (ver adiante):
+
+```bash
 docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm api php artisan migrate --force
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
 # NÃO OPCIONAL: ver abaixo.
 docker compose -f docker-compose.prod.yml --env-file .env.prod restart nginx
@@ -870,6 +882,23 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod restart nginx
 # Limpa qualquer resposta ruim que o edge tenha guardado durante a janela.
 /usr/local/bin/tomenu-purge
 ```
+
+O `migrate` vem **antes** do `up --build` quando o deploy traz migration nova: o
+código que sobe consulta colunas que ainda não existiriam, e a janela entre um
+passo e outro seria de 500 em toda requisição que tocasse o schema novo.
+
+`git pull` fica fora do `make` de propósito — qual commit vai para produção é
+decisão de quem faz o deploy, não do alvo.
+
+Outros atalhos, todos rodando de `/opt/tomenu`:
+
+| Comando | O quê |
+|---|---|
+| `make deploy` | deploy completo (migrate → build → nginx → purge) |
+| `make deploy-migrate` | só as migrations |
+| `make deploy-admin` | republica só os painéis do Vite |
+| `make platform-admin EMAIL=… NAME="…"` | cria/atualiza conta de staff |
+| `make prod-ps` / `make prod-logs` | estado e logs da stack |
 
 Mudou alguma `NEXT_PUBLIC_*`? O `--build` é obrigatório: elas entram no bundle
 em tempo de build.
