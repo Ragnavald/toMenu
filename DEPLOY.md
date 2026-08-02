@@ -363,22 +363,21 @@ MAIL_PORT=465
 # evita que uma troca de porta para 587 mantenha silenciosamente um esquema
 # que não corresponde mais.
 MAIL_SCHEME=smtps
-# Autenticação e remetente são coisas SEPARADAS, e aqui divergem de propósito.
+# Autentica e envia como a MESMA caixa.
 #
-# O login é sempre a caixa real — a que tem senha no painel do Titan. Os demais
-# endereços do domínio (nao-responda@, contato@, privacidade@...) são aliases de
-# redirecionamento: entregam o que chega, mas não têm senha e portanto não
-# autenticam. Usar um deles em MAIL_USERNAME devolve `535 Authentication
-# failed`, e a mensagem não sugere em nada que a causa é essa.
+# `suporte@` é a única caixa real da conta — a que tem senha no painel do Titan.
+# Os outros endereços do domínio são aliases de redirecionamento: entregam o que
+# chega, mas não têm senha e não autenticam. Um alias no MAIL_USERNAME devolve
+# `535 Authentication failed`, com uma mensagem que não sugere a causa.
+#
+# Enviar como `suporte@` em vez de um `nao-responda@` é deliberado: numa
+# operação pequena, o lojista que responder ao e-mail de redefinição chega
+# direto em quem pode ajudá-lo, sem intermediário.
 #
 # Usuário é o endereço completo, não só a parte antes do @.
 MAIL_USERNAME=suporte@to-menu.com
 MAIL_PASSWORD=a_senha_da_caixa_suporte
-
-# Já o From pode ser qualquer alias do MESMO domínio — o Titan aceita, e é o
-# que o lojista enxerga. `nao-responda@` sinaliza que a mensagem é automática,
-# sem perder resposta nenhuma: o alias redireciona de volta para suporte@.
-MAIL_FROM_ADDRESS=nao-responda@to-menu.com
+MAIL_FROM_ADDRESS=suporte@to-menu.com
 MAIL_FROM_NAME=ToMenu
 ```
 
@@ -397,16 +396,26 @@ ela:
 
 | Endereço | Papel |
 |---|---|
-| `suporte@` | **Caixa real.** Autentica o SMTP e recebe tudo |
-| `nao-responda@` | Remetente dos e-mails automáticos |
+| `suporte@` | **Caixa real.** Autentica o SMTP, envia e recebe tudo |
 | `contato@`, `atendimento@` | Contato público (landing, rodapé) |
 | `privacidade@` | Canal do titular de dados exigido pela LGPD |
 | `financeiro@` | Cadastro em Stripe, DigitalOcean, Cloudflare |
 | `abuse@` | Convenção RFC 2142 — provedores reportam problemas por aqui |
+| `nao-responda@` | Criado, mas **não usado** — ver abaixo |
 
 Como todos caem em `suporte@`, um endereço só precisa ser lido. O ganho é poder
 separar depois — quando `suporte@` acumular volume demais, basta transformar um
 alias em caixa própria, sem trocar nada que já foi publicado ou cadastrado.
+
+> **Por que não usamos `nao-responda@` como remetente.** Ele existe e
+> redireciona para `suporte@`, então funcionaria. A escolha é de operação, não
+> técnica: enquanto a base de lojistas é pequena, o e-mail de redefinição vindo
+> de `suporte@` convida a responder — e essa resposta é o canal mais direto de
+> saber que algo não funcionou. Um `nao-responda@` sinaliza o oposto.
+>
+> Quando o volume justificar, trocar é uma linha: `MAIL_FROM_ADDRESS`. A
+> autenticação continua em `suporte@` de qualquer forma, porque aliases não
+> têm senha.
 
 #### Verificação
 
