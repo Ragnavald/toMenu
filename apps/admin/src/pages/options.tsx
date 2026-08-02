@@ -14,7 +14,6 @@ import {
   MoneyInput,
   PageHeader,
   Section,
-  Toggle,
   centsToText,
 } from '@/components/ui';
 
@@ -31,6 +30,11 @@ import {
  *
  * A regra de preço é o que torna o meio a meio possível: com 'highest', dois
  * sabores escolhidos cobram o mais caro em vez de somar duas pizzas.
+ *
+ * O lojista não escolhe nada disso diretamente. Ele escolhe um caso de uso
+ * ("sabores de pizza", "borda") e o preset abaixo traduz para source,
+ * pricing_rule e min/max — três decisões acopladas que, soltas na tela,
+ * produziam o meio a meio cobrando duas pizzas.
  */
 
 type OptionDraft = {
@@ -44,8 +48,12 @@ type ModifierDraft = {
   price_delta_cents: number;
 };
 
+type PresetId = 'flavors' | 'addons' | 'size' | 'single';
+
 type Draft = {
   id?: number;
+  /** Preset de origem: define os textos da tela, não é persistido. */
+  preset: PresetId;
   name: string;
   min_select: number;
   max_select: number;
@@ -57,18 +65,118 @@ type Draft = {
   modifiers: ModifierDraft[];
 };
 
-function emptyDraft(): Draft {
-  return {
-    name: '',
-    min_select: 0,
-    max_select: 1,
-    is_required: false,
-    source: 'list',
-    source_category_id: null,
-    pricing_rule: 'sum',
-    options: [],
-    modifiers: [],
-  };
+/**
+ * Casos de uso oferecidos na primeira tela.
+ *
+ * Cada um carrega a combinação que o lojista erraria à mão. O caso `flavors`
+ * é o único com pricing_rule 'highest': é o que faz duas metades cobrarem o
+ * sabor mais caro em vez de somarem duas pizzas.
+ */
+type Preset = {
+  id: PresetId;
+  icon: string;
+  title: string;
+  subtitle: string;
+  /** Como a tela chama cada opção depois de escolhido o caso de uso. */
+  noun: { one: string; many: string };
+  namePlaceholder: string;
+  defaults: Omit<Draft, 'id' | 'preset' | 'name'>;
+};
+
+const PRESETS: Preset[] = [
+  {
+    id: 'flavors',
+    icon: '🍕',
+    title: 'Sabores de pizza',
+    subtitle: 'Meio a meio, dois ou mais sabores no mesmo item.',
+    noun: { one: 'sabor', many: 'sabores' },
+    namePlaceholder: 'Ex.: Escolha os sabores',
+    defaults: {
+      min_select: 1,
+      max_select: 2,
+      is_required: true,
+      source: 'category',
+      source_category_id: null,
+      pricing_rule: 'highest',
+      options: [],
+      modifiers: [],
+    },
+  },
+  {
+    id: 'addons',
+    icon: '🧀',
+    title: 'Bordas e adicionais',
+    subtitle: 'Extras opcionais que somam ao preço, como catupiry ou bacon.',
+    noun: { one: 'adicional', many: 'adicionais' },
+    namePlaceholder: 'Ex.: Borda recheada',
+    defaults: {
+      min_select: 0,
+      max_select: 3,
+      is_required: false,
+      source: 'list',
+      source_category_id: null,
+      pricing_rule: 'sum',
+      options: [],
+      modifiers: [],
+    },
+  },
+  {
+    id: 'size',
+    icon: '📏',
+    title: 'Tamanho',
+    subtitle: 'Pequena, média, grande — o cliente escolhe exatamente um.',
+    noun: { one: 'tamanho', many: 'tamanhos' },
+    namePlaceholder: 'Ex.: Tamanho',
+    defaults: {
+      min_select: 1,
+      max_select: 1,
+      is_required: true,
+      source: 'list',
+      source_category_id: null,
+      pricing_rule: 'sum',
+      options: [],
+      modifiers: [],
+    },
+  },
+  {
+    id: 'single',
+    icon: '○',
+    title: 'Escolha única',
+    subtitle: 'Ponto da carne, tipo de pão, nível de açúcar.',
+    noun: { one: 'opção', many: 'opções' },
+    namePlaceholder: 'Ex.: Ponto da carne',
+    defaults: {
+      min_select: 1,
+      max_select: 1,
+      is_required: true,
+      source: 'list',
+      source_category_id: null,
+      pricing_rule: 'sum',
+      options: [],
+      modifiers: [],
+    },
+  },
+];
+
+function presetOf(id: PresetId): Preset {
+  return PRESETS.find((p) => p.id === id) ?? PRESETS[0];
+}
+
+function draftFromPreset(preset: Preset): Draft {
+  return { preset: preset.id, name: '', ...preset.defaults };
+}
+
+/**
+ * Deduz o caso de uso de um grupo já salvo.
+ *
+ * `preset` não vai para o banco: ele é só a lente pela qual a tela fala com o
+ * lojista. Ao editar, reconstruímos a partir do que distingue cada caso, para
+ * que "Escolha os sabores" volte falando de sabores e não de opções genéricas.
+ */
+function presetFromGroup(group: ModifierGroup): PresetId {
+  if (group.source === 'category') return 'flavors';
+  if (group.max_select > 1) return 'addons';
+  return group.min_select >= 1 ? 'size' : 'single';
 }
 
 const PRICING_LABELS: Record<PricingRule, string> = {
@@ -77,16 +185,55 @@ const PRICING_LABELS: Record<PricingRule, string> = {
   average: 'Média entre as escolhas',
 };
 
-const PRICING_HINTS: Record<PricingRule, string> = {
-  sum: 'Cada opção acrescenta seu valor. Use para bordas e adicionais.',
-  highest:
-    'Duas metades cobram o sabor mais caro. É o padrão para pizza meio a meio.',
-  average: 'Soma os sabores e divide pela quantidade escolhida.',
-};
+/**
+ * Traduz a configuração para uma frase em português.
+ *
+ * É o antídoto para "mínimo 0, máximo 1": três campos numéricos e um select
+ * cujo efeito combinado ninguém consegue simular de cabeça. A frase é montada
+ * a partir do mesmo estado que vai para a API, então nunca descreve algo
+ * diferente do que será salvo.
+ */
+function summarize(draft: Draft, optionCount: number): string {
+  const noun = presetOf(draft.preset).noun;
+  const { min_select: min, max_select: max } = draft;
+
+  const quantity =
+    min === max
+      ? `exatamente ${max} ${max === 1 ? noun.one : noun.many}`
+      : min === 0
+        ? `até ${max} ${max === 1 ? noun.one : noun.many}`
+        : `de ${min} a ${max} ${noun.many}`;
+
+  const obligation =
+    min > 0
+      ? 'O cliente precisa escolher'
+      : 'O cliente pode escolher';
+
+  const pricing =
+    max <= 1
+      ? ''
+      : draft.pricing_rule === 'highest'
+        ? `, e paga o valor do ${noun.one} mais caro`
+        : draft.pricing_rule === 'average'
+          ? `, e paga a média entre os ${noun.many} escolhidos`
+          : ', e cada escolha soma seu valor ao total';
+
+  const base = `${obligation} ${quantity}${pricing}.`;
+
+  if (optionCount === 0) {
+    return `${base} Falta cadastrar ${
+      draft.source === 'category' ? 'os produtos ofertados' : `${noun.many}`
+    }.`;
+  }
+
+  return base;
+}
 
 export function OptionsPage() {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<Draft | null>(null);
+  /** Escolha do caso de uso: precede o formulário na criação. */
+  const [picking, setPicking] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
@@ -113,6 +260,9 @@ export function OptionsPage() {
     if (!draft?.source_category_id) return [];
     return products.filter((p) => p.category_id === draft.source_category_id);
   }, [draft?.source_category_id, products]);
+
+  const optionOnlyCategories = categories.filter((c) => c.is_option_only);
+  const menuCategories = categories.filter((c) => !c.is_option_only);
 
   const save = useMutation({
     mutationFn: (input: Draft) => {
@@ -164,8 +314,10 @@ export function OptionsPage() {
   });
 
   function edit(group: ModifierGroup) {
+    setPicking(false);
     setDraft({
       id: group.id,
+      preset: presetFromGroup(group),
       name: group.name,
       min_select: group.min_select,
       max_select: group.max_select,
@@ -200,83 +352,165 @@ export function OptionsPage() {
     });
   }
 
+  /**
+   * Ajusta min e max juntos.
+   *
+   * Eles são interdependentes na API (`max_select` tem `gte:min_select`), e
+   * separá-los em dois campos livres deixava o lojista salvar min 3 / max 2
+   * para descobrir o erro só no servidor. O campo que o lojista tocou vence e
+   * o outro cede: subir o mínimo empurra o máximo, baixar o máximo puxa o
+   * mínimo. Assim nenhuma sequência de cliques chega a um estado inválido.
+   */
+  function setMin(current: Draft, value: number): Draft {
+    const min = Math.min(50, Math.max(0, value));
+
+    return {
+      ...current,
+      min_select: min,
+      max_select: Math.max(current.max_select, min, 1),
+      is_required: min > 0,
+    };
+  }
+
+  function setMax(current: Draft, value: number): Draft {
+    const max = Math.min(50, Math.max(1, value));
+    const min = Math.min(current.min_select, max);
+
+    return {
+      ...current,
+      min_select: min,
+      max_select: max,
+      is_required: min > 0,
+    };
+  }
+
+  const activePreset = draft ? presetOf(draft.preset) : null;
+
+  // Quantas opções o grupo realmente tem, para a frase-resumo e para barrar o
+  // 422 de "exige N escolhas, mas só tem M opções" antes de ir à API.
+  const optionCount = !draft
+    ? 0
+    : draft.source === 'category'
+      ? draft.options.length
+      : draft.modifiers.filter((m) => m.name.trim()).length;
+
+  const blockingIssue = !draft
+    ? null
+    : !draft.name.trim()
+      ? 'Dê um nome ao grupo.'
+      : draft.source === 'category' && !draft.source_category_id
+        ? 'Escolha a categoria que contém os produtos ofertados.'
+        : optionCount === 0
+          ? `Cadastre ao menos ${
+              draft.source === 'category' ? 'um produto' : 'uma opção'
+            }.`
+          : draft.min_select > optionCount
+            ? `O grupo exige ${draft.min_select} escolhas, mas só tem ${optionCount} ${
+                optionCount === 1 ? 'opção' : 'opções'
+              }.`
+            : null;
+
   return (
     <div>
       <PageHeader
         title="Opções"
         description="Bordas, adicionais e sabores. Um grupo é criado uma vez e vale para todos os produtos em que for usado."
         action={
-          <button
-            type="button"
-            onClick={() => {
-              setDraft(emptyDraft());
-              setFormError(null);
-            }}
-            className="btn-primary"
-          >
-            Novo grupo
-          </button>
+          !draft && !picking ? (
+            <button
+              type="button"
+              onClick={() => {
+                setPicking(true);
+                setFormError(null);
+              }}
+              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              Novo grupo
+            </button>
+          ) : undefined
         }
       />
 
       {formError && !draft && (
-        <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+        <p className="mb-4 rounded-lg bg-red-50 px-3.5 py-2.5 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
           {formError}
         </p>
       )}
 
-      {draft && (
+      {/*
+        Escolha do caso de uso.
+        Vem antes do formulário porque `source` é imutável na prática: trocá-lo
+        depois apaga as opções do lado que deixou de valer (syncOptions no
+        controller). Perguntar "o que você quer oferecer?" resolve na linguagem
+        do lojista o que "tipo de opção: lista fixa" nunca resolveu.
+      */}
+      {picking && (
         <div className="mb-5">
           <Section
-            title={draft.id ? 'Editar grupo' : 'Novo grupo'}
-            description="O tipo define de onde vêm as opções e não pode ser deduzido depois — escolha antes de cadastrar."
+            title="O que você quer oferecer?"
+            description="Escolha o caso mais parecido. Todos os detalhes podem ser ajustados depois."
+          >
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              {PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => {
+                    setDraft(draftFromPreset(preset));
+                    setPicking(false);
+                  }}
+                  className="flex items-start gap-3 rounded-lg border border-line p-3.5 text-left transition-colors hover:border-accent hover:bg-accent/5"
+                >
+                  <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-line/50 text-base">
+                    {preset.icon}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">
+                      {preset.title}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-muted">
+                      {preset.subtitle}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setPicking(false)}
+              className="mt-3.5 rounded-lg px-3 py-1.5 text-sm font-medium text-muted hover:bg-line"
+            >
+              Cancelar
+            </button>
+          </Section>
+        </div>
+      )}
+
+      {draft && activePreset && (
+        <div className="mb-5">
+          <Section
+            title={
+              draft.id
+                ? `Editar ${draft.name || 'grupo'}`
+                : `Novo grupo · ${activePreset.title}`
+            }
+            description={activePreset.subtitle}
           >
             <div className="grid gap-4">
-              <Field label="Nome do grupo">
+              <Field label="Nome do grupo" hint="É o título que o cliente vê ao abrir o item na loja.">
                 <input
+                  autoFocus
                   className="field"
                   value={draft.name}
-                  placeholder="Ex.: Escolha 2 sabores"
-                  onChange={(e) =>
-                    setDraft({ ...draft, name: e.target.value })
-                  }
+                  placeholder={activePreset.namePlaceholder}
+                  onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                 />
-              </Field>
-
-              <Field
-                label="Tipo de opção"
-                hint={
-                  draft.source === 'category'
-                    ? 'As opções são produtos de uma categoria — o sabor mantém preço, foto e descrição dele.'
-                    : 'As opções são digitadas aqui, cada uma com seu acréscimo.'
-                }
-              >
-                <select
-                  className="field"
-                  value={draft.source}
-                  onChange={(e) => {
-                    const source = e.target.value as 'list' | 'category';
-
-                    setDraft({
-                      ...draft,
-                      source,
-                      // A regra default acompanha o tipo: adicional soma,
-                      // sabor cobra o mais caro. Deixar 'sum' num grupo de
-                      // sabores faria o meio a meio cobrar duas pizzas.
-                      pricing_rule: source === 'category' ? 'highest' : 'sum',
-                    });
-                  }}
-                >
-                  <option value="list">Lista fixa (borda, adicional)</option>
-                  <option value="category">
-                    Produtos de uma categoria (sabores)
-                  </option>
-                </select>
               </Field>
 
               {draft.source === 'category' && (
                 <Field
-                  label="Categoria dos sabores"
+                  label={`Categoria com os ${activePreset.noun.many}`}
                   hint="Marque a categoria como “somente opção” na tela de Categorias para que ela não apareça como seção do cardápio."
                 >
                   <select
@@ -295,59 +529,81 @@ export function OptionsPage() {
                     }
                   >
                     <option value="">Selecione…</option>
-                    {categories.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
+
+                    {/*
+                      Categorias "somente opção" primeiro, e separadas.
+                      Elas são as que existem justamente para abastecer grupos
+                      compostos; misturá-las com as seções do cardápio numa
+                      lista plana faz "Entradas" parecer uma escolha tão válida
+                      quanto "Sabores de Pizza" — e o lojista acaba ofertando
+                      bruschetta como sabor de pizza.
+                    */}
+                    {optionOnlyCategories.length > 0 && (
+                      <optgroup label="Categorias de opção">
+                        {optionOnlyCategories.map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {category.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+
+                    {menuCategories.length > 0 && (
+                      <optgroup label="Seções do cardápio">
+                        {menuCategories.map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {category.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </Field>
               )}
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Mínimo de escolhas">
-                  <input
-                    type="number"
-                    min={0}
-                    className="field"
-                    value={draft.min_select}
-                    onChange={(e) =>
-                      setDraft({
-                        ...draft,
-                        min_select: Math.max(0, Number(e.target.value)),
-                      })
-                    }
-                  />
-                </Field>
-
-                <Field
-                  label="Máximo de escolhas"
+              {/*
+                Quantidade como steppers.
+                O par min/max é a origem do "mínimo 0, máximo 1" ilegível do
+                print. Aqui cada botão diz o que faz, e setRange mantém os dois
+                coerentes para que a API nunca recuse por gte:min_select.
+              */}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Stepper
+                  label="Mínimo de escolhas"
                   hint={
-                    draft.max_select > 1
-                      ? `O cliente escolhe até ${draft.max_select} opções deste grupo.`
-                      : undefined
+                    draft.min_select === 0
+                      ? 'O cliente pode pular este grupo.'
+                      : 'O cliente é obrigado a escolher.'
                   }
-                >
-                  <input
-                    type="number"
-                    min={1}
-                    className="field"
-                    value={draft.max_select}
-                    onChange={(e) =>
-                      setDraft({
-                        ...draft,
-                        max_select: Math.max(1, Number(e.target.value)),
-                      })
-                    }
-                  />
-                </Field>
+                  value={draft.min_select}
+                  min={0}
+                  onChange={(min) => setDraft(setMin(draft, min))}
+                />
+
+                <Stepper
+                  label="Máximo de escolhas"
+                  hint={`No máximo ${draft.max_select} ${
+                    draft.max_select === 1
+                      ? activePreset.noun.one
+                      : activePreset.noun.many
+                  } por item.`}
+                  value={draft.max_select}
+                  min={1}
+                  onChange={(max) => setDraft(setMax(draft, max))}
+                />
               </div>
 
               {/* A regra só muda alguma coisa quando cabe mais de uma escolha. */}
               {draft.max_select > 1 && (
                 <Field
-                  label="Como cobrar várias escolhas"
-                  hint={PRICING_HINTS[draft.pricing_rule]}
+                  label="Como cobrar quando o cliente escolhe mais de um"
+                  hint={
+                    draft.pricing_rule === 'highest'
+                      ? 'É o padrão para pizza meio a meio: duas metades custam o preço da mais cara.'
+                      : draft.pricing_rule === 'average'
+                        ? 'Soma os valores e divide pela quantidade escolhida.'
+                        : 'Use para bordas e adicionais, onde cada extra tem seu preço.'
+                  }
                 >
                   <select
                     className="field"
@@ -359,44 +615,38 @@ export function OptionsPage() {
                       })
                     }
                   >
-                    {(
-                      Object.keys(PRICING_LABELS) as PricingRule[]
-                    ).map((rule) => (
-                      <option key={rule} value={rule}>
-                        {PRICING_LABELS[rule]}
-                      </option>
-                    ))}
+                    {(Object.keys(PRICING_LABELS) as PricingRule[]).map(
+                      (rule) => (
+                        <option key={rule} value={rule}>
+                          {PRICING_LABELS[rule]}
+                        </option>
+                      ),
+                    )}
                   </select>
                 </Field>
               )}
 
-              <Toggle
-                checked={draft.is_required}
-                onChange={(is_required) =>
-                  setDraft({
-                    ...draft,
-                    is_required,
-                    // Obrigatório sem mínimo não obriga nada; alinhar aqui
-                    // evita o grupo "obrigatório" que o cliente pula.
-                    min_select:
-                      is_required && draft.min_select === 0
-                        ? 1
-                        : draft.min_select,
-                  })
-                }
-                label="Obrigatório"
-                description="O cliente não consegue adicionar o item sem escolher."
-              />
+              {/*
+                Frase-resumo.
+                Lê o mesmo estado que o payload, então descreve exatamente o que
+                será salvo — inclusive quando a combinação escolhida é estranha.
+              */}
+              <p className="rounded-lg border border-accent/25 bg-accent/5 px-3.5 py-2.5 text-sm">
+                {summarize(draft, optionCount)}
+              </p>
 
               {draft.source === 'category' ? (
                 <div>
                   <p className="text-xs font-medium text-muted">
-                    Sabores ofertados
+                    {activePreset.noun.many[0].toUpperCase() +
+                      activePreset.noun.many.slice(1)}{' '}
+                    ofertados
                   </p>
 
                   {!draft.source_category_id ? (
                     <p className="mt-2 text-sm text-muted">
-                      Selecione a categoria acima para listar os sabores.
+                      Selecione a categoria acima para listar os{' '}
+                      {activePreset.noun.many}.
                     </p>
                   ) : sourceProducts.length === 0 ? (
                     <p className="mt-2 text-sm text-muted">
@@ -412,13 +662,14 @@ export function OptionsPage() {
                         return (
                           <li
                             key={product.id}
-                            className="flex flex-wrap items-center gap-3 rounded-md border border-[var(--hairline)] p-2.5"
+                            className="flex flex-wrap items-center gap-3 rounded-lg border border-line p-2.5"
                           >
-                            <label className="flex flex-1 items-center gap-2.5 text-sm">
+                            <label className="flex flex-1 cursor-pointer items-center gap-2.5 text-sm">
                               <input
                                 type="checkbox"
                                 checked={Boolean(chosen)}
                                 onChange={() => toggleOption(product.id)}
+                                className="size-4 shrink-0 accent-[rgb(var(--accent))]"
                               />
                               <span>{product.name}</span>
                               <span className="text-xs text-muted">
@@ -458,69 +709,87 @@ export function OptionsPage() {
                   )}
 
                   <p className="mt-2 text-xs text-muted">
-                    Deixe o preço em branco para usar o do próprio produto. Preencha
-                    para cobrar um valor diferente neste tamanho.
+                    Deixe o preço em branco para usar o do próprio produto.
+                    Preencha para cobrar um valor diferente neste grupo.
                   </p>
                 </div>
               ) : (
                 <div>
-                  <p className="text-xs font-medium text-muted">Opções</p>
+                  <p className="text-xs font-medium text-muted">
+                    {activePreset.noun.many[0].toUpperCase() +
+                      activePreset.noun.many.slice(1)}
+                  </p>
 
-                  <ul className="mt-2 grid gap-2">
-                    {draft.modifiers.map((modifier, index) => (
-                      <li key={index} className="flex items-center gap-2">
-                        <input
-                          className="field flex-1"
-                          placeholder="Nome da opção"
-                          value={modifier.name}
-                          onChange={(e) =>
-                            setDraft({
-                              ...draft,
-                              modifiers: draft.modifiers.map((m, i) =>
-                                i === index ? { ...m, name: e.target.value } : m,
-                              ),
-                            })
-                          }
-                        />
-
-                        <div className="w-32">
-                          <MoneyInput
-                            valueCents={modifier.price_delta_cents}
-                            onChange={(cents) =>
+                  {draft.modifiers.length === 0 ? (
+                    <p className="mt-2 text-sm text-muted">
+                      Nenhuma opção ainda. Cada linha vira uma escolha na loja,
+                      com o acréscimo que você definir.
+                    </p>
+                  ) : (
+                    <ul className="mt-2 grid gap-2">
+                      {draft.modifiers.map((modifier, index) => (
+                        <li key={index} className="flex flex-wrap items-center gap-2">
+                          <input
+                            className="field min-w-[160px] flex-1"
+                            placeholder={`Nome ${
+                              activePreset.id === 'addons'
+                                ? '(ex.: Catupiry)'
+                                : activePreset.id === 'size'
+                                  ? '(ex.: Grande)'
+                                  : 'da opção'
+                            }`}
+                            value={modifier.name}
+                            onChange={(e) =>
                               setDraft({
                                 ...draft,
                                 modifiers: draft.modifiers.map((m, i) =>
                                   i === index
-                                    ? { ...m, price_delta_cents: cents ?? 0 }
+                                    ? { ...m, name: e.target.value }
                                     : m,
                                 ),
                               })
                             }
                           />
-                        </div>
 
-                        <button
-                          type="button"
-                          aria-label={`Remover ${modifier.name || 'opção'}`}
-                          className="btn-ghost"
-                          onClick={() =>
-                            setDraft({
-                              ...draft,
-                              modifiers: draft.modifiers.filter(
-                                (_, i) => i !== index,
-                              ),
-                            })
-                          }
-                        >
-                          Remover
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                          <div className="w-32">
+                            <MoneyInput
+                              valueCents={modifier.price_delta_cents}
+                              onChange={(cents) =>
+                                setDraft({
+                                  ...draft,
+                                  modifiers: draft.modifiers.map((m, i) =>
+                                    i === index
+                                      ? { ...m, price_delta_cents: cents ?? 0 }
+                                      : m,
+                                  ),
+                                })
+                              }
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            aria-label={`Remover ${modifier.name || 'opção'}`}
+                            className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                            onClick={() =>
+                              setDraft({
+                                ...draft,
+                                modifiers: draft.modifiers.filter(
+                                  (_, i) => i !== index,
+                                ),
+                              })
+                            }
+                          >
+                            Remover
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
 
                   <button
                     type="button"
-                    className="btn-ghost mt-2"
+                    className="mt-2.5 rounded-lg border border-line px-3 py-1.5 text-sm font-medium transition-colors hover:bg-line/40"
                     onClick={() =>
                       setDraft({
                         ...draft,
@@ -531,22 +800,27 @@ export function OptionsPage() {
                       })
                     }
                   >
-                    Adicionar opção
+                    + Adicionar {activePreset.noun.one}
                   </button>
                 </div>
               )}
 
               {formError && (
-                <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+                <p role="alert" className="rounded-lg bg-red-50 px-3.5 py-2.5 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
                   {formError}
                 </p>
+              )}
+
+              {/* O que ainda falta, dito antes de o servidor recusar. */}
+              {blockingIssue && !formError && (
+                <p className="text-xs text-muted">{blockingIssue}</p>
               )}
 
               <div className="flex gap-2">
                 <button
                   type="button"
-                  className="btn-primary"
-                  disabled={save.isPending || !draft.name}
+                  className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-45"
+                  disabled={save.isPending || Boolean(blockingIssue)}
                   onClick={() => save.mutate(draft)}
                 >
                   {save.isPending ? 'Salvando…' : 'Salvar grupo'}
@@ -554,7 +828,7 @@ export function OptionsPage() {
 
                 <button
                   type="button"
-                  className="btn-ghost"
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-muted hover:bg-line"
                   onClick={() => {
                     setDraft(null);
                     setFormError(null);
@@ -571,10 +845,22 @@ export function OptionsPage() {
       {isLoading ? (
         <p className="text-sm text-muted">Carregando…</p>
       ) : groups.length === 0 ? (
-        <EmptyState
-          title="Nenhum grupo de opções"
-          description="Crie um grupo para oferecer bordas, adicionais ou sabores de pizza."
-        />
+        !picking &&
+        !draft && (
+          <EmptyState
+            title="Nenhum grupo de opções"
+            description="Crie um grupo para oferecer sabores de pizza, bordas, adicionais ou tamanhos."
+            action={
+              <button
+                type="button"
+                onClick={() => setPicking(true)}
+                className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+              >
+                Criar primeiro grupo
+              </button>
+            }
+          />
+        )
       ) : (
         <ul className="grid gap-2.5">
           {groups.map((group) => (
@@ -610,10 +896,10 @@ export function OptionsPage() {
                   </p>
                 </div>
 
-                <div className="flex shrink-0 gap-2">
+                <div className="flex shrink-0 gap-1">
                   <button
                     type="button"
-                    className="btn-ghost"
+                    className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted hover:bg-line"
                     onClick={() => edit(group)}
                   >
                     Editar
@@ -621,8 +907,12 @@ export function OptionsPage() {
 
                   <button
                     type="button"
-                    className="btn-ghost text-red-600"
-                    onClick={() => remove.mutate(group.id)}
+                    className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                    onClick={() => {
+                      if (confirm(`Excluir o grupo "${group.name}"?`)) {
+                        remove.mutate(group.id);
+                      }
+                    }}
                   >
                     Excluir
                   </button>
@@ -633,5 +923,68 @@ export function OptionsPage() {
         </ul>
       )}
     </div>
+  );
+}
+
+/**
+ * Contador com botões.
+ *
+ * Substitui `<input type="number">` porque no celular o teclado numérico
+ * abrindo por cima do formulário para digitar "2" custa mais do que tocar em
+ * um botão, e porque o valor aqui nunca passa de dezenas.
+ */
+function Stepper({
+  label,
+  hint,
+  value,
+  min,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  value: number;
+  min: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <Field label={label} hint={hint}>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-label={`Diminuir ${label.toLowerCase()}`}
+          disabled={value <= min}
+          onClick={() => onChange(value - 1)}
+          className="grid size-9 shrink-0 place-items-center rounded-lg border border-line text-base font-medium transition-colors hover:bg-line/40 disabled:opacity-40"
+        >
+          −
+        </button>
+
+        <input
+          type="number"
+          inputMode="numeric"
+          min={min}
+          max={50}
+          aria-label={label}
+          value={value}
+          onChange={(e) => {
+            const parsed = Number(e.target.value);
+            onChange(
+              Number.isNaN(parsed) ? min : Math.min(50, Math.max(min, parsed)),
+            );
+          }}
+          className="field w-16 text-center font-mono"
+        />
+
+        <button
+          type="button"
+          aria-label={`Aumentar ${label.toLowerCase()}`}
+          disabled={value >= 50}
+          onClick={() => onChange(value + 1)}
+          className="grid size-9 shrink-0 place-items-center rounded-lg border border-line text-base font-medium transition-colors hover:bg-line/40 disabled:opacity-40"
+        >
+          +
+        </button>
+      </div>
+    </Field>
   );
 }

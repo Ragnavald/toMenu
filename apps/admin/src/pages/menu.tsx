@@ -340,38 +340,52 @@ export function MenuPage() {
                 para oferecer sabores, bordas e adicionais.
               </p>
             ) : (
-              <ul className="grid gap-1.5">
-                {groups.map((group) => {
-                  const checked = draft.groupIds.includes(group.id);
+              <>
+                <ul className="grid gap-1.5">
+                  {groups.map((group) => {
+                    const checked = draft.groupIds.includes(group.id);
 
-                  return (
-                    <li key={group.id}>
-                      <label className="flex cursor-pointer items-center gap-2.5 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() =>
-                            setDraft({
-                              ...draft,
-                              groupIds: checked
-                                ? draft.groupIds.filter((id) => id !== group.id)
-                                : [...draft.groupIds, group.id],
-                            })
-                          }
-                          className="size-4 shrink-0 accent-[rgb(var(--accent))]"
-                        />
-                        <span>{group.name}</span>
-                        <span className="text-xs text-muted">
-                          {group.source === 'category'
-                            ? `${group.option_products.length} sabores`
-                            : `${group.modifiers.length} opções`}
-                          {group.min_select > 0 && ' · obrigatório'}
-                        </span>
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
+                    return (
+                      <li key={group.id}>
+                        <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setDraft({
+                                ...draft,
+                                groupIds: checked
+                                  ? draft.groupIds.filter(
+                                      (id) => id !== group.id,
+                                    )
+                                  : [...draft.groupIds, group.id],
+                              })
+                            }
+                            className="size-4 shrink-0 accent-[rgb(var(--accent))]"
+                          />
+                          <span>{group.name}</span>
+                          <span className="text-xs text-muted">
+                            {group.source === 'category'
+                              ? `${group.option_products.length} sabores`
+                              : `${group.modifiers.length} opções`}
+                            {group.min_select > 0 && ' · obrigatório'}
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                {/* Sem esta saída, quem já tem um grupo criado não encontra o
+                    caminho para criar o segundo: o link só existia no estado
+                    vazio da lista. */}
+                <Link
+                  to="/opcoes"
+                  className="mt-1 inline-block text-xs font-medium text-accent underline"
+                >
+                  Criar outro grupo de opções
+                </Link>
+              </>
             )}
           </Field>
 
