@@ -1182,6 +1182,7 @@ recomendado, porque a ordem entre eles não é intercambiável (ver adiante):
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm api php artisan migrate --force
+docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm api php artisan db:seed --class=PlanSeeder --force
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
 # NÃO OPCIONAL: ver abaixo.
@@ -1195,6 +1196,14 @@ O `migrate` vem **antes** do `up --build` quando o deploy traz migration nova: o
 código que sobe consulta colunas que ainda não existiriam, e a janela entre um
 passo e outro seria de 500 em toda requisição que tocasse o schema novo.
 
+O `db:seed --class=PlanSeeder` roda a **cada** deploy, e não só no
+provisionamento: a migration cria as colunas de capacidade, mas quem cria a
+linha de um plano novo é o seeder. Num banco que já existe, rodar só o migrate
+deixa o plano ausente — e toda loja cai no fallback `?? true` de
+`Tenant::allowsOrders()`, que oferece entrega e pagamento no painel de quem
+contratou somente o cardápio. O seeder usa `updateOrCreate`, então é idempotente
+e também propaga preço ou limite corrigidos para um plano que já está lá.
+
 `git pull` fica fora do `make` de propósito — qual commit vai para produção é
 decisão de quem faz o deploy, não do alvo.
 
@@ -1202,8 +1211,8 @@ Outros atalhos, todos rodando de `/opt/tomenu`:
 
 | Comando | O quê |
 |---|---|
-| `make deploy` | deploy completo (migrate → build → nginx → purge) |
-| `make deploy-migrate` | só as migrations |
+| `make deploy` | deploy completo (migrate+seed → build → nginx → purge) |
+| `make deploy-migrate` | só as migrations e o seed dos planos |
 | `make deploy-admin` | republica só os painéis do Vite |
 | `make platform-admin EMAIL=… NAME="…"` | cria/atualiza conta de staff |
 | `make prod-ps` / `make prod-logs` | estado e logs da stack |
@@ -1617,6 +1626,9 @@ use `git stash` antes.
       ignora a RLS em silêncio (`SELECT rolname, rolsuper, rolbypassrls FROM
       pg_roles WHERE rolname LIKE 'tomenu%';`)
 - [ ] Schema `public` pertence a `tomenu_app`, senão o `migrate` não roda
+- [ ] Os dois planos existem: `SELECT slug, allows_orders FROM plans;` — se o
+      `cardapio` faltar, quem contratou só o cardápio recebe o painel completo
+      (o fallback de `Tenant::allowsOrders()` erra a favor do lojista)
 - [ ] Registros `A` de `@` e `*` proxied (nuvem laranja), para o Reserved IP
 - [ ] Origin Certificate em `/etc/tomenu/certs`, chave em `chmod 600`
 - [ ] SSL/TLS em **Full (strict)** + Always Use HTTPS
