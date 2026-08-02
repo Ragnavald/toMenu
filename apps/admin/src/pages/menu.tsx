@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiFetch, formatMoney } from '@/lib/api';
-import type { Category, Paginated, Product } from '@/lib/types';
+import type { Category, ModifierGroup, Paginated, Product } from '@/lib/types';
 import {
   EmptyState,
   Field,
@@ -20,6 +20,8 @@ type Draft = {
   promoPriceCents: number | null;
   imageUrl: string;
   is_available: boolean;
+  /** Grupos de opções vinculados: bordas, adicionais e sabores. */
+  groupIds: number[];
 };
 
 function emptyDraft(categoryId: number | null): Draft {
@@ -31,6 +33,7 @@ function emptyDraft(categoryId: number | null): Draft {
     promoPriceCents: null,
     imageUrl: '',
     is_available: true,
+    groupIds: [],
   };
 }
 
@@ -54,8 +57,21 @@ export function MenuPage() {
     staleTime: 30_000,
   });
 
+  const { data: groupsData } = useQuery({
+    queryKey: ['modifier-groups'],
+    queryFn: () => apiFetch<{ data: ModifierGroup[] }>('/admin/modifier-groups'),
+  });
+
   const categories = categoriesData?.data ?? [];
   const products = productsData?.data ?? [];
+  const groups = groupsData?.data ?? [];
+
+  /** Grupos já vinculados a um produto, lidos do índice de grupos. */
+  function groupIdsOf(productId: number): number[] {
+    return groups
+      .filter((group) => group.products?.some((p) => p.id === productId))
+      .map((group) => group.id);
+  }
 
   // Agrupa por seção para espelhar o que o cliente final enxerga no cardápio.
   const grouped = useMemo(() => {
@@ -66,7 +82,7 @@ export function MenuPage() {
   }, [categories, products]);
 
   const save = useMutation({
-    mutationFn: (input: Draft) => {
+    mutationFn: async (input: Draft) => {
       const body = JSON.stringify({
         category_id: input.category_id,
         name: input.name,
@@ -77,13 +93,48 @@ export function MenuPage() {
         is_available: input.is_available,
       });
 
-      return input.id
-        ? apiFetch(`/admin/products/${input.id}`, { method: 'PUT', body })
-        : apiFetch('/admin/products', { method: 'POST', body });
+      const product = input.id
+        ? await apiFetch<Product>(`/admin/products/${input.id}`, {
+            method: 'PUT',
+            body,
+          })
+        : await apiFetch<Product>('/admin/products', { method: 'POST', body });
+
+      /*
+       * O vínculo com os grupos vive na pivot e é sincronizado por grupo, não
+       * por produto. Só os grupos que mudaram são tocados: um PUT em todos
+       * reescreveria a lista de produtos de grupos que nada têm a ver com esta
+       * edição, e duas abas abertas se sobrescreveriam.
+       */
+      const before = input.id ? groupIdsOf(input.id) : [];
+      const after = input.groupIds;
+
+      const touched = groups.filter(
+        (group) =>
+          before.includes(group.id) !== after.includes(group.id),
+      );
+
+      await Promise.all(
+        touched.map((group) => {
+          const others = (group.products ?? [])
+            .map((p) => p.id)
+            .filter((id) => id !== product.id);
+
+          return apiFetch(`/admin/modifier-groups/${group.id}/products`, {
+            method: 'POST',
+            body: JSON.stringify({
+              product_ids: after.includes(group.id)
+                ? [...others, product.id]
+                : others,
+            }),
+          });
+        }),
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['categories'] });
+      queryClient.invalidateQueries({ queryKey: ['modifier-groups'] });
       setDraft(null);
       setFormError(null);
     },
@@ -268,6 +319,62 @@ export function MenuPage() {
             />
           </Field>
 
+          {/*
+            Vínculo com os grupos de opções. É aqui que a "Pizza Grande" ganha
+            os sabores e a borda — sem isso o produto é só um nome com preço.
+          */}
+          <Field
+            label="Grupos de opções"
+            hint={
+              groups.length > 0
+                ? 'O cliente escolhe estas opções ao abrir o item na loja.'
+                : undefined
+            }
+          >
+            {groups.length === 0 ? (
+              <p className="text-xs text-muted">
+                Nenhum grupo criado ainda.{' '}
+                <Link to="/opcoes" className="underline">
+                  Criar grupos de opções
+                </Link>{' '}
+                para oferecer sabores, bordas e adicionais.
+              </p>
+            ) : (
+              <ul className="grid gap-1.5">
+                {groups.map((group) => {
+                  const checked = draft.groupIds.includes(group.id);
+
+                  return (
+                    <li key={group.id}>
+                      <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setDraft({
+                              ...draft,
+                              groupIds: checked
+                                ? draft.groupIds.filter((id) => id !== group.id)
+                                : [...draft.groupIds, group.id],
+                            })
+                          }
+                          className="size-4 shrink-0 accent-[rgb(var(--accent))]"
+                        />
+                        <span>{group.name}</span>
+                        <span className="text-xs text-muted">
+                          {group.source === 'category'
+                            ? `${group.option_products.length} sabores`
+                            : `${group.modifiers.length} opções`}
+                          {group.min_select > 0 && ' · obrigatório'}
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Field>
+
           <Toggle
             checked={draft.is_available}
             onChange={(value) => setDraft({ ...draft, is_available: value })}
@@ -423,6 +530,7 @@ export function MenuPage() {
                             promoPriceCents: product.promo_price_cents,
                             imageUrl: product.image_url ?? '',
                             is_available: product.is_available,
+                            groupIds: groupIdsOf(product.id),
                           });
                           setFormError(null);
                           window.scrollTo({ top: 0, behavior: 'smooth' });

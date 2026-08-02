@@ -7,6 +7,7 @@ import {
   updateStoredOrderStatus,
   type StoredOrder,
 } from '@/lib/orders-storage';
+import { FULFILLMENT_NOUNS } from '@/lib/types';
 
 const STATUS_LABELS: Record<string, string> = {
   pending_payment: 'Aguardando Pagamento',
@@ -204,7 +205,7 @@ export function OrdersSheet({
                               hour: '2-digit',
                               minute: '2-digit',
                             })}{' '}
-                            · {order.fulfillment === 'delivery' ? 'Entrega' : 'Retirada'}
+                            · {FULFILLMENT_NOUNS[order.fulfillment]}
                           </p>
                         </div>
                         <span
@@ -329,7 +330,7 @@ export function OrdersSheet({
                       </span>
                       <p className="text-[11px] text-subtle">
                         {new Date(order.placedAt).toLocaleDateString('pt-BR')} ·{' '}
-                        {order.fulfillment === 'delivery' ? 'Entrega' : 'Retirada'}
+                        {FULFILLMENT_NOUNS[order.fulfillment]}
                       </p>
                     </div>
                     <span

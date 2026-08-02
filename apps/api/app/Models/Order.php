@@ -24,6 +24,15 @@ class Order extends Model
         'ready', 'out_for_delivery', 'delivered', 'cancelled',
     ];
 
+    /**
+     * Como o cliente recebe o pedido.
+     *
+     * Só `delivery` envolve endereço e taxa; `pickup` e `dine_in` acontecem no
+     * endereço da própria loja. A distinção entre os dois importa para a
+     * operação — retirada sai pelo balcão, consumo no local vai para a mesa.
+     */
+    public const FULFILLMENTS = ['delivery', 'pickup', 'dine_in'];
+
     protected function casts(): array
     {
         return [

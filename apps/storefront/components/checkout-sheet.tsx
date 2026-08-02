@@ -3,17 +3,34 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatMoney, submitOrder } from '@/lib/api';
 import { addStoredOrder } from '@/lib/orders-storage';
-import type { TenantInfo } from '@/lib/types';
+import {
+  FULFILLMENT_LABELS,
+  isDelivery,
+  type Fulfillment,
+  type TenantInfo,
+} from '@/lib/types';
 import { useCart } from './cart-provider';
+import { useFulfillment } from './fulfillment-provider';
 
 type Step = 'cart' | 'details' | 'done';
 
-const PAYMENT_LABELS: Record<string, string> = {
-  cash: 'Dinheiro na entrega',
-  card_on_delivery: 'Cartão na entrega',
-  stripe_card: 'Cartão pelo site',
-  stripe_pix: 'Pix pelo site',
-};function formatCpf(value: string): string {
+/**
+ * Rótulo do pagamento presencial conforme a modalidade.
+ *
+ * "Dinheiro na entrega" é literalmente falso para quem vai comer no salão ou
+ * buscar no balcão — nesses casos o cliente paga na loja.
+ */
+function paymentLabels(fulfillment: Fulfillment): Record<string, string> {
+  const presencial = isDelivery(fulfillment) ? 'na entrega' : 'na loja';
+
+  return {
+    cash: `Dinheiro ${presencial}`,
+    card_on_delivery: `Cartão ${presencial}`,
+    pix_on_delivery: `Pix ${presencial}`,
+    stripe_card: 'Cartão pelo site',
+    stripe_pix: 'Pix pelo site',
+  };
+}function formatCpf(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 11);
   if (digits.length <= 3) return digits;
   if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
@@ -42,6 +59,9 @@ export function CheckoutSheet({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const numberInputRef = useRef<HTMLInputElement>(null);
   const { lines, subtotalCents, setQuantity, clear } = useCart();
+  // A modalidade já foi escolhida na barra do cardápio; o checkout herda e
+  // permite trocar sem sair da tela.
+  const { fulfillment, setFulfillment, options } = useFulfillment();
 
   const [step, setStep] = useState<Step>('cart');
   const [submitting, setSubmitting] = useState(false);
@@ -53,7 +73,6 @@ export function CheckoutSheet({
     name: '',
     phone: '',
     cpf: '',
-    fulfillment: 'delivery' as 'delivery' | 'pickup',
     zip: '',
     street: '',
     number: '',
@@ -69,8 +88,9 @@ export function CheckoutSheet({
     dialogRef.current?.showModal();
   }, []);
 
-  const deliveryFee =
-    form.fulfillment === 'delivery' ? (tenant.deliveryConfig.fee_cents ?? 0) : 0;
+  const deliveryFee = isDelivery(fulfillment)
+    ? (tenant.deliveryConfig.fee_cents ?? 0)
+    : 0;
   const total = subtotalCents + deliveryFee;
 
   function update(field: keyof typeof form, value: string) {
@@ -129,19 +149,18 @@ export function CheckoutSheet({
           phone: form.phone,
           cpf: form.cpf || undefined,
         },
-        fulfillment: form.fulfillment,
-        address:
-          form.fulfillment === 'delivery'
-            ? {
-                zip: form.zip || undefined,
-                street: form.street,
-                number: form.number || undefined,
-                complement: form.complement || undefined,
-                district: form.district || undefined,
-                city: form.city,
-                state: form.state.toUpperCase(),
-              }
-            : undefined,
+        fulfillment,
+        address: isDelivery(fulfillment)
+          ? {
+              zip: form.zip || undefined,
+              street: form.street,
+              number: form.number || undefined,
+              complement: form.complement || undefined,
+              district: form.district || undefined,
+              city: form.city,
+              state: form.state.toUpperCase(),
+            }
+          : undefined,
         payment_method: form.paymentMethod,
         items: lines.map((line) => ({
           product_id: line.productId,
@@ -158,7 +177,7 @@ export function CheckoutSheet({
         number: result.number,
         tenantSlug,
         status: result.status ?? 'confirmed',
-        fulfillment: form.fulfillment,
+        fulfillment,
         paymentMethod: form.paymentMethod,
         totalCents: result.totalCents ?? total,
         placedAt: new Date().toISOString(),
@@ -205,7 +224,8 @@ export function CheckoutSheet({
         <header className="flex items-center justify-between border-b border-[var(--hairline)] px-5 py-3.5">
           <h2 className="text-base font-semibold">
             {step === 'cart' && 'Seu pedido'}
-            {step === 'details' && 'Entrega e pagamento'}
+            {step === 'details' &&
+              (isDelivery(fulfillment) ? 'Entrega e pagamento' : 'Dados e pagamento')}
             {step === 'done' && 'Pedido confirmado'}
           </h2>
 
@@ -288,9 +308,33 @@ export function CheckoutSheet({
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium">{line.name}</p>
 
+                        {/*
+                          Agrupado por grupo: "Escolha 2 sabores: Margherita,
+                          Diavola · Borda: Catupiry". Uma lista achatada não
+                          distingue metade de adicional, e no meio a meio é
+                          justamente isso que o cliente confere antes de pagar.
+                        */}
                         {line.modifiers.length > 0 && (
                           <p className="mt-0.5 text-xs text-subtle">
-                            {line.modifiers.map((m) => m.name).join(' · ')}
+                            {Object.entries(
+                              line.modifiers.reduce<Record<string, string[]>>(
+                                (groups, modifier) => {
+                                  const label = modifier.groupName ?? '';
+                                  groups[label] = [
+                                    ...(groups[label] ?? []),
+                                    modifier.name,
+                                  ];
+                                  return groups;
+                                },
+                                {},
+                              ),
+                            )
+                              .map(([label, names]) =>
+                                label
+                                  ? `${label}: ${names.join(', ')}`
+                                  : names.join(', '),
+                              )
+                              .join(' · ')}
                           </p>
                         )}
 
@@ -380,31 +424,36 @@ export function CheckoutSheet({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    {(['delivery', 'pickup'] as const).map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() => update('fulfillment', option)}
-                        className="border px-3 py-2.5 text-sm font-medium transition-colors"
-                        style={{
-                          borderRadius: 'calc(var(--radius) * 0.55)',
-                          borderColor:
-                            form.fulfillment === option
-                              ? 'rgb(var(--brand))'
-                              : 'var(--hairline)',
-                          background:
-                            form.fulfillment === option
-                              ? 'rgb(var(--brand-soft) / 0.6)'
-                              : 'transparent',
-                        }}
-                      >
-                        {option === 'delivery' ? 'Entrega' : 'Retirada'}
-                      </button>
-                    ))}
-                  </div>
+                  {/* Uma modalidade só não é escolha; a loja já a impôs. */}
+                  {options.length > 1 && (
+                    <div
+                      className={`grid gap-2 ${options.length > 2 ? 'grid-cols-3' : 'grid-cols-2'}`}
+                    >
+                      {options.map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => setFulfillment(option)}
+                          className="border px-3 py-2.5 text-sm font-medium transition-colors"
+                          style={{
+                            borderRadius: 'calc(var(--radius) * 0.55)',
+                            borderColor:
+                              fulfillment === option
+                                ? 'rgb(var(--brand))'
+                                : 'var(--hairline)',
+                            background:
+                              fulfillment === option
+                                ? 'rgb(var(--brand-soft) / 0.6)'
+                                : 'transparent',
+                          }}
+                        >
+                          {FULFILLMENT_LABELS[option]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
-                  {form.fulfillment === 'delivery' && (
+                  {isDelivery(fulfillment) && (
                     <>
                       <div className="grid gap-1.5">
                         <label htmlFor="zip" className="text-xs font-medium text-muted">
@@ -522,7 +571,7 @@ export function CheckoutSheet({
                           onChange={() => update('paymentMethod', method)}
                           className="size-4 accent-[rgb(var(--brand))]"
                         />
-                        {PAYMENT_LABELS[method] ?? method}
+                        {paymentLabels(fulfillment)[method] ?? method}
                       </label>
                     ))}
                   </fieldset>
@@ -546,7 +595,7 @@ export function CheckoutSheet({
                   <dd className="tabular-nums">{formatMoney(subtotalCents)}</dd>
                 </div>
 
-                {form.fulfillment === 'delivery' && (
+                {isDelivery(fulfillment) && (
                   <div className="flex justify-between text-muted">
                     <dt>Entrega</dt>
                     <dd className="tabular-nums">

@@ -32,6 +32,7 @@ class OrderController extends Controller
             'id' => $order->id,
             'number' => $order->number,
             'status' => $order->status,
+            'fulfillment' => $order->fulfillment,
             'totalCents' => $order->total_cents,
             'requiresPayment' => ! $order->isPayOnDelivery(),
         ], 201);

@@ -8,12 +8,21 @@ import {
   useReducer,
   type ReactNode,
 } from 'react';
-import type { CartLine, Modifier, Product } from '@/lib/types';
+import { priceGroup, type CartLine, type Modifier, type Product } from '@/lib/types';
 
 type CartState = { lines: CartLine[] };
 
+/**
+ * Escolhas do cliente, agrupadas pelo grupo a que pertencem.
+ *
+ * O carrinho precisa da estrutura por grupo, e não de uma lista achatada de
+ * modificadores: a regra de preço ('highest' no meio a meio) só faz sentido
+ * dentro de um grupo. Achatar antes de precificar somaria dois sabores.
+ */
+export type Selection = { groupId: number; modifiers: Modifier[] };
+
 type Action =
-  | { type: 'add'; product: Product; modifiers: Modifier[]; quantity: number }
+  | { type: 'add'; product: Product; selections: Selection[]; quantity: number }
   | { type: 'setQuantity'; key: string; quantity: number }
   | { type: 'remove'; key: string }
   | { type: 'clear' }
@@ -32,16 +41,46 @@ function lineKey(productId: number, modifiers: Modifier[]): string {
   return `${productId}:${ids.join('-')}`;
 }
 
+/**
+ * Preço unitário do item com as opções escolhidas.
+ *
+ * Cada grupo aplica a sua própria regra e só depois os grupos são somados:
+ * os dois sabores do meio a meio colapsam no mais caro, a borda soma por cima.
+ * A API refaz esta conta no POST — se as duas divergirem, quem vale é a de lá.
+ */
+function unitPrice(product: Product, selections: Selection[]): number {
+  const base = product.promoPriceCents ?? product.priceCents;
+
+  return selections.reduce((total, selection) => {
+    const group = product.modifierGroups.find((g) => g.id === selection.groupId);
+
+    return group ? total + priceGroup(group, selection.modifiers) : total;
+  }, base);
+}
+
+/** Achata as escolhas preservando de qual grupo cada opção veio. */
+function flatten(product: Product, selections: Selection[]) {
+  return selections.flatMap((selection) => {
+    const group = product.modifierGroups.find((g) => g.id === selection.groupId);
+
+    return selection.modifiers.map((modifier) => ({
+      id: modifier.id,
+      name: modifier.name,
+      priceDeltaCents: modifier.priceDeltaCents,
+      groupName: group?.name,
+    }));
+  });
+}
+
 function reducer(state: CartState, action: Action): CartState {
   switch (action.type) {
     case 'hydrate':
       return { lines: action.lines };
 
     case 'add': {
-      const key = lineKey(action.product.id, action.modifiers);
-      const unitPriceCents =
-        (action.product.promoPriceCents ?? action.product.priceCents) +
-        action.modifiers.reduce((sum, m) => sum + m.priceDeltaCents, 0);
+      const chosen = flatten(action.product, action.selections);
+      const key = lineKey(action.product.id, chosen);
+      const unitPriceCents = unitPrice(action.product, action.selections);
 
       const existing = state.lines.find((line) => line.key === key);
 
@@ -64,11 +103,7 @@ function reducer(state: CartState, action: Action): CartState {
             name: action.product.name,
             unitPriceCents,
             quantity: action.quantity,
-            modifiers: action.modifiers.map((m) => ({
-              id: m.id,
-              name: m.name,
-              priceDeltaCents: m.priceDeltaCents,
-            })),
+            modifiers: chosen,
           },
         ],
       };
@@ -97,7 +132,7 @@ type CartContextValue = {
   lines: CartLine[];
   subtotalCents: number;
   itemCount: number;
-  add: (product: Product, modifiers: Modifier[], quantity?: number) => void;
+  add: (product: Product, selections: Selection[], quantity?: number) => void;
   setQuantity: (key: string, quantity: number) => void;
   remove: (key: string) => void;
   clear: () => void;
@@ -146,8 +181,8 @@ export function CartProvider({
       lines: state.lines,
       subtotalCents,
       itemCount: state.lines.reduce((sum, line) => sum + line.quantity, 0),
-      add: (product, modifiers, quantity = 1) =>
-        dispatch({ type: 'add', product, modifiers, quantity }),
+      add: (product, selections, quantity = 1) =>
+        dispatch({ type: 'add', product, selections, quantity }),
       setQuantity: (key, quantity) =>
         dispatch({ type: 'setQuantity', key, quantity }),
       remove: (key) => dispatch({ type: 'remove', key }),

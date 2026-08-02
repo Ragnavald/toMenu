@@ -4,6 +4,7 @@ import { StoreSuspended } from '@/components/store-suspended';
 import { StoreHeader } from '@/components/store-header';
 import { MenuBrowser } from '@/components/menu-browser';
 import { CartBar } from '@/components/cart-bar';
+import { FulfillmentBar } from '@/components/fulfillment-bar';
 
 /**
  * O cardápio muda com pouca frequência, mas é a página mais acessada: cada
@@ -38,6 +39,10 @@ export default async function StorePage({ params }: Props) {
       {/* Header e cardápio são Server Components: o HTML já chega pronto,
           indexável e com LCP baixo. Só carrinho e modal são client. */}
       <StoreHeader tenant={menu.tenant} />
+
+      {/* Vitrine não recebe pedido, então não há modalidade a escolher. */}
+      {menu.tenant.acceptsOrders && <FulfillmentBar tenant={menu.tenant} />}
+
       <MenuBrowser
         categories={menu.categories}
         layout={menu.theme.layout}

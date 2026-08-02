@@ -18,6 +18,49 @@ export type Category = {
   slug: string;
   position: number;
   is_active: boolean;
+  /**
+   * Categoria-insumo: abastece grupos compostos e não vira seção do cardápio.
+   * É o que permite ter "Sabores de Pizza" sem vendê-los soltos.
+   */
+  is_option_only: boolean;
+  products_count?: number;
+};
+
+/** 'list' = opções digitadas aqui; 'category' = produtos de uma categoria. */
+export type ModifierSource = 'list' | 'category';
+
+/** Como somar quando o cliente escolhe mais de uma opção do mesmo grupo. */
+export type PricingRule = 'sum' | 'highest' | 'average';
+
+export type Modifier = {
+  id: number;
+  name: string;
+  price_delta_cents: number;
+  is_available: boolean;
+  position: number;
+};
+
+/** Produto ofertado como opção, com o preço próprio daquele grupo. */
+export type OptionProduct = {
+  id: number;
+  name: string;
+  price_cents: number;
+  pivot: { price_cents: number | null; position: number };
+};
+
+export type ModifierGroup = {
+  id: number;
+  name: string;
+  min_select: number;
+  max_select: number;
+  is_required: boolean;
+  source: ModifierSource;
+  source_category_id: number | null;
+  pricing_rule: PricingRule;
+  modifiers: Modifier[];
+  option_products: OptionProduct[];
+  /** Produtos que usam este grupo — só o id, para marcar os checkboxes. */
+  products?: { id: number }[];
   products_count?: number;
 };
 
@@ -28,11 +71,13 @@ export type OrderItem = {
   total_cents: number;
 };
 
+export type Fulfillment = 'delivery' | 'pickup' | 'dine_in';
+
 export type Order = {
   id: number;
   number: number;
   status: string;
-  fulfillment: 'delivery' | 'pickup';
+  fulfillment: Fulfillment;
   payment_method: string;
   payment_status: string;
   subtotal_cents: number;
@@ -114,6 +159,7 @@ export type DeliveryConfig = {
   radiusKm?: number | null;
   acceptsPickup: boolean;
   acceptsDelivery: boolean;
+  acceptsDineIn: boolean;
 };
 
 export type DaySchedule = {
@@ -195,6 +241,18 @@ export const STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelado',
 };
 
+/**
+ * Como o cliente recebe o pedido. Espelha Order::FULFILLMENTS na API.
+ *
+ * Na operação isso separa três filas distintas: entrega sai com o motoboy,
+ * retirada espera no balcão e consumo no local vai para o salão.
+ */
+export const FULFILLMENT_LABELS: Record<Fulfillment, string> = {
+  delivery: 'Entrega',
+  pickup: 'Retirada',
+  dine_in: 'Consumo no local',
+};
+
 export const PAYMENT_LABELS: Record<string, string> = {
   cash: 'Dinheiro na entrega',
   card_on_delivery: 'Cartão na entrega',
@@ -202,6 +260,25 @@ export const PAYMENT_LABELS: Record<string, string> = {
   stripe_card: 'Cartão pelo site',
   stripe_pix: 'Pix pelo site',
 };
+
+/**
+ * Rótulo do pagamento no contexto de um pedido já feito.
+ *
+ * Os rótulos fixos acima descrevem a oferta em abstrato — é o que a tela de
+ * configuração mostra. Num pedido concreto a modalidade é conhecida, e "na
+ * entrega" seria errado para quem come no salão ou busca no balcão.
+ */
+export function paymentLabelFor(method: string, fulfillment: Fulfillment): string {
+  const presencial = fulfillment === 'delivery' ? 'na entrega' : 'na loja';
+
+  const contextual: Record<string, string> = {
+    cash: `Dinheiro ${presencial}`,
+    card_on_delivery: `Cartão ${presencial}`,
+    pix_on_delivery: `Pix ${presencial}`,
+  };
+
+  return contextual[method] ?? PAYMENT_LABELS[method] ?? method;
+}
 
 export const DAYS: { key: string; label: string }[] = [
   { key: 'mon', label: 'Segunda' },

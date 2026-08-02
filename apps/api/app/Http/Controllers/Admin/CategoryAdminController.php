@@ -26,12 +26,16 @@ class CategoryAdminController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:80'],
             'is_active' => ['boolean'],
+            // Categoria-insumo: abastece grupos compostos (sabores de pizza) e
+            // não aparece como seção do cardápio.
+            'is_option_only' => ['boolean'],
         ]);
 
         $category = Category::create([
             'name' => $data['name'],
             'slug' => $this->uniqueSlug($data['name']),
             'is_active' => $data['is_active'] ?? true,
+            'is_option_only' => $data['is_option_only'] ?? false,
             // Nova categoria entra no fim da lista, não no topo.
             'position' => (int) Category::max('position') + 1,
         ]);
@@ -68,6 +72,7 @@ class CategoryAdminController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:80'],
             'is_active' => ['boolean'],
+            'is_option_only' => ['boolean'],
         ]);
 
         // Update pela query, não pelo model: o RLS pode recusar a escrita e
@@ -78,6 +83,7 @@ class CategoryAdminController extends Controller
                 ->update([
                     'name' => $data['name'],
                     'is_active' => $data['is_active'] ?? $category->is_active,
+                    'is_option_only' => $data['is_option_only'] ?? $category->is_option_only,
                     'updated_at' => now(),
                 ]) === 0,
             404,

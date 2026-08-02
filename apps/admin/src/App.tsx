@@ -9,6 +9,7 @@ import { OrdersPage } from '@/pages/orders';
 import { FinancePage } from '@/pages/finance';
 import { MenuPage } from '@/pages/menu';
 import { CategoriesPage } from '@/pages/categories';
+import { OptionsPage } from '@/pages/options';
 import { StorePage } from '@/pages/store';
 import { DeliveryPage } from '@/pages/delivery';
 import { HoursPage } from '@/pages/hours';
@@ -177,6 +178,7 @@ function StoreRoutes() {
       )}
       <Route path="/cardapio" element={<MenuPage />} />
       <Route path="/categorias" element={<CategoriesPage />} />
+      <Route path="/opcoes" element={<OptionsPage />} />
       <Route path="/loja" element={<StorePage />} />
       <Route path="/horarios" element={<HoursPage />} />
       <Route path="/aparencia" element={<AppearancePage />} />

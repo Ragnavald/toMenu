@@ -62,6 +62,10 @@ class TenantRegistrar
                         'eta_minutes' => 40,
                         'free_above_cents' => null,
                         'radius_km' => null,
+                        'accepts_pickup' => true,
+                        'accepts_delivery' => true,
+                        // Opt-in: a loja liga quando tiver salão.
+                        'accepts_dine_in' => false,
                     ],
                     'payment_methods' => ['cash'],
                     'business_hours' => $this->defaultHours(),

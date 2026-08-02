@@ -158,6 +158,12 @@ export function DeliveryPage() {
                 label="Aceito retirada no local"
                 description="O cliente busca o pedido e não paga taxa."
               />
+              <Toggle
+                checked={form.acceptsDineIn}
+                onChange={(value) => update({ acceptsDineIn: value })}
+                label="Aceito consumo no local"
+                description="O cliente come no salão. Sem endereço e sem taxa."
+              />
             </div>
           </div>
         </Section>

@@ -148,6 +148,7 @@ class SettingsController extends Controller
             'radiusKm' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'acceptsPickup' => ['boolean'],
             'acceptsDelivery' => ['boolean'],
+            'acceptsDineIn' => ['boolean'],
         ]);
 
         $settings = TenantSettings::firstOrNew(['tenant_id' => $tenant->id]);
@@ -159,6 +160,9 @@ class SettingsController extends Controller
             'radius_km' => $data['radiusKm'] ?? null,
             'accepts_pickup' => $data['acceptsPickup'] ?? true,
             'accepts_delivery' => $data['acceptsDelivery'] ?? true,
+            // Novidade: lojas que já existiam não passam a ofertar consumo no
+            // local sem alguém ligar a opção.
+            'accepts_dine_in' => $data['acceptsDineIn'] ?? false,
         ];
         $settings->save();
 
@@ -271,6 +275,7 @@ class SettingsController extends Controller
             'radiusKm' => $config['radius_km'] ?? null,
             'acceptsPickup' => (bool) ($config['accepts_pickup'] ?? true),
             'acceptsDelivery' => (bool) ($config['accepts_delivery'] ?? true),
+            'acceptsDineIn' => (bool) ($config['accepts_dine_in'] ?? false),
         ];
     }
 

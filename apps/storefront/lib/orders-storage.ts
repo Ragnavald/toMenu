@@ -1,3 +1,5 @@
+import type { Fulfillment } from './types';
+
 export interface StoredOrderItem {
   id?: number;
   name: string;
@@ -11,7 +13,7 @@ export interface StoredOrder {
   number: number;
   tenantSlug: string;
   status: string;
-  fulfillment: 'delivery' | 'pickup';
+  fulfillment: Fulfillment;
   paymentMethod: string;
   totalCents: number;
   placedAt: string;

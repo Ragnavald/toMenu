@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\CategoryAdminController;
 use App\Http\Controllers\Admin\FinanceAdminController;
+use App\Http\Controllers\Admin\ModifierGroupAdminController;
 use App\Http\Controllers\Admin\OrderAdminController;
 use App\Http\Controllers\Admin\ProductAdminController;
 use App\Http\Controllers\Admin\SettingsController;
@@ -166,6 +167,12 @@ Route::prefix('admin')
     ->group(function () {
         Route::post('products/upload-image', [ProductAdminController::class, 'uploadImage']);
         Route::apiResource('products', ProductAdminController::class);
+
+        // Grupos de opções: borda e adicionais (lista) e sabores (composto).
+        // `attach` vem antes do apiResource para não ser lido como {group}.
+        Route::post('modifier-groups/{group}/products', [ModifierGroupAdminController::class, 'attach']);
+        Route::apiResource('modifier-groups', ModifierGroupAdminController::class)
+            ->parameter('modifier-groups', 'group');
 
         // A reordenação e criação em lote vêm antes do apiResource para que não sejam
         // capturados como {category} pelo route model binding.

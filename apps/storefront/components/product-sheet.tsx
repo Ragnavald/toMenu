@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatMoney } from '@/lib/api';
-import type { Modifier, Product } from '@/lib/types';
-import { useCart } from './cart-provider';
+import { displayPrice, priceGroup, type Product } from '@/lib/types';
+import { useCart, type Selection } from './cart-provider';
 
 /**
  * Folha de detalhe do produto.
@@ -36,12 +36,16 @@ export function ProductSheet({
     dialogRef.current?.showModal();
   }, []);
 
-  const chosen = useMemo<Modifier[]>(() => {
-    return product.modifierGroups.flatMap((group) =>
-      group.modifiers.filter((modifier) =>
+  // Escolhas mantidas por grupo: a regra de preço do meio a meio ('highest')
+  // só existe dentro de um grupo, então achatar antes de precificar somaria
+  // dois sabores inteiros.
+  const selections = useMemo<Selection[]>(() => {
+    return product.modifierGroups.map((group) => ({
+      groupId: group.id,
+      modifiers: group.modifiers.filter((modifier) =>
         (selected[group.id] ?? []).includes(modifier.id),
       ),
-    );
+    }));
   }, [product.modifierGroups, selected]);
 
   // Grupos obrigatórios que ainda não atingiram o mínimo de escolhas.
@@ -49,9 +53,19 @@ export function ProductSheet({
     (group) => (selected[group.id] ?? []).length < group.minSelect,
   );
 
-  const unitPrice =
-    (product.promoPriceCents ?? product.priceCents) +
-    chosen.reduce((sum, modifier) => sum + modifier.priceDeltaCents, 0);
+  // Mesma conta do cartão do cardápio: na vitrine (sem pedido) o rodapé mostra
+  // "a partir de" em vez do preço do formato, que é zero.
+  const showcasePrice = useMemo(() => displayPrice(product), [product]);
+
+  const unitPrice = useMemo(() => {
+    const base = product.promoPriceCents ?? product.priceCents;
+
+    return selections.reduce((total, selection) => {
+      const group = product.modifierGroups.find((g) => g.id === selection.groupId);
+
+      return group ? total + priceGroup(group, selection.modifiers) : total;
+    }, base);
+  }, [product, selections]);
 
   function toggle(groupId: number, modifierId: number, maxSelect: number) {
     setSelected((current) => {
@@ -64,7 +78,17 @@ export function ProductSheet({
       // Grupo de escolha única: a nova seleção substitui a anterior.
       if (maxSelect === 1) return { ...current, [groupId]: [modifierId] };
 
-      if (list.length >= maxSelect) return current;
+      /*
+       * Grupo cheio: a escolha nova empurra a mais antiga para fora.
+       *
+       * Ignorar o clique — o comportamento anterior — deixa o cliente preso no
+       * meio a meio: com dois sabores marcados, todo clique num terceiro não
+       * faz nada visível, e não é óbvio que é preciso desmarcar antes. Rodar a
+       * fila mantém a escolha sempre possível.
+       */
+      if (list.length >= maxSelect) {
+        return { ...current, [groupId]: [...list.slice(1), modifierId] };
+      }
 
       return { ...current, [groupId]: [...list, modifierId] };
     });
@@ -76,7 +100,7 @@ export function ProductSheet({
       return;
     }
 
-    add(product, chosen, quantity);
+    add(product, selections, quantity);
     dialogRef.current?.close();
     onClose();
   }
@@ -126,6 +150,7 @@ export function ProductSheet({
             {product.modifierGroups.map((group) => {
               const list = selected[group.id] ?? [];
               const isMissing = showErrors && list.length < group.minSelect;
+              const isComposed = group.source === 'category';
 
               return (
                 <fieldset key={group.id} className="mt-6">
@@ -133,15 +158,37 @@ export function ProductSheet({
                     <span className="text-sm font-semibold">{group.name}</span>
 
                     <span
-                      className="text-xs font-medium"
+                      className="text-xs font-medium tabular-nums"
                       style={{
                         color: isMissing ? '#dc2626' : 'var(--ink-subtle)',
                       }}
                     >
-                      {group.isRequired ? 'Obrigatório' : 'Opcional'}
-                      {group.maxSelect > 1 && ` · até ${group.maxSelect}`}
+                      {/*
+                        Grupo de múltipla escolha mostra o progresso ("1 de 2")
+                        em vez de "até 2": no meio a meio o cliente precisa
+                        saber quantas metades ainda faltam, e um rótulo estático
+                        não responde isso.
+                      */}
+                      {group.maxSelect > 1
+                        ? `${list.length} de ${group.maxSelect}`
+                        : group.isRequired
+                          ? 'Obrigatório'
+                          : 'Opcional'}
                     </span>
                   </legend>
+
+                  {/*
+                    No grupo composto com mais de uma escolha, cada opção é uma
+                    fração da pizza. Dizer isso explicitamente evita a leitura
+                    de que o cliente está pedindo duas pizzas inteiras — a
+                    dúvida mais comum nessa tela.
+                  */}
+                  {isComposed && group.maxSelect > 1 && (
+                    <p className="pb-2 text-xs text-muted">
+                      Cada sabor ocupa 1/{group.maxSelect} da pizza. Cobramos o
+                      valor do sabor mais caro.
+                    </p>
+                  )}
 
                   <div className="grid gap-1.5">
                     {group.modifiers.map((modifier) => {
@@ -171,13 +218,40 @@ export function ProductSheet({
                             className="size-4 shrink-0 accent-[rgb(var(--brand))]"
                           />
 
-                          <span className="flex-1">{modifier.name}</span>
+                          {/* Sabor vem de um produto e tem foto própria. */}
+                          {modifier.imageUrl && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={modifier.imageUrl}
+                              alt=""
+                              className="size-11 shrink-0 rounded object-cover"
+                            />
+                          )}
 
-                          {modifier.priceDeltaCents !== 0 && (
-                            <span className="tabular-nums text-muted">
-                              {modifier.priceDeltaCents > 0 ? '+' : '−'}
-                              {formatMoney(Math.abs(modifier.priceDeltaCents))}
+                          <span className="flex-1">
+                            <span className="block">{modifier.name}</span>
+
+                            {modifier.description && (
+                              <span className="mt-0.5 block text-xs leading-snug text-muted">
+                                {modifier.description}
+                              </span>
+                            )}
+                          </span>
+
+                          {isComposed ? (
+                            // Preço cheio do sabor, não um acréscimo: exibir
+                            // "+R$ 72,00" ao lado de uma metade sugeriria que
+                            // o valor soma ao da pizza.
+                            <span className="shrink-0 tabular-nums text-muted">
+                              {formatMoney(modifier.priceDeltaCents)}
                             </span>
+                          ) : (
+                            modifier.priceDeltaCents !== 0 && (
+                              <span className="shrink-0 tabular-nums text-muted">
+                                {modifier.priceDeltaCents > 0 ? '+' : '−'}
+                                {formatMoney(Math.abs(modifier.priceDeltaCents))}
+                              </span>
+                            )
                           )}
                         </label>
                       );
@@ -191,9 +265,11 @@ export function ProductSheet({
 
         {!acceptsOrders && (
           <div className="flex items-baseline justify-between gap-3 border-t border-[var(--hairline)] bg-[rgb(var(--surface))] p-4">
-            <span className="text-sm text-muted">Preço</span>
+            <span className="text-sm text-muted">
+              {showcasePrice.from ? 'A partir de' : 'Preço'}
+            </span>
             <span className="text-lg font-semibold tabular-nums">
-              {formatMoney(product.promoPriceCents ?? product.priceCents)}
+              {formatMoney(showcasePrice.cents)}
             </span>
           </div>
         )}

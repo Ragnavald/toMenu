@@ -614,6 +614,11 @@ function DeliveryStep({
           onChange={(value) => update({ acceptsPickup: value })}
           label="Aceito retirada no local"
         />
+        <Toggle
+          checked={form.acceptsDineIn}
+          onChange={(value) => update({ acceptsDineIn: value })}
+          label="Aceito consumo no local"
+        />
       </div>
     </div>
   );

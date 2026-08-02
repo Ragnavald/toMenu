@@ -2,20 +2,37 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, formatMoney } from '@/lib/api';
 import {
+  FULFILLMENT_LABELS,
   ORDER_STATUSES,
-  PAYMENT_LABELS,
+  paymentLabelFor,
   STATUS_LABELS,
+  type Fulfillment,
   type Order,
   type Paginated,
 } from '@/lib/types';
 
-/** Próximo passo natural do fluxo, para virar o status com um clique só. */
-const NEXT_STATUS: Record<string, string> = {
-  confirmed: 'preparing',
-  preparing: 'ready',
-  ready: 'out_for_delivery',
-  out_for_delivery: 'delivered',
-};
+/**
+ * Próximo passo natural do fluxo, para virar o status com um clique só.
+ *
+ * Depois de pronto o caminho diverge pela modalidade: só a entrega passa por
+ * "saiu para entrega". Retirada e consumo no local vão de "pronto" direto para
+ * concluído — empurrá-los para a rota do motoboy encheria a coluna de entrega
+ * com pedidos que nunca saem da loja.
+ */
+function nextStatus(order: Order): string | null {
+  switch (order.status) {
+    case 'confirmed':
+      return 'preparing';
+    case 'preparing':
+      return 'ready';
+    case 'ready':
+      return order.fulfillment === 'delivery' ? 'out_for_delivery' : 'delivered';
+    case 'out_for_delivery':
+      return 'delivered';
+    default:
+      return null;
+  }
+}
 
 const KANBAN_COLUMNS: { key: string; label: string; tone: string }[] = [
   {
@@ -80,6 +97,16 @@ export function OrdersPage() {
   });
 
   const orders = data?.data ?? [];
+
+  /*
+   * "Em entrega" só faz sentido para pedidos que saem da loja. Numa casa que
+   * atende apenas no salão a coluna seria uma faixa morta ocupando espaço
+   * horizontal do kanban — mas ela precisa continuar existindo enquanto houver
+   * qualquer pedido de entrega, inclusive como alvo de arraste.
+   */
+  const columns = orders.some((order) => order.fulfillment === 'delivery')
+    ? KANBAN_COLUMNS
+    : KANBAN_COLUMNS.filter((col) => col.key !== 'out_for_delivery');
 
   // Handlers do HTML5 Drag and Drop (Kanban)
   const handleDragStart = (e: React.DragEvent, orderId: number) => {
@@ -269,7 +296,7 @@ export function OrdersPage() {
       {/* KANBAN VIEW (Exibe Kanban quando estiver no modo Kanban E sem filtro de status específico selecionado) */}
       {!isLoading && orders.length > 0 && viewMode === 'kanban' && !filter && (
         <div className="flex overflow-x-auto pb-4 gap-4 scrollbar-thin">
-          {KANBAN_COLUMNS.map((col) => {
+          {columns.map((col) => {
             const columnOrders = orders.filter((o) => o.status === col.key);
             const isTarget = dragOverColumn === col.key;
 
@@ -318,10 +345,13 @@ export function OrdersPage() {
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex flex-wrap items-center gap-1.5">
                                 <span className="font-bold tabular-nums text-sm">
                                   #{order.number}
                                 </span>
+                                <FulfillmentBadge
+                                  fulfillment={order.fulfillment}
+                                />
                                 {order.payment_status === 'paid' && (
                                   <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
                                     Pago
@@ -401,6 +431,7 @@ export function OrdersPage() {
                       #{order.number}
                     </span>
                     <StatusBadge status={order.status} />
+                    <FulfillmentBadge fulfillment={order.fulfillment} />
                     {order.payment_status === 'paid' && (
                       <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
                         Pago
@@ -411,8 +442,7 @@ export function OrdersPage() {
                   <p className="mt-1 text-sm text-muted">
                     {order.customer?.name ?? 'Cliente'} ·{' '}
                     {order.customer?.phone ?? '—'} ·{' '}
-                    {order.fulfillment === 'delivery' ? 'Entrega' : 'Retirada'} ·{' '}
-                    {PAYMENT_LABELS[order.payment_method] ?? order.payment_method}
+                    {paymentLabelFor(order.payment_method, order.fulfillment)}
                   </p>
                 </div>
 
@@ -443,19 +473,19 @@ export function OrdersPage() {
               {/* Controles de Status Mobile / Lista */}
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  {NEXT_STATUS[order.status] && (
+                  {nextStatus(order) && (
                     <button
                       type="button"
                       disabled={updateStatus.isPending}
                       onClick={() =>
                         updateStatus.mutate({
                           id: order.id,
-                          status: NEXT_STATUS[order.status],
+                          status: nextStatus(order)!,
                         })
                       }
                       className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
                     >
-                      Avançar para {STATUS_LABELS[NEXT_STATUS[order.status]]}
+                      Avançar para {STATUS_LABELS[nextStatus(order)!]}
                     </button>
                   )}
 
@@ -503,6 +533,31 @@ export function OrdersPage() {
         </ul>
       )}
     </div>
+  );
+}
+
+/**
+ * Modalidade do pedido, destacada por cor.
+ *
+ * É o primeiro dado que a operação precisa ler no card: define se o pedido sai
+ * com o motoboy, espera no balcão ou vai para uma mesa do salão. As cores são
+ * distintas das do status para os dois selos não se confundirem no mesmo card.
+ */
+function FulfillmentBadge({ fulfillment }: { fulfillment: Fulfillment }) {
+  const tones: Record<Fulfillment, string> = {
+    delivery: 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300',
+    pickup:
+      'bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300',
+    dine_in:
+      'bg-orange-50 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300',
+  };
+
+  return (
+    <span
+      className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${tones[fulfillment] ?? tones.delivery}`}
+    >
+      {FULFILLMENT_LABELS[fulfillment] ?? fulfillment}
+    </span>
   );
 }
 

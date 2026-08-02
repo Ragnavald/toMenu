@@ -30,6 +30,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
     items: [
       { to: '/cardapio', label: 'Produtos', icon: <IconMenu /> },
       { to: '/categorias', label: 'Categorias', icon: <IconTag /> },
+      { to: '/opcoes', label: 'Opções', icon: <IconOptions /> },
     ],
   },
   {
@@ -347,6 +348,18 @@ function IconTag() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
       <path d="M4 12.5V5a1 1 0 0 1 1-1h7.5L20 11.5 12.5 19 4 12.5Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
       <circle cx="8.5" cy="8.5" r="1.3" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** Círculo dividido: a metáfora do meio a meio, que é o caso central da tela. */
+function IconOptions() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M12 4v16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <circle cx="8.4" cy="10" r="1.1" fill="currentColor" />
+      <circle cx="8.4" cy="14.4" r="1.1" fill="currentColor" />
     </svg>
   );
 }

@@ -47,6 +47,42 @@ it('salva taxa de entrega, pedido mínimo e tempo estimado', function () {
         ->assertJsonPath('delivery.freeAboveCents', 9000);
 });
 
+it('salva as modalidades que a loja aceita', function () {
+    $this->withHeaders(asStore())
+        ->putJson('/api/admin/settings/delivery', [
+            'feeCents' => 0,
+            'minOrderCents' => 0,
+            'etaMinutes' => 30,
+            'acceptsPickup' => true,
+            'acceptsDelivery' => false,
+            'acceptsDineIn' => true,
+        ])
+        ->assertOk();
+
+    $this->withHeaders(asStore())
+        ->getJson('/api/admin/settings')
+        ->assertJsonPath('delivery.acceptsDelivery', false)
+        ->assertJsonPath('delivery.acceptsDineIn', true);
+});
+
+it('mantém consumo no local desligado quando o campo não é enviado', function () {
+    // Payload no formato anterior ao recurso: um cliente antigo do painel não
+    // pode ligar o salão de uma loja sem querer.
+    $this->withHeaders(asStore())
+        ->putJson('/api/admin/settings/delivery', [
+            'feeCents' => 0,
+            'minOrderCents' => 0,
+            'etaMinutes' => 30,
+            'acceptsPickup' => true,
+            'acceptsDelivery' => true,
+        ])
+        ->assertOk();
+
+    $this->withHeaders(asStore())
+        ->getJson('/api/admin/settings')
+        ->assertJsonPath('delivery.acceptsDineIn', false);
+});
+
 it('recusa valores negativos de taxa ou pedido mínimo', function () {
     $this->withHeaders(asStore())
         ->putJson('/api/admin/settings/delivery', [

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Order;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -20,7 +21,7 @@ class StoreOrderRequest extends FormRequest
             'customer.email' => ['nullable', 'email', 'max:180'],
             'customer.cpf' => ['nullable', 'string', 'max:20'],
 
-            'fulfillment' => ['required', Rule::in(['delivery', 'pickup'])],
+            'fulfillment' => ['required', Rule::in(Order::FULFILLMENTS)],
 
             'address' => ['required_if:fulfillment,delivery', 'array'],
             'address.street' => ['required_with:address', 'string', 'max:180'],

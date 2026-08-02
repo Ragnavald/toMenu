@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'slug', 'position', 'is_active'])]
+#[Fillable(['name', 'slug', 'position', 'is_active', 'is_option_only'])]
 class Category extends Model
 {
     use BelongsToTenant, HasFactory;
@@ -17,6 +17,7 @@ class Category extends Model
     {
         return [
             'is_active' => 'boolean',
+            'is_option_only' => 'boolean',
             'position' => 'integer',
         ];
     }

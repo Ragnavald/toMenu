@@ -184,3 +184,39 @@ it('sanitiza tema malicioso antes de servir ao storefront', function () {
     expect($response->json('theme.brand'))->toBe('234 88 12')   // fallback
         ->and($response->json('theme.font'))->toBe('inter');    // fallback
 });
+
+it('publica horário de funcionamento e status de abertura no cardápio', function () {
+    // A página da loja no storefront monta a lista de horários e o selo
+    // aberto/fechado a partir destes dois campos.
+    TenantSettings::create([
+        'tenant_id' => $this->tenantA->id,
+        'business_hours' => [
+            'mon' => ['enabled' => true, 'open' => '18:00', 'close' => '23:00'],
+            'tue' => ['enabled' => false, 'open' => '18:00', 'close' => '23:00'],
+        ],
+    ]);
+
+    $this->withHeader('X-Tenant', 'loja-a')->getJson('/api/menu')
+        ->assertOk()
+        ->assertJsonPath('tenant.businessHours.mon.open', '18:00')
+        ->assertJsonPath('tenant.businessHours.tue.enabled', false)
+        ->assertJsonPath('tenant.isOpen', false);
+});
+
+it('respeita o fechamento manual mesmo dentro do horário declarado', function () {
+    // O "fechar agora" do painel é o botão de pânico quando a cozinha lota:
+    // precisa vencer o horário, senão o cliente monta um pedido que não entra.
+    $today = strtolower(now()->format('D'));
+
+    TenantSettings::create([
+        'tenant_id' => $this->tenantA->id,
+        'business_hours' => [
+            $today => ['enabled' => true, 'open' => '00:00', 'close' => '23:59'],
+        ],
+        'is_open_override' => false,
+    ]);
+
+    $this->withHeader('X-Tenant', 'loja-a')->getJson('/api/menu')
+        ->assertOk()
+        ->assertJsonPath('tenant.isOpen', false);
+});

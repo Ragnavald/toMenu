@@ -1,7 +1,7 @@
 'use client';
 
 import { formatMoney } from '@/lib/api';
-import type { Product } from '@/lib/types';
+import { displayPrice, type Product } from '@/lib/types';
 
 export function ProductCard({
   product,
@@ -12,8 +12,11 @@ export function ProductCard({
   onSelect: () => void;
   layout?: string;
 }) {
-  const hasPromo = product.promoPriceCents != null;
-  const price = product.promoPriceCents ?? product.priceCents;
+  const { cents: price, from } = displayPrice(product);
+
+  // Promoção riscada não faz sentido junto de "a partir de": o valor cheio ali
+  // seria o do produto (zero, num formato de pizza), não o do sabor.
+  const hasPromo = product.promoPriceCents != null && !from;
 
   if (layout === 'grid') {
     return (
@@ -67,6 +70,8 @@ export function ProductCard({
         </div>
 
         <p className="mt-2 flex items-baseline gap-1.5">
+          {from && <span className="text-[11px] text-muted">a partir de</span>}
+
           <span
             className="font-semibold text-sm tabular-nums"
             style={{ color: hasPromo ? 'rgb(var(--brand))' : undefined }}
@@ -102,6 +107,8 @@ export function ProductCard({
 
         <div className="flex items-center gap-2 shrink-0">
           <p className="flex items-baseline gap-1.5">
+            {from && <span className="text-[11px] text-muted">a partir de</span>}
+
             <span
               className="font-semibold text-sm tabular-nums"
               style={{ color: hasPromo ? 'rgb(var(--brand))' : undefined }}
@@ -136,6 +143,8 @@ export function ProductCard({
         )}
 
         <p className="mt-2.5 flex items-baseline gap-2">
+          {from && <span className="text-xs text-muted">a partir de</span>}
+
           <span
             className="font-semibold tabular-nums"
             style={{ color: hasPromo ? 'rgb(var(--brand))' : undefined }}

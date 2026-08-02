@@ -4,6 +4,7 @@ import { fetchMenuResult } from '@/lib/api';
 import { fontClassFor } from '@/lib/fonts';
 import { getContrastInk } from '@/lib/contrast';
 import { CartProvider } from '@/components/cart-provider';
+import { FulfillmentProvider } from '@/components/fulfillment-provider';
 import { StoreSuspended } from '@/components/store-suspended';
 
 export const dynamic = 'force-dynamic';
@@ -84,7 +85,14 @@ export default async function TenantLayout({ params, children }: Props) {
       }}
     >
       <style dangerouslySetInnerHTML={{ __html: themeCss }} />
-      <CartProvider tenantSlug={tenant}>{children}</CartProvider>
+      <CartProvider tenantSlug={tenant}>
+        <FulfillmentProvider
+          tenantSlug={tenant}
+          options={menu.tenant.fulfillments ?? ['delivery', 'pickup']}
+        >
+          {children}
+        </FulfillmentProvider>
+      </CartProvider>
     </div>
   );
 }

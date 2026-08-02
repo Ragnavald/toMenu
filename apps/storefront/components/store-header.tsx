@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { formatMoney } from '@/lib/api';
 import type { TenantInfo } from '@/lib/types';
 import { OrderTrackingButton } from './order-tracking-button';
@@ -34,33 +35,31 @@ export function StoreHeader({ tenant }: { tenant: TenantInfo }) {
       </div>
 
       <div className="mx-auto max-w-3xl px-4">
+        {/*
+          Logo e botão dividem a primeira faixa; o nome ocupa a largura inteira
+          logo abaixo. Enquanto os três disputavam a mesma linha, um aparelho de
+          360px não tinha espaço para todos e o nome da loja era sempre quem
+          cedia — "Forno di Napoli" chegava ao cliente como "Forno di ...".
+        */}
         <div className="-mt-10 flex items-end justify-between gap-4 sm:-mt-12">
-          <div className="flex items-end gap-4 min-w-0 flex-1">
-            <div
-              className="grid size-20 shrink-0 place-items-center overflow-hidden border-4 bg-[rgb(var(--surface))] text-xl font-semibold shadow-soft sm:size-24"
-              style={{
-                borderColor: 'rgb(var(--surface))',
-                borderRadius: 'var(--radius)',
-                color: 'rgb(var(--brand))',
-              }}
-            >
-              {tenant.logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={tenant.logoUrl}
-                  alt={tenant.name}
-                  className="size-full object-cover"
-                />
-              ) : (
-                initials
-              )}
-            </div>
-
-            <div className="min-w-0 flex-1 pb-1">
-              <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">
-                {tenant.name}
-              </h1>
-            </div>
+          <div
+            className="grid size-20 shrink-0 place-items-center overflow-hidden border-4 bg-[rgb(var(--surface))] text-xl font-semibold shadow-soft sm:size-24"
+            style={{
+              borderColor: 'rgb(var(--surface))',
+              borderRadius: 'var(--radius)',
+              color: 'rgb(var(--brand))',
+            }}
+          >
+            {tenant.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={tenant.logoUrl}
+                alt={tenant.name}
+                className="size-full object-cover"
+              />
+            ) : (
+              initials
+            )}
           </div>
 
           {/* Vitrine não tem pedido para acompanhar. */}
@@ -70,6 +69,36 @@ export function StoreHeader({ tenant }: { tenant: TenantInfo }) {
             </div>
           )}
         </div>
+
+        {/* O nome leva à página da loja: endereço, horário e contato.
+            A seta é o que sinaliza que o título é navegável — sem ela o
+            cliente não descobre que existe algo além do cardápio.
+
+            `loja` é relativo de propósito: no subdomínio a URL é
+            pizzaria.tomenu.app, e um href absoluto ("/loja") sairia do
+            cardápio para uma rota que não pertence a loja alguma. */}
+        <h1 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
+          <Link href="loja" className="group inline-flex items-start gap-1.5">
+            <span>{tenant.name}</span>
+
+            {/* shrink-0: a seta é o sinal de que dá para navegar; se encolher
+                junto com o texto ela some justamente no caso apertado, que é
+                quando mais se precisa dela. */}
+            <svg
+              className="mt-1 size-5 shrink-0 transition-transform group-hover:translate-x-0.5"
+              style={{ color: 'rgb(var(--brand))' }}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.2}
+              viewBox="0 0 24 24"
+              aria-hidden
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="m9 6 6 6-6 6" />
+            </svg>
+
+            <span className="sr-only">Ver informações da loja</span>
+          </Link>
+        </h1>
 
         {/* No plano somente-cardápio o cabeçalho troca as condições de entrega
             — que não existem ali — pelo contato e endereço da loja, que é o que

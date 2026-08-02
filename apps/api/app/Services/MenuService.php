@@ -27,7 +27,10 @@ use Illuminate\Support\Facades\Cache;
  */
 class MenuService
 {
-    public function __construct(private ThemeSanitizer $themes) {}
+    public function __construct(
+        private ThemeSanitizer $themes,
+        private ModifierOptionResolver $options,
+    ) {}
 
     public function forTenant(Tenant $tenant): array
     {
@@ -65,11 +68,14 @@ class MenuService
     {
         // Eager load explícito: sem isto seriam N+1 queries por produto para
         // buscar grupos de modificadores, o gargalo clássico deste endpoint.
+        //
+        // optionProducts entra na mesma leva: um grupo composto que resolvesse
+        // os sabores sob demanda faria uma query por tamanho de pizza exibido.
         $categories = Category::query()
             ->where('is_active', true)
             ->with(['products' => function ($query) {
                 $query->where('is_available', true)
-                    ->with('modifierGroups.modifiers')
+                    ->with(['modifierGroups.modifiers', 'modifierGroups.optionProducts'])
                     ->orderBy('position');
             }])
             ->orderBy('position')
@@ -78,6 +84,11 @@ class MenuService
             // cardápio parece erro para o cliente final, e a situação é comum
             // — a loja cria as seções antes de cadastrar os pratos.
             ->filter(fn (Category $category) => $category->products->isNotEmpty())
+            // Categoria que só serve de insumo para grupo composto também não
+            // vai ao ar. "Sabores de Pizza" existe para abastecer a escolha
+            // dentro da pizza; listada solta no cardápio ela venderia meia
+            // pizza avulsa e apareceria duplicada logo abaixo dos tamanhos.
+            ->reject(fn (Category $category) => $category->is_option_only)
             ->values();
 
         $settings = $tenant->settings;
@@ -109,6 +120,10 @@ class MenuService
                 'acceptsOrders' => $tenant->allowsOrders(),
                 'paymentMethods' => $settings?->payment_methods ?? ['cash'],
                 'deliveryConfig' => $settings?->delivery_config ?? [],
+                // Modalidades ofertadas no cardápio. Normalizado aqui porque a
+                // loja pode nunca ter salvo a configuração — o storefront não
+                // deve ter que reproduzir os defaults do backend.
+                'fulfillments' => $this->fulfillments($tenant, $settings),
                 'businessHours' => $settings?->business_hours ?? [],
                 // Calculado no servidor: o relógio do cliente não é confiável
                 // para decidir se a loja aceita pedidos.
@@ -133,19 +148,47 @@ class MenuService
                         'minSelect' => $group->min_select,
                         'maxSelect' => $group->max_select,
                         'isRequired' => $group->is_required,
-                        'modifiers' => $group->modifiers
-                            ->where('is_available', true)
-                            ->values()
-                            ->map(fn ($modifier) => [
-                                'id' => $modifier->id,
-                                'name' => $modifier->name,
-                                'priceDeltaCents' => $modifier->price_delta_cents,
-                            ]),
+                        // O storefront muda a apresentação conforme estes dois:
+                        // grupo composto vira lista de sabores com foto, e a
+                        // regra decide se o rodapé mostra "+R$ x" ou o total.
+                        'source' => $group->source,
+                        'pricingRule' => $group->pricing_rule,
+                        'modifiers' => $this->options->options($group)->map(fn (array $option) => [
+                            'id' => $option['id'],
+                            'name' => $option['name'],
+                            // Mantém o nome do campo por compatibilidade: para
+                            // grupo de lista continua sendo um delta. No grupo
+                            // composto é o preço cheio do sabor, e quem
+                            // interpreta é a pricingRule.
+                            'priceDeltaCents' => $option['priceCents'],
+                            'imageUrl' => $option['imageUrl'],
+                            'description' => $option['description'],
+                        ]),
                     ]),
                 ])->values(),
             ])->values(),
             'version' => (string) $tenant->menu_version,
         ]);
+    }
+
+    /**
+     * Modalidades de recebimento que a loja oferta, na ordem de exibição.
+     *
+     * Espelha o `assertFulfillmentAllowed` do OrderService: o que não aparece
+     * aqui é recusado lá. Consumo no local é opt-in; entrega e retirada seguem
+     * ligadas por padrão para não mudar o comportamento de quem já vende.
+     *
+     * @return array<int,string>
+     */
+    private function fulfillments(Tenant $tenant, ?TenantSettings $settings): array
+    {
+        $config = $settings?->delivery_config ?? [];
+
+        return array_values(array_filter([
+            $tenant->allowsDelivery() && ($config['accepts_delivery'] ?? true) ? 'delivery' : null,
+            ($config['accepts_pickup'] ?? true) ? 'pickup' : null,
+            ($config['accepts_dine_in'] ?? false) ? 'dine_in' : null,
+        ]));
     }
 
     /**

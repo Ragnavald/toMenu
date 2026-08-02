@@ -59,16 +59,25 @@ export function CategoriesPage() {
   });
 
   const update = useMutation({
-    mutationFn: (input: { id: number; name?: string; is_active?: boolean }) =>
-      apiFetch(`/admin/categories/${input.id}`, {
+    mutationFn: (input: {
+      id: number;
+      name?: string;
+      is_active?: boolean;
+      is_option_only?: boolean;
+    }) => {
+      // O PUT exige o registro inteiro: enviar só o campo alterado apagaria os
+      // outros com os defaults da validação.
+      const current = categories.find((c) => c.id === input.id);
+
+      return apiFetch(`/admin/categories/${input.id}`, {
         method: 'PUT',
         body: JSON.stringify({
-          name: input.name ?? categories.find((c) => c.id === input.id)?.name,
-          is_active:
-            input.is_active ??
-            categories.find((c) => c.id === input.id)?.is_active,
+          name: input.name ?? current?.name,
+          is_active: input.is_active ?? current?.is_active,
+          is_option_only: input.is_option_only ?? current?.is_option_only,
         }),
-      }),
+      });
+    },
     onSuccess: () => {
       invalidate();
       setEditing(null);
@@ -281,10 +290,17 @@ export function CategoriesPage() {
                         Oculta
                       </span>
                     )}
+                    {category.is_option_only && (
+                      <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                        Só opção
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-muted">
                     {category.products_count ?? 0}{' '}
                     {(category.products_count ?? 0) === 1 ? 'item' : 'itens'}
+                    {category.is_option_only &&
+                      ' · não aparece como seção do cardápio'}
                   </p>
                 </>
               )}
@@ -303,6 +319,28 @@ export function CategoriesPage() {
                   className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted hover:bg-line"
                 >
                   {category.is_active ? 'Ocultar' : 'Mostrar'}
+                </button>
+                {/*
+                  Marca a seção como insumo de grupos compostos: os sabores de
+                  pizza precisam existir como produtos, mas não como uma seção
+                  vendável logo abaixo dos tamanhos.
+                */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    update.mutate({
+                      id: category.id,
+                      is_option_only: !category.is_option_only,
+                    })
+                  }
+                  title={
+                    category.is_option_only
+                      ? 'Voltar a exibir esta seção no cardápio'
+                      : 'Usar apenas como opção (sabores), sem aparecer no cardápio'
+                  }
+                  className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted hover:bg-line"
+                >
+                  {category.is_option_only ? 'Usar no cardápio' : 'Só opção'}
                 </button>
                 <button
                   type="button"
