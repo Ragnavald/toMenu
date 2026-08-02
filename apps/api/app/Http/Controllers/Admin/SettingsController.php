@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\RefreshStreetMap;
 use App\Models\TenantSettings;
 use App\Services\ImageStorage;
 use App\Services\ThemeSanitizer;
@@ -102,6 +103,15 @@ class SettingsController extends Controller
             'cover_url' => $data['coverUrl'] ?? null,
         ]);
         $settings->save();
+
+        // O mapa do perfil é desenhado a partir do endereço; quando ele muda, o
+        // traçado guardado passa a apontar para o lugar errado. Comparar com o
+        // endereço que gerou o desenho (e não com o valor anterior do campo)
+        // faz o job ser disparado também quando o mapa nunca chegou a existir —
+        // primeira gravação, ou tentativa anterior que falhou.
+        if ($settings->street_map_address !== $settings->address) {
+            RefreshStreetMap::dispatch($tenant->id);
+        }
 
         return response()->json(['message' => 'Perfil atualizado.']);
     }

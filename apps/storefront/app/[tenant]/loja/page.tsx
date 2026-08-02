@@ -60,9 +60,12 @@ export default async function StoreProfilePage({ params }: Props) {
 
   const { menu } = result;
 
-  // Falha silenciosa: sem coordenadas a página troca o mapa por um cartão de
-  // endereço. Geocodificar aqui (e não no cardápio) mantém o custo fora da
-  // página mais acessada.
+  // Só para os dados estruturados: o `geo` do schema.org ajuda a busca local a
+  // situar a loja. O mapa desenhado não depende disto — o traçado dele vem
+  // pronto da API, em `tenant.streetMap`.
+  //
+  // Falha silenciosa: sem coordenadas o schema sai sem `geo`, e geocodificar
+  // aqui (e não no cardápio) mantém o custo fora da página mais acessada.
   const coordinates = await geocodeAddress(menu.tenant.address);
 
   const storeUrl = canonicalStoreUrl(tenant);
@@ -72,8 +75,8 @@ export default async function StoreProfilePage({ params }: Props) {
       {/*
         Esta página é a que tem endereço e horário em texto, então é a
         candidata natural a responder "onde fica" e "está aberto agora". As
-        coordenadas entram aqui — e não no cardápio — porque só aqui elas já
-        foram resolvidas para desenhar o mapa.
+        coordenadas entram aqui — e não no cardápio — porque é aqui que o
+        endereço é publicado.
       */}
       <JsonLd
         data={restaurantSchema({
@@ -91,7 +94,7 @@ export default async function StoreProfilePage({ params }: Props) {
         ])}
       />
 
-      <StoreProfile tenant={menu.tenant} coordinates={coordinates} />
+      <StoreProfile tenant={menu.tenant} />
     </>
   );
 }
