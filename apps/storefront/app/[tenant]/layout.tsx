@@ -44,7 +44,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
    * sabe o nome da loja, que é o visitante que menos precisa de busca.
    */
   const city = cityFrom(address);
-  const title = city ? `${name} — Cardápio e delivery em ${city}` : `${name} — Cardápio online`;
+  // "delivery" só entra quando a loja de fato recebe pedidos: no plano vitrine
+  // o título prometia uma entrega que não existe, logo no resultado da busca e
+  // na aba do navegador — o lugar mais caro para desmentir depois.
+  const title = city
+    ? `${name} — Cardápio ${acceptsOrders ? 'e delivery ' : ''}em ${city}`
+    : `${name} — Cardápio online`;
 
   // A descrição do lojista é sempre melhor que texto gerado: fala da comida.
   // O fallback só entra quando ela não existe.
