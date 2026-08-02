@@ -130,6 +130,7 @@ it('recusa o cadastro de loja quando o Turnstile não valida', function () {
         'email' => 'ana@cantina.test',
         'password' => 'senha-forte-123',
         'password_confirmation' => 'senha-forte-123',
+        'accepted_terms' => true,
         'cf-turnstile-response' => 'token-do-widget',
     ])->assertStatus(422)->assertJsonValidationErrors('cf-turnstile-response');
 
@@ -147,6 +148,7 @@ it('permite o cadastro quando o token é válido', function () {
         'email' => 'ana@cantina.test',
         'password' => 'senha-forte-123',
         'password_confirmation' => 'senha-forte-123',
+        'accepted_terms' => true,
         'cf-turnstile-response' => 'token-do-widget',
     ])->assertCreated();
 

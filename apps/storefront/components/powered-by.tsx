@@ -73,6 +73,26 @@ export function PoweredBy({ surface }: { surface: string }) {
             className="h-4 w-auto"
           />
         </a>
+
+        {/*
+          Privacidade também no cardápio: quem faz um pedido entrega nome,
+          telefone e endereço, e precisa poder descobrir o que acontece com
+          esses dados sem sair procurando pela plataforma.
+
+          URL absoluta e não `next/link`: no subdomínio da loja o `/privacidade`
+          relativo seria reescrito para `/{slug}/privacidade` pelo proxy, que
+          não existe. O documento é da plataforma e vive no domínio raiz.
+        */}
+        <p className="mt-4 text-[11px] text-subtle">
+          <a
+            href={`${SITE_URL}/privacidade`}
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2 opacity-70 transition-opacity hover:opacity-100"
+          >
+            Privacidade
+          </a>
+        </p>
       </div>
     </footer>
   );

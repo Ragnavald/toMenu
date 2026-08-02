@@ -51,12 +51,31 @@ class RegistrationController extends Controller
             // opção. Validado contra a lista de contratáveis e não contra a
             // tabela: um plano interno não deve virar contratável por existir.
             'plan' => ['nullable', Rule::in(Plan::PUBLIC_SLUGS)],
+            /*
+             * Aceite dos Termos e da Privacidade.
+             *
+             * `accepted` e não `boolean`: a regra exige que o valor seja
+             * verdadeiro, então "não marquei a caixa" e "não mandei o campo"
+             * caem os dois em 422. Um `boolean` aceitaria `false` como entrada
+             * válida e deixaria a conta nascer sem consentimento.
+             *
+             * A checagem vive aqui, e não só no formulário: o checkbox do
+             * front é conveniência de UX: qualquer cliente pode postar direto
+             * neste endpoint, e é o servidor que precisa poder afirmar que
+             * nenhuma loja foi criada sem aceite.
+             */
+            'accepted_terms' => ['accepted'],
         ], [
             'slug.regex' => 'Use apenas letras minúsculas, números e hífens.',
             'slug.unique' => 'Este endereço já está em uso.',
             'slug.not_in' => 'Este endereço é reservado pela plataforma.',
             'password.confirmed' => 'A confirmação de senha não confere.',
+            'accepted_terms.accepted' => 'É preciso aceitar os Termos de Uso e a Política de Privacidade.',
         ]);
+
+        // O IP é lido do request e não vem do corpo: é evidência do aceite, e
+        // evidência que o cliente escolhe sozinho não prova nada.
+        $data['ip'] = $request->ip();
 
         $result = $this->registrar->register($data);
         $tenant = $result['tenant'];

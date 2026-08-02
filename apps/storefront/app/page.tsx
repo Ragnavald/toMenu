@@ -492,19 +492,38 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <footer className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-6 py-8 text-xs text-subtle">
-        <span className="flex items-center gap-2">
-          <Image
-            src="/tomenu-icon.png"
-            alt=""
-            aria-hidden
-            width={512}
-            height={512}
-            className="size-5 w-auto"
-          />
-          © {new Date().getFullYear()} ToMenu
-        </span>
-        <span>Feito para quem vive de servir bem.</span>
+      <footer className="mx-auto max-w-5xl px-6 py-8 text-xs text-subtle">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="flex items-center gap-2">
+            <Image
+              src="/tomenu-icon.png"
+              alt=""
+              aria-hidden
+              width={512}
+              height={512}
+              className="size-5 w-auto"
+            />
+            © {new Date().getFullYear()} ToMenu
+          </span>
+          <span>Feito para quem vive de servir bem.</span>
+        </div>
+
+        {/* Os documentos legais precisam ser alcançáveis de qualquer página, e
+            o rodapé é onde o visitante os procura. */}
+        <nav
+          aria-label="Documentos legais"
+          className="mt-5 flex flex-wrap gap-x-5 gap-y-2 border-t border-[var(--hairline)] pt-5"
+        >
+          <Link className="transition-colors hover:text-[rgb(var(--brand))]" href="/termos">
+            Termos de Uso
+          </Link>
+          <Link className="transition-colors hover:text-[rgb(var(--brand))]" href="/privacidade">
+            Política de Privacidade
+          </Link>
+          <Link className="transition-colors hover:text-[rgb(var(--brand))]" href="/lgpd">
+            LGPD
+          </Link>
+        </nav>
       </footer>
     </div>
   );

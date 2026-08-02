@@ -51,12 +51,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ];
   }
 
+  const landing = `${scheme}://${ROOT_DOMAIN}${port}`;
+
   return [
     {
-      url: `${scheme}://${ROOT_DOMAIN}${port}`,
+      url: landing,
       lastModified: now,
       changeFrequency: 'weekly',
       priority: 1,
     },
+    // Os documentos legais mudam raramente e não disputam relevância com a
+    // landing, mas precisam ser indexáveis: é comum o lojista procurá-los pelo
+    // buscador em vez de navegar pelo rodapé.
+    ...['/termos', '/privacidade', '/lgpd'].map((path) => ({
+      url: `${landing}${path}`,
+      lastModified: now,
+      changeFrequency: 'yearly' as const,
+      priority: 0.3,
+    })),
   ];
 }

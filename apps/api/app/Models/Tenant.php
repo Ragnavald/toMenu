@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'name', 'slug', 'plan_id', 'status', 'trial_ends_at', 'deletion_reason',
     'stripe_customer_id', 'stripe_account_id', 'stripe_charges_enabled',
     'onboarding_step', 'onboarding_completed_at',
+    'terms_accepted_at', 'terms_version', 'terms_accepted_ip',
 ])]
 #[Hidden(['stripe_customer_id'])]
 class Tenant extends Model
@@ -25,6 +26,7 @@ class Tenant extends Model
     {
         return [
             'trial_ends_at' => 'datetime',
+            'terms_accepted_at' => 'datetime',
             'onboarding_completed_at' => 'datetime',
             'onboarding_step' => 'integer',
             'stripe_charges_enabled' => 'boolean',
