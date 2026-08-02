@@ -389,6 +389,41 @@ MAIL_FROM_NAME=ToMenu
 Alternativa: a porta **587** com `MAIL_SCHEME=tls` (STARTTLS) funciona igual e é
 o caminho a tentar se a 465 estiver bloqueada na saída do droplet.
 
+> ### ⚠️ A DigitalOcean bloqueia SMTP de saída
+>
+> **Verificado em 02/08/2026 neste droplet: 25, 465, 587 e 2525 estão todas
+> bloqueadas, para qualquer destino** — Titan, Gmail, qualquer um. O `ufw` está
+> em `allow (outgoing)` e não há regra local para essas portas; o bloqueio é da
+> rede da DigitalOcean, que o aplica por padrão em contas novas para conter
+> spam. Nenhuma configuração no droplet contorna isso.
+>
+> O sintoma é cruel: o `.env` está certo, o container enxerga as variáveis, e o
+> envio simplesmente trava até o timeout sem erro que aponte a causa.
+>
+> Diagnóstico rápido — se a segunda linha falhar e a primeira passar, é este
+> bloqueio, não a sua configuração:
+>
+> ```bash
+> timeout 6 bash -c '</dev/tcp/1.1.1.1/443'          && echo "saída OK"
+> timeout 6 bash -c '</dev/tcp/smtp.gmail.com/587'   && echo "SMTP OK"
+> ```
+>
+> **Dois caminhos:**
+>
+> 1. **Pedir a liberação à DigitalOcean.** Abra um ticket de suporte explicando
+>    o uso (e-mail transacional do próprio produto, com domínio autenticado por
+>    SPF/DKIM/DMARC). Costuma ser concedido para contas com histórico de
+>    pagamento, mas leva alguns dias e não é garantido.
+>
+> 2. **Usar uma API HTTP em vez de SMTP** — Resend, Postmark, SES e afins
+>    enviam pela **443**, que não é bloqueada. É o caminho mais confiável aqui:
+>    não depende de liberação, e a entregabilidade tende a ser melhor que a de
+>    um IP de datacenter. Troca `MAIL_MAILER=smtp` pelo driver do provedor; o
+>    resto do código não muda, porque tudo passa pelo `Mail::` do Laravel.
+>
+> O Titan continua útil de qualquer forma: é ele que **recebe** o e-mail dos
+> endereços do domínio (MX do passo 4.1). O que muda é apenas quem faz o envio.
+
 #### Os aliases do domínio
 
 A conta tem uma caixa real, `suporte@`, e os demais endereços redirecionam para
