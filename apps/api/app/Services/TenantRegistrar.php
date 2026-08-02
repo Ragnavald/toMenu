@@ -40,6 +40,14 @@ class TenantRegistrar
                 'status' => 'trial',
                 'trial_ends_at' => now()->addDays(14),
                 'onboarding_step' => 1,
+                // Gravado no mesmo insert do tenant, dentro da transação: a
+                // loja e a prova de que os termos foram aceitos para criá-la
+                // nascem juntas ou não nascem. O controller já recusou o
+                // cadastro sem aceite, então chegar aqui significa que ele
+                // ocorreu — o que falta é registrar de qual texto se trata.
+                'terms_accepted_at' => now(),
+                'terms_version' => config('legal.terms_version'),
+                'terms_accepted_ip' => $data['ip'] ?? null,
             ]);
 
             $user = User::create([

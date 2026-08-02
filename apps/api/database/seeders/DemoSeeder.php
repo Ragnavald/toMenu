@@ -59,7 +59,7 @@ class DemoSeeder extends Seeder
                 'brandSoft' => '254 235 235',
                 'surface' => '255 251 247',
                 'ink' => '38 26 22',
-                'font' => 'playfair',
+                'font' => 'sora',
                 'radius' => '14px',
                 'layout' => 'classic',
             ],

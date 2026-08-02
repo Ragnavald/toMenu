@@ -203,6 +203,7 @@ it('cria a loja no plano escolhido no cadastro', function () {
         'password' => 'segredo123',
         'password_confirmation' => 'segredo123',
         'plan' => 'cardapio',
+        'accepted_terms' => true,
     ])
         ->assertCreated()
         ->assertJsonPath('tenant.plan', 'cardapio');
@@ -221,6 +222,7 @@ it('cria no Pro quando o cadastro não informa plano', function () {
         'email' => 'bruno@forno.test',
         'password' => 'segredo123',
         'password_confirmation' => 'segredo123',
+        'accepted_terms' => true,
     ])->assertCreated();
 
     $tenant = Tenant::where('slug', 'forno-velho')->firstOrFail();
@@ -237,6 +239,7 @@ it('recusa um plano que não é contratável', function () {
         'password' => 'segredo123',
         'password_confirmation' => 'segredo123',
         'plan' => 'enterprise-interno',
+        'accepted_terms' => true,
     ])->assertJsonValidationErrors('plan');
 
     expect(Tenant::where('slug', 'loja-fantasma')->exists())->toBeFalse();

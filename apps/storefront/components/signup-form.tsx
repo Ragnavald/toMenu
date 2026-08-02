@@ -31,7 +31,7 @@ const PLAN_CHOICES: { slug: PlanSlug; name: string; price: string; note: string 
     slug: 'pro',
     name: 'Pro',
     price: 'R$ 89/mês',
-    note: 'Cardápio + pedidos, entrega e pagamento.',
+    note: 'Cardápio + pedidos, entrega e painel.',
   },
 ];
 
@@ -70,6 +70,10 @@ export function SignupForm() {
   // string no estado inicial divergiria do HTML gerado no servidor, e o React
   // descartaria a hidratação da árvore inteira.
   const [plan, setPlan] = useState<PlanSlug>('pro');
+  // Nasce desmarcado e assim tem de continuar. Uma caixa pré-marcada não é
+  // consentimento — a LGPD exige manifestação inequívoca do titular, e o aceite
+  // que o usuário não deu não prova nada num questionamento futuro.
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
   const turnstileRef = useRef<TurnstileHandle | null>(null);
 
@@ -142,6 +146,7 @@ export function SignupForm() {
           password,
           password_confirmation: confirmation,
           plan,
+          accepted_terms: acceptedTerms,
           'cf-turnstile-response': turnstileToken,
         }),
       });
@@ -346,6 +351,55 @@ export function SignupForm() {
         </Field>
       </div>
 
+      {/*
+        Aceite dos documentos.
+        Fica imediatamente acima do botão porque é a última coisa que o usuário
+        confirma antes de contratar, e os links abrem em aba nova: mandar quem
+        quer ler os termos para fora da página apagaria o formulário todo que
+        ele acabou de preencher.
+      */}
+      <div className="mt-1">
+        <label className="flex cursor-pointer items-start gap-2.5">
+          <input
+            type="checkbox"
+            required
+            checked={acceptedTerms}
+            onChange={(e) => setAcceptedTerms(e.target.checked)}
+            className="mt-0.5 size-4 shrink-0 accent-[rgb(var(--brand))]"
+            aria-describedby="terms-error"
+          />
+          <span className="text-xs leading-relaxed text-muted">
+            Li e aceito os{' '}
+            <a
+              href="/termos"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium underline underline-offset-2 hover:text-[rgb(var(--brand))]"
+            >
+              Termos de Uso
+            </a>{' '}
+            e a{' '}
+            <a
+              href="/privacidade"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium underline underline-offset-2 hover:text-[rgb(var(--brand))]"
+            >
+              Política de Privacidade
+            </a>
+            , e autorizo o tratamento dos meus dados conforme descrito nela.
+          </span>
+        </label>
+
+        {/* O backend também recusa o cadastro sem aceite; este erro só aparece
+            se a validação do navegador for contornada. */}
+        {errors.accepted_terms && (
+          <p id="terms-error" role="alert" className="mt-1.5 text-xs text-red-600">
+            {errors.accepted_terms[0]}
+          </p>
+        )}
+      </div>
+
       <Turnstile onToken={setTurnstileToken} handleRef={turnstileRef} />
 
       {errors['cf-turnstile-response'] && (
@@ -367,6 +421,7 @@ export function SignupForm() {
         disabled={
           submitting ||
           slugState === 'taken' ||
+          !acceptedTerms ||
           (isTurnstileEnabled() && turnstileToken === '')
         }
         className="mt-1 px-4 py-3 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-55"

@@ -23,6 +23,10 @@ function signupPayload(array $overrides = []): array
         'email' => 'ana@cantina.test',
         'password' => 'senha-forte-123',
         'password_confirmation' => 'senha-forte-123',
+        // O aceite é obrigatório; o payload base representa o cadastro que dá
+        // certo, e sem ele todos os outros casos falhariam por 422 no aceite em
+        // vez de exercitar o que cada um se propõe a testar.
+        'accepted_terms' => true,
     ], $overrides);
 }
 
@@ -84,6 +88,53 @@ it('exige confirmação de senha', function () {
     ]))
         ->assertStatus(422)
         ->assertJsonValidationErrors('password');
+});
+
+it('recusa o cadastro sem aceite dos termos', function (mixed $value) {
+    $this->postJson('/api/register', signupPayload(['accepted_terms' => $value]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('accepted_terms');
+
+    // A checagem que importa: nada foi criado. Um 422 que ainda assim gravasse
+    // o tenant deixaria a loja no ar sem consentimento nenhum.
+    expect(Tenant::where('slug', 'cantina-da-nona')->exists())->toBeFalse();
+})->with([
+    'caixa desmarcada' => [false],
+    'string falsa' => ['false'],
+    'zero' => [0],
+    'campo vazio' => [null],
+]);
+
+it('recusa o cadastro quando o campo de aceite nem é enviado', function () {
+    $payload = signupPayload();
+    unset($payload['accepted_terms']);
+
+    $this->postJson('/api/register', $payload)
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('accepted_terms');
+});
+
+it('registra data, versão e ip do aceite junto com a loja', function () {
+    config(['legal.terms_version' => '2026-08-02']);
+
+    $this->postJson('/api/register', signupPayload())->assertCreated();
+
+    $tenant = Tenant::where('slug', 'cantina-da-nona')->firstOrFail();
+
+    expect($tenant->terms_accepted_at)->not->toBeNull()
+        // Sem a versão, o registro não diz *qual* texto foi aceito — que é a
+        // única pergunta que ele existe para responder quando os termos mudarem.
+        ->and($tenant->terms_version)->toBe('2026-08-02')
+        ->and($tenant->terms_accepted_ip)->not->toBeNull();
+});
+
+it('grava a versão vigente dos termos, e não uma fixa', function () {
+    config(['legal.terms_version' => '2027-01-15']);
+
+    $this->postJson('/api/register', signupPayload())->assertCreated();
+
+    expect(Tenant::where('slug', 'cantina-da-nona')->first()->terms_version)
+        ->toBe('2027-01-15');
 });
 
 it('informa se um slug está disponível', function () {
