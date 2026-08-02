@@ -341,6 +341,78 @@ Cole o valor em `APP_KEY=` no `.env.prod`.
 Preencha também `CLOUDFLARE_R2_*` (imagens de produto e backups) e as chaves do
 Stripe, se já tiver — ver passo 10 para o R2.
 
+### 5.2 E-mail transacional (SMTP do Titan)
+
+O app envia e-mail para a recuperação de senha do painel. O padrão do Laravel é
+`MAIL_MAILER=log`, que **escreve a mensagem no arquivo de log em vez de
+entregá-la** — o lojista pede a redefinição, a API responde 200, e o e-mail
+nunca chega. É uma falha silenciosa; não há erro em lugar nenhum.
+
+A caixa é Titan (contratada via HostGator), a mesma dos registros MX do passo
+4.1. Em **`apps/api/.env`** (não no `.env.prod` — o Laravel lê estas em runtime,
+ver o aviso acima):
+
+```dotenv
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.titan.email
+MAIL_PORT=465
+# TLS implícito — a conexão já nasce criptografada, sem STARTTLS.
+#
+# Explícito por clareza, não por necessidade: o Laravel já assume `smtps`
+# quando a porta é 465 (MailManager::createSmtpTransport). Deixar registrado
+# evita que uma troca de porta para 587 mantenha silenciosamente um esquema
+# que não corresponde mais.
+MAIL_SCHEME=smtps
+# Usuário é o endereço completo, não só a parte antes do @.
+MAIL_USERNAME=nao-responda@to-menu.com
+MAIL_PASSWORD=a_senha_da_caixa
+MAIL_FROM_ADDRESS=nao-responda@to-menu.com
+MAIL_FROM_NAME=ToMenu
+```
+
+> **A senha é a da caixa de e-mail**, criada no painel do Titan — não a senha da
+> conta HostGator, e não a do painel administrativo. São credenciais distintas e
+> a confusão entre elas é o motivo mais comum de `535 Authentication failed`.
+
+Alternativa: a porta **587** com `MAIL_SCHEME=tls` (STARTTLS) funciona igual e é
+o caminho a tentar se a 465 estiver bloqueada na saída do droplet.
+
+#### Verificação
+
+Não confie no `.env`: confirme que o **container** enxerga a variável e que a
+entrega acontece de ponta a ponta.
+
+```bash
+cd /opt/tomenu
+
+# 1. O container vê a configuração?
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    exec -T api printenv MAIL_MAILER MAIL_HOST MAIL_SCHEME
+
+# 2. A porta está alcançável a partir do container? (bloqueio de saída aparece
+#    aqui, antes de virar timeout confuso no envio)
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    exec -T api bash -c 'timeout 5 bash -c "</dev/tcp/smtp.titan.email/465" && echo ok'
+
+# 3. Envio real. Troque o destinatário por um endereço que você leia.
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    exec -T api php artisan tinker --execute \
+    'Mail::raw("Teste de SMTP do ToMenu.", fn($m) => $m->to("voce@gmail.com")->subject("Teste ToMenu"));'
+```
+
+O passo 3 deve chegar na **caixa de entrada**, não no spam. Se cair em spam,
+o problema é DNS, não SMTP: confira SPF, DKIM e DMARC no passo 4.1 — domínio
+sem DKIM é o motivo mais comum.
+
+```bash
+dig +short TXT to-menu.com | grep spf     # SPF
+dig +short TXT _dmarc.to-menu.com         # DMARC
+```
+
+> Se o envio travar por ~30s e falhar com timeout, a saída na 465 está
+> bloqueada: troque para a 587 com `MAIL_SCHEME=tls`. Provedores de VPS
+> costumam restringir portas de e-mail para conter spam.
+
 > **Dois arquivos de env, e a distinção importa.** O `--env-file .env.prod` dos
 > comandos do compose alimenta apenas a *interpolação* do
 > `docker-compose.prod.yml` (as `NEXT_PUBLIC_*` do build e o `APP_ENV_FILE`).
