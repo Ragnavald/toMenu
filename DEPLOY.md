@@ -363,19 +363,50 @@ MAIL_PORT=465
 # evita que uma troca de porta para 587 mantenha silenciosamente um esquema
 # que não corresponde mais.
 MAIL_SCHEME=smtps
+# Autenticação e remetente são coisas SEPARADAS, e aqui divergem de propósito.
+#
+# O login é sempre a caixa real — a que tem senha no painel do Titan. Os demais
+# endereços do domínio (nao-responda@, contato@, privacidade@...) são aliases de
+# redirecionamento: entregam o que chega, mas não têm senha e portanto não
+# autenticam. Usar um deles em MAIL_USERNAME devolve `535 Authentication
+# failed`, e a mensagem não sugere em nada que a causa é essa.
+#
 # Usuário é o endereço completo, não só a parte antes do @.
-MAIL_USERNAME=nao-responda@to-menu.com
-MAIL_PASSWORD=a_senha_da_caixa
+MAIL_USERNAME=suporte@to-menu.com
+MAIL_PASSWORD=a_senha_da_caixa_suporte
+
+# Já o From pode ser qualquer alias do MESMO domínio — o Titan aceita, e é o
+# que o lojista enxerga. `nao-responda@` sinaliza que a mensagem é automática,
+# sem perder resposta nenhuma: o alias redireciona de volta para suporte@.
 MAIL_FROM_ADDRESS=nao-responda@to-menu.com
 MAIL_FROM_NAME=ToMenu
 ```
 
 > **A senha é a da caixa de e-mail**, criada no painel do Titan — não a senha da
 > conta HostGator, e não a do painel administrativo. São credenciais distintas e
-> a confusão entre elas é o motivo mais comum de `535 Authentication failed`.
+> a confusão entre elas é o segundo motivo mais comum de `535 Authentication
+> failed`; o primeiro é usar um alias no `MAIL_USERNAME`, como explicado acima.
 
 Alternativa: a porta **587** com `MAIL_SCHEME=tls` (STARTTLS) funciona igual e é
 o caminho a tentar se a 465 estiver bloqueada na saída do droplet.
+
+#### Os aliases do domínio
+
+A conta tem uma caixa real, `suporte@`, e os demais endereços redirecionam para
+ela:
+
+| Endereço | Papel |
+|---|---|
+| `suporte@` | **Caixa real.** Autentica o SMTP e recebe tudo |
+| `nao-responda@` | Remetente dos e-mails automáticos |
+| `contato@`, `atendimento@` | Contato público (landing, rodapé) |
+| `privacidade@` | Canal do titular de dados exigido pela LGPD |
+| `financeiro@` | Cadastro em Stripe, DigitalOcean, Cloudflare |
+| `abuse@` | Convenção RFC 2142 — provedores reportam problemas por aqui |
+
+Como todos caem em `suporte@`, um endereço só precisa ser lido. O ganho é poder
+separar depois — quando `suporte@` acumular volume demais, basta transformar um
+alias em caixa própria, sem trocar nada que já foi publicado ou cadastrado.
 
 #### Verificação
 
