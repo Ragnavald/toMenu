@@ -341,16 +341,75 @@ Cole o valor em `APP_KEY=` no `.env.prod`.
 Preencha também `CLOUDFLARE_R2_*` (imagens de produto e backups) e as chaves do
 Stripe, se já tiver — ver passo 10 para o R2.
 
-### 5.2 E-mail transacional (SMTP do Titan)
+### 5.2 E-mail transacional (Resend)
 
 O app envia e-mail para a recuperação de senha do painel. O padrão do Laravel é
 `MAIL_MAILER=log`, que **escreve a mensagem no arquivo de log em vez de
 entregá-la** — o lojista pede a redefinição, a API responde 200, e o e-mail
 nunca chega. É uma falha silenciosa; não há erro em lugar nenhum.
 
-A caixa é Titan (contratada via HostGator), a mesma dos registros MX do passo
-4.1. Em **`apps/api/.env`** (não no `.env.prod` — o Laravel lê estas em runtime,
-ver o aviso acima):
+O envio é pelo **Resend**, por API HTTP, e não por SMTP. O motivo é o bloqueio
+documentado logo abaixo: a DigitalOcean fecha as portas SMTP de saída, e o
+Resend entrega pela 443, que continua aberta. A configuração são duas linhas:
+
+```dotenv
+MAIL_MAILER=resend
+RESEND_API_KEY=re_...
+MAIL_FROM_ADDRESS=suporte@to-menu.com
+MAIL_FROM_NAME=ToMenu
+
+# Onde o link do e-mail aponta. A tela de redefinição é servida pelo painel,
+# não pela API — sem isto o lojista recebe uma URL que não abre.
+TENANCY_ADMIN_URL=https://app.to-menu.com
+```
+
+O `MAIL_FROM_ADDRESS` precisa ser de um domínio **verificado no Resend**. A
+verificação é feita no painel deles e entrega 3 registros DNS para colar no
+Cloudflare — um deles é o **DKIM**, que também melhora a entregabilidade de
+qualquer e-mail do domínio.
+
+> A conta Titan continua necessária: é ela que **recebe** o e-mail dos
+> endereços do domínio, pelos MX do passo 4.1. O Resend só envia. São os dois
+> lados do mesmo domínio, e um não substitui o outro.
+
+#### Verificação
+
+```bash
+cd /opt/tomenu
+
+# 1. O container vê a configuração? (o .env estar certo não basta — variáveis
+#    de env_file são lidas na CRIAÇÃO do container; ver o aviso do passo 5)
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    exec -T api printenv MAIL_MAILER MAIL_FROM_ADDRESS TENANCY_ADMIN_URL
+
+# 2. Envio real. Troque o destinatário por um endereço que você leia.
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    exec -T -e HOME=/tmp api php artisan tinker --execute \
+    'Mail::raw("Teste do ToMenu.", fn($m) => $m->to("voce@gmail.com")->subject("Teste"));'
+
+# 3. O fluxo completo, como o lojista faria.
+curl -sS -X POST https://app.to-menu.com/api/auth/forgot-password \
+    -H 'Content-Type: application/json' -H 'Accept: application/json' \
+    -d '{"email":"dono@loja.com","tenant":"slug-da-loja"}'
+```
+
+O passo 2 deve chegar na **caixa de entrada**, não no spam. Se cair em spam, o
+problema é DNS: confira SPF, DKIM e DMARC (passo 4.1).
+
+> **Depois de editar o `.env`, recrie o container** — `restart` não basta,
+> porque as variáveis de `env_file` são lidas na criação:
+>
+> ```bash
+> docker compose -f docker-compose.prod.yml --env-file .env.prod \
+>     up -d api worker reports-worker scheduler
+> ```
+
+<details>
+<summary>Configuração alternativa por SMTP (não funciona neste droplet)</summary>
+
+Mantida como referência caso o bloqueio da DigitalOcean seja liberado, ou o
+deploy mude de provedor. A caixa é Titan (contratada via HostGator), a mesma
+dos registros MX do passo 4.1. Em **`apps/api/.env`**:
 
 ```dotenv
 MAIL_MAILER=smtp
@@ -389,6 +448,69 @@ MAIL_FROM_NAME=ToMenu
 Alternativa: a porta **587** com `MAIL_SCHEME=tls` (STARTTLS) funciona igual e é
 o caminho a tentar se a 465 estiver bloqueada na saída do droplet.
 
+</details>
+
+> ### ⚠️ A DigitalOcean bloqueia SMTP de saída
+>
+> **Verificado em 02/08/2026 neste droplet: 25, 465, 587 e 2525 estão todas
+> bloqueadas, para qualquer destino** — Titan, Gmail, qualquer um. O `ufw` está
+> em `allow (outgoing)` e não há regra local para essas portas; o bloqueio é da
+> rede da DigitalOcean, que o aplica por padrão em contas novas para conter
+> spam. Nenhuma configuração no droplet contorna isso.
+>
+> O sintoma é cruel: o `.env` está certo, o container enxerga as variáveis, e o
+> envio simplesmente trava até o timeout sem erro que aponte a causa.
+>
+> Diagnóstico rápido — se a segunda linha falhar e a primeira passar, é este
+> bloqueio, não a sua configuração:
+>
+> ```bash
+> timeout 6 bash -c '</dev/tcp/1.1.1.1/443'          && echo "saída OK"
+> timeout 6 bash -c '</dev/tcp/smtp.gmail.com/587'   && echo "SMTP OK"
+> ```
+>
+> **Dois caminhos:**
+>
+> 1. **Pedir a liberação à DigitalOcean.** Abra um ticket de suporte explicando
+>    o uso (e-mail transacional do próprio produto, com domínio autenticado por
+>    SPF/DKIM/DMARC). Costuma ser concedido para contas com histórico de
+>    pagamento, mas leva alguns dias e não é garantido.
+>
+> 2. **Usar uma API HTTP em vez de SMTP** — Resend, Postmark, SES e afins
+>    enviam pela **443**, que não é bloqueada. É o caminho mais confiável aqui:
+>    não depende de liberação, e a entregabilidade tende a ser melhor que a de
+>    um IP de datacenter. Troca `MAIL_MAILER=smtp` pelo driver do provedor; o
+>    resto do código não muda, porque tudo passa pelo `Mail::` do Laravel.
+>
+> O Titan continua útil de qualquer forma: é ele que **recebe** o e-mail dos
+> endereços do domínio (MX do passo 4.1). O que muda é apenas quem faz o envio.
+
+#### Registros DNS do Resend
+
+A verificação do domínio no painel do Resend entrega 3 registros para criar na
+zona do Cloudflare, todos **DNS only** (nuvem cinza — proxy não se aplica a TXT
+nem a MX):
+
+| Tipo | Nome | Para quê |
+|---|---|---|
+| MX | `send` | Bounces e reclamações voltam para o Resend |
+| TXT | `send` | SPF do subdomínio de envio |
+| TXT | `resend._domainkey` | **DKIM** — a assinatura que decide caixa de entrada × spam |
+
+> O MX em `send` **não conflita** com os MX do Titan no apex: são nomes
+> diferentes (`send.to-menu.com` × `to-menu.com`). O Titan continua recebendo o
+> e-mail dos seus endereços; o subdomínio só processa retorno de envio.
+
+Confirme a propagação antes de testar o envio — o Resend recusa enviar por
+domínio não verificado:
+
+```bash
+dig +short TXT resend._domainkey.to-menu.com   # DKIM
+dig +short TXT send.to-menu.com                # SPF do envio
+dig +short MX  send.to-menu.com
+dig +short TXT _dmarc.to-menu.com              # DMARC (passo 4.1)
+```
+
 #### Os aliases do domínio
 
 A conta tem uma caixa real, `suporte@`, e os demais endereços redirecionam para
@@ -396,7 +518,7 @@ ela:
 
 | Endereço | Papel |
 |---|---|
-| `suporte@` | **Caixa real.** Autentica o SMTP, envia e recebe tudo |
+| `suporte@` | **Caixa real.** Remetente dos e-mails do app e destino de tudo |
 | `contato@`, `atendimento@` | Contato público (landing, rodapé) |
 | `privacidade@` | Canal do titular de dados exigido pela LGPD |
 | `financeiro@` | Cadastro em Stripe, DigitalOcean, Cloudflare |
@@ -1176,6 +1298,63 @@ cache):
 ```bash
 tomenu-purge https://forno-di-napoli.to-menu.com/
 ```
+
+### Monitor de recursos (`tomenu-resources`)
+
+O `tomenu-watch` acima olha o HTTP — quando ele acusa, o visitante já viu o
+erro. O `tomenu-resources` cobre o que vem antes: memória, swap e disco, a cada
+5 minutos.
+
+```bash
+cp /opt/tomenu/docker/droplet/watch-resources.sh /usr/local/bin/tomenu-resources
+chmod +x /usr/local/bin/tomenu-resources
+
+crontab -e
+# */5 * * * *  /usr/local/bin/tomenu-resources >> /var/log/tomenu-resources.log 2>&1
+```
+
+Limiares padrão, ajustáveis por variável de ambiente no cron:
+
+| Variável | Padrão | Por quê |
+|---|---|---|
+| `MEM_MIN_MB` | 300 | Abaixo disso o php-fpm não forka worker novo sob pico |
+| `SWAP_MAX_MB` | 1024 | Metade do swapfile; só alarma junto com RAM curta |
+| `DISK_MAX_PCT` | 85 | O Postgres para de escrever com disco cheio |
+
+> **O alerta é sobre `MemAvailable`, não sobre "RAM usada".** O Linux ocupa a
+> memória livre com cache de disco e a devolve sob pressão, então `used` alto é
+> o estado normal de um servidor saudável — alarmar por ele produziria alerta
+> constante. Quem responde "cabe mais processo aqui?" é o `MemAvailable` do
+> `/proc/meminfo`, e é ele que o script observa.
+>
+> Pelo mesmo motivo, swap em uso sozinho **não** dispara alerta: com
+> `vm.swappiness=10` o kernel só parqueia página ociosa. O alarme exige swap
+> alto **e** memória disponível baixa ao mesmo tempo.
+
+Linha de base medida em 02/08/2026, para comparação futura: `mem=1076MB
+swap=162MB disco=28%`, com os 8 containers no ar.
+
+Consulta:
+
+```bash
+grep ALERTA /var/log/tomenu-resources.log | tail -20
+journalctl -t tomenu-resources --since '7 days ago'   # correlaciona com o resto
+```
+
+### Rotação dos logs
+
+Os três scripts só acrescentam ao arquivo e nenhum limpa nada — sem rotação
+crescem sem limite, e disco cheio é uma das falhas que o monitor acima existe
+para evitar.
+
+```bash
+cp /opt/tomenu/docker/droplet/logrotate-tomenu /etc/logrotate.d/tomenu
+logrotate --debug /etc/logrotate.d/tomenu   # confere sem aplicar nada
+```
+
+Semanal, 8 gerações comprimidas (~2 meses). Usa `copytruncate` porque os
+scripts não mantêm o arquivo aberto entre execuções, e `delaycompress` para que
+um `tail -f` durante incidente continue mostrando as linhas novas.
 
 ### Verificação pós-deploy
 

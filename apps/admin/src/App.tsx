@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import { apiFetch, loadSession, saveSession, type Session } from '@/lib/api';
 import type { Settings } from '@/lib/types';
 import { LoginPage } from '@/pages/login';
+import { ForgotPasswordPage } from '@/pages/forgot-password';
+import { ResetPasswordPage } from '@/pages/reset-password';
 import { Shell } from '@/components/shell';
 import { OrdersPage } from '@/pages/orders';
 import { FinancePage } from '@/pages/finance';
@@ -101,6 +103,50 @@ function isPlatformHost(): boolean {
   return window.location.hostname.startsWith('admin.');
 }
 
+/**
+ * Telas acessíveis sem sessão: login e o fluxo de senha.
+ *
+ * Não usa o BrowserRouter porque ele só é montado depois do gate de sessão, e
+ * `/redefinir-senha` precisa abrir para quem justamente NÃO consegue entrar —
+ * é o link que chega por e-mail. Ler o caminho direto do `window.location`
+ * resolve sem reestruturar o gate.
+ *
+ * O caminho é lido uma vez, no estado inicial: navegar entre estas telas é
+ * troca de estado, não de URL, então não há histórico a acompanhar.
+ */
+function UnauthenticatedRoutes({
+  onAuthenticated,
+}: {
+  onAuthenticated: (session: Session) => void;
+}) {
+  const [view, setView] = useState<'login' | 'forgot' | 'reset'>(() =>
+    window.location.pathname === '/redefinir-senha' ? 'reset' : 'login',
+  );
+
+  // Limpa token e e-mail da barra de endereços ao sair da tela de redefinição:
+  // são credenciais de uso único que não devem ficar no histórico do navegador
+  // nem vazar por Referer para outra origem.
+  function backToLogin() {
+    window.history.replaceState(null, '', '/');
+    setView('login');
+  }
+
+  if (view === 'reset') {
+    return <ResetPasswordPage onDone={backToLogin} />;
+  }
+
+  if (view === 'forgot') {
+    return <ForgotPasswordPage onBack={() => setView('login')} />;
+  }
+
+  return (
+    <LoginPage
+      onAuthenticated={onAuthenticated}
+      onForgotPassword={() => setView('forgot')}
+    />
+  );
+}
+
 function StoreAdminApp() {
   const [session, setSession] = useState<Session | null>(
     () => consumeHandoff() ?? loadSession(),
@@ -120,7 +166,7 @@ function StoreAdminApp() {
   if (!session) {
     return (
       <QueryClientProvider client={queryClient}>
-        <LoginPage onAuthenticated={setSession} />
+        <UnauthenticatedRoutes onAuthenticated={setSession} />
       </QueryClientProvider>
     );
   }

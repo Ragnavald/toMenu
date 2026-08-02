@@ -18,6 +18,16 @@ return [
     'storefront_port' => env('TENANCY_STOREFRONT_PORT'),
 
     /*
+     * Onde o painel do lojista responde. Usado para montar o link de
+     * redefinição de senha, que é servido pelo painel e não pela API.
+     *
+     * Em produção é `app.{root_domain}`; em desenvolvimento o Vite sobe em
+     * :5173, sem TLS. Explícito no env porque um link errado aqui não quebra
+     * nada visível — só entrega ao lojista uma URL que não abre.
+     */
+    'admin_url' => env('TENANCY_ADMIN_URL'),
+
+    /*
      * Aceitar o header X-Tenant para identificar o tenant.
      *
      * Apenas para desenvolvimento, onde não há wildcard DNS configurado.
