@@ -1,5 +1,6 @@
 .PHONY: up down dev build test fresh api-shell logs \
-        deploy deploy-admin deploy-migrate platform-admin prod-logs prod-ps
+        deploy deploy-admin deploy-build deploy-migrate platform-admin \
+        prod-logs prod-ps
 
 COMPOSE = docker compose
 API = $(COMPOSE) run --rm api
@@ -58,19 +59,27 @@ down:
 
 # Deploy completo. A ordem dos passos não é intercambiável:
 #
-#   1. migrate ANTES do build — o código novo consulta colunas e tabelas que a
-#      migration cria. Subir primeiro abriria uma janela de 500 em toda
-#      requisição que tocasse o schema novo.
-#   2. restart do nginx DEPOIS do up — `up -d` só recria o container quando a
+#   1. build da imagem da API ANTES do migrate — o `migrate` e os seeds rodam
+#      num container efêmero feito dessa imagem, então eles só enxergam código
+#      que já esteja nela. Sem este passo, uma migration ou um seeder NOVO roda
+#      contra a imagem do deploy anterior: a migration simplesmente não existe
+#      lá, e uma seeder nova morre com "Target class does not exist" — o
+#      autoloader de produção é `--classmap-authoritative`, que desliga o
+#      fallback PSR-4 e torna a classe invisível mesmo com o arquivo no disco.
+#      Este `build` não sobe container nenhum; só prepara a imagem.
+#   2. migrate DEPOIS do build, mas ANTES do `up` — o código novo consulta
+#      colunas e tabelas que a migration cria. Subir primeiro abriria uma
+#      janela de 500 em toda requisição que tocasse o schema novo.
+#   3. restart do nginx DEPOIS do up — `up -d` só recria o container quando a
 #      imagem ou a definição do serviço muda, e editar o default.conf montado
 #      por volume não é nenhum dos dois. Sem o restart, um server block novo
 #      simplesmente não existe (o host cai no wildcard e serve outra coisa).
-#   3. purge por último — limpa do edge qualquer resposta ruim guardada na
+#   4. purge por último — limpa do edge qualquer resposta ruim guardada na
 #      janela entre o container novo subir e o nginx reconhecê-lo.
 #
 # `git pull` fica de fora de propósito: o deploy não deve decidir sozinho qual
 # commit vai para produção.
-deploy: deploy-migrate
+deploy: deploy-build deploy-migrate
 	$(PROD) up -d --build
 	$(PROD) restart nginx
 	@# O purge é instalado à mão no provisionamento (DEPLOY.md §12), então pode
@@ -83,7 +92,19 @@ deploy: deploy-migrate
 	fi
 	@echo "Deploy concluído."
 
+# Constrói a imagem da API sem subir nada.
+#
+# Existe separado porque `deploy-migrate` roda num container efêmero: ele usa a
+# imagem que estiver disponível, e `run --rm` não reconstrói uma imagem velha.
+# Rodar `deploy-migrate` sozinho depois de um `git pull` exige este build antes,
+# senão migrations e seeders novos ainda não existem dentro da imagem.
+deploy-build:
+	$(PROD) build api
+
 # Migrations isoladas, para quando o deploy já rodou e faltou só o schema.
+#
+# ATENÇÃO: rode `make deploy-build` antes se o código mudou. Este alvo executa
+# na imagem existente, e migration/seeder novo não está nela.
 #
 # O seed dos planos anda junto com o migrate e não só no provisionamento: a
 # migration cria as colunas de capacidade, mas quem cria a LINHA de um plano
