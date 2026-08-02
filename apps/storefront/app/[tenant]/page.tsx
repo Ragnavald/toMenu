@@ -8,6 +8,7 @@ import { StoreHeader } from '@/components/store-header';
 import { MenuBrowser } from '@/components/menu-browser';
 import { CartBar } from '@/components/cart-bar';
 import { FulfillmentBar } from '@/components/fulfillment-bar';
+import { PoweredBy } from '@/components/powered-by';
 
 /**
  * O cardápio muda com pouca frequência, mas é a página mais acessada: cada
@@ -62,6 +63,11 @@ export default async function StorePage({ params }: Props) {
         layout={menu.theme.layout}
         acceptsOrders={menu.tenant.acceptsOrders}
       />
+
+      {/* Assinatura da plataforma, ao final do conteúdo. Fica antes da CartBar
+          no DOM porque a barra é `fixed` e sai do fluxo — a ordem aqui é a que
+          o leitor de tela e o buscador percorrem. */}
+      <PoweredBy surface={menu.theme.surface} />
 
       {/* Plano somente-cardápio: a barra do carrinho não existe. */}
       {menu.tenant.acceptsOrders && (

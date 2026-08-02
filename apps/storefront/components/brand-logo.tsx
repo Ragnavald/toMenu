@@ -20,12 +20,39 @@ export function BrandLogo({
   className = '',
   variant = 'wordmark',
   priority = false,
+  scheme = 'auto',
 }: {
   className?: string;
   variant?: keyof typeof LOCKUPS;
   priority?: boolean;
+  /**
+   * Qual fundo o logo vai encontrar.
+   *
+   * `auto` segue a preferência do sistema, o que só está certo quando a página
+   * também segue. O cardápio da loja NÃO segue: ele fixa `colorScheme: light`
+   * e pinta o fundo com o tema do lojista. Um visitante com o celular em modo
+   * escuro recebia ali a arte clara — o texto "ToMenu" em branco sobre fundo
+   * branco, sobrando só o ícone.
+   *
+   * `light` significa "fundo claro, use a arte escura" (e vice-versa).
+   */
+  scheme?: 'auto' | 'light' | 'dark';
 }) {
   const lockup = LOCKUPS[variant];
+
+  // Fundo fixo: escolhe o arquivo direto, sem <picture> e sem media query.
+  if (scheme !== 'auto') {
+    return (
+      <Image
+        src={scheme === 'dark' ? lockup.dark : lockup.light}
+        alt="ToMenu"
+        width={lockup.width}
+        height={lockup.height}
+        priority={priority}
+        className={className}
+      />
+    );
+  }
 
   return (
     <picture>
