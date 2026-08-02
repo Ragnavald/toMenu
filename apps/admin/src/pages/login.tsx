@@ -8,8 +8,10 @@ import {
 
 export function LoginPage({
   onAuthenticated,
+  onForgotPassword,
 }: {
   onAuthenticated: (session: Session) => void;
+  onForgotPassword: () => void;
 }) {
   const [tenant, setTenant] = useState('forno-di-napoli');
   const [email, setEmail] = useState('');
@@ -151,6 +153,14 @@ export function LoginPage({
             className="mt-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
           >
             {loading ? 'Entrando…' : 'Entrar'}
+          </button>
+
+          <button
+            type="button"
+            onClick={onForgotPassword}
+            className="text-xs text-muted underline-offset-2 hover:underline"
+          >
+            Esqueci minha senha
           </button>
         </form>
 

@@ -341,16 +341,75 @@ Cole o valor em `APP_KEY=` no `.env.prod`.
 Preencha também `CLOUDFLARE_R2_*` (imagens de produto e backups) e as chaves do
 Stripe, se já tiver — ver passo 10 para o R2.
 
-### 5.2 E-mail transacional (SMTP do Titan)
+### 5.2 E-mail transacional (Resend)
 
 O app envia e-mail para a recuperação de senha do painel. O padrão do Laravel é
 `MAIL_MAILER=log`, que **escreve a mensagem no arquivo de log em vez de
 entregá-la** — o lojista pede a redefinição, a API responde 200, e o e-mail
 nunca chega. É uma falha silenciosa; não há erro em lugar nenhum.
 
-A caixa é Titan (contratada via HostGator), a mesma dos registros MX do passo
-4.1. Em **`apps/api/.env`** (não no `.env.prod` — o Laravel lê estas em runtime,
-ver o aviso acima):
+O envio é pelo **Resend**, por API HTTP, e não por SMTP. O motivo é o bloqueio
+documentado logo abaixo: a DigitalOcean fecha as portas SMTP de saída, e o
+Resend entrega pela 443, que continua aberta. A configuração são duas linhas:
+
+```dotenv
+MAIL_MAILER=resend
+RESEND_API_KEY=re_...
+MAIL_FROM_ADDRESS=suporte@to-menu.com
+MAIL_FROM_NAME=ToMenu
+
+# Onde o link do e-mail aponta. A tela de redefinição é servida pelo painel,
+# não pela API — sem isto o lojista recebe uma URL que não abre.
+TENANCY_ADMIN_URL=https://app.to-menu.com
+```
+
+O `MAIL_FROM_ADDRESS` precisa ser de um domínio **verificado no Resend**. A
+verificação é feita no painel deles e entrega 3 registros DNS para colar no
+Cloudflare — um deles é o **DKIM**, que também melhora a entregabilidade de
+qualquer e-mail do domínio.
+
+> A conta Titan continua necessária: é ela que **recebe** o e-mail dos
+> endereços do domínio, pelos MX do passo 4.1. O Resend só envia. São os dois
+> lados do mesmo domínio, e um não substitui o outro.
+
+#### Verificação
+
+```bash
+cd /opt/tomenu
+
+# 1. O container vê a configuração? (o .env estar certo não basta — variáveis
+#    de env_file são lidas na CRIAÇÃO do container; ver o aviso do passo 5)
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    exec -T api printenv MAIL_MAILER MAIL_FROM_ADDRESS TENANCY_ADMIN_URL
+
+# 2. Envio real. Troque o destinatário por um endereço que você leia.
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    exec -T -e HOME=/tmp api php artisan tinker --execute \
+    'Mail::raw("Teste do ToMenu.", fn($m) => $m->to("voce@gmail.com")->subject("Teste"));'
+
+# 3. O fluxo completo, como o lojista faria.
+curl -sS -X POST https://app.to-menu.com/api/auth/forgot-password \
+    -H 'Content-Type: application/json' -H 'Accept: application/json' \
+    -d '{"email":"dono@loja.com","tenant":"slug-da-loja"}'
+```
+
+O passo 2 deve chegar na **caixa de entrada**, não no spam. Se cair em spam, o
+problema é DNS: confira SPF, DKIM e DMARC (passo 4.1).
+
+> **Depois de editar o `.env`, recrie o container** — `restart` não basta,
+> porque as variáveis de `env_file` são lidas na criação:
+>
+> ```bash
+> docker compose -f docker-compose.prod.yml --env-file .env.prod \
+>     up -d api worker reports-worker scheduler
+> ```
+
+<details>
+<summary>Configuração alternativa por SMTP (não funciona neste droplet)</summary>
+
+Mantida como referência caso o bloqueio da DigitalOcean seja liberado, ou o
+deploy mude de provedor. A caixa é Titan (contratada via HostGator), a mesma
+dos registros MX do passo 4.1. Em **`apps/api/.env`**:
 
 ```dotenv
 MAIL_MAILER=smtp
@@ -389,6 +448,8 @@ MAIL_FROM_NAME=ToMenu
 Alternativa: a porta **587** com `MAIL_SCHEME=tls` (STARTTLS) funciona igual e é
 o caminho a tentar se a 465 estiver bloqueada na saída do droplet.
 
+</details>
+
 > ### ⚠️ A DigitalOcean bloqueia SMTP de saída
 >
 > **Verificado em 02/08/2026 neste droplet: 25, 465, 587 e 2525 estão todas
@@ -424,6 +485,32 @@ o caminho a tentar se a 465 estiver bloqueada na saída do droplet.
 > O Titan continua útil de qualquer forma: é ele que **recebe** o e-mail dos
 > endereços do domínio (MX do passo 4.1). O que muda é apenas quem faz o envio.
 
+#### Registros DNS do Resend
+
+A verificação do domínio no painel do Resend entrega 3 registros para criar na
+zona do Cloudflare, todos **DNS only** (nuvem cinza — proxy não se aplica a TXT
+nem a MX):
+
+| Tipo | Nome | Para quê |
+|---|---|---|
+| MX | `send` | Bounces e reclamações voltam para o Resend |
+| TXT | `send` | SPF do subdomínio de envio |
+| TXT | `resend._domainkey` | **DKIM** — a assinatura que decide caixa de entrada × spam |
+
+> O MX em `send` **não conflita** com os MX do Titan no apex: são nomes
+> diferentes (`send.to-menu.com` × `to-menu.com`). O Titan continua recebendo o
+> e-mail dos seus endereços; o subdomínio só processa retorno de envio.
+
+Confirme a propagação antes de testar o envio — o Resend recusa enviar por
+domínio não verificado:
+
+```bash
+dig +short TXT resend._domainkey.to-menu.com   # DKIM
+dig +short TXT send.to-menu.com                # SPF do envio
+dig +short MX  send.to-menu.com
+dig +short TXT _dmarc.to-menu.com              # DMARC (passo 4.1)
+```
+
 #### Os aliases do domínio
 
 A conta tem uma caixa real, `suporte@`, e os demais endereços redirecionam para
@@ -431,7 +518,7 @@ ela:
 
 | Endereço | Papel |
 |---|---|
-| `suporte@` | **Caixa real.** Autentica o SMTP, envia e recebe tudo |
+| `suporte@` | **Caixa real.** Remetente dos e-mails do app e destino de tudo |
 | `contato@`, `atendimento@` | Contato público (landing, rodapé) |
 | `privacidade@` | Canal do titular de dados exigido pela LGPD |
 | `financeiro@` | Cadastro em Stripe, DigitalOcean, Cloudflare |

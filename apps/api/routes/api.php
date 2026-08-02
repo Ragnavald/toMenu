@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\ProductAdminController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\StoreDeletionController;
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Central\RegistrationController;
 use App\Http\Controllers\Platform\ImpersonationController;
 use App\Http\Controllers\Platform\PlatformAuthController;
@@ -67,6 +68,24 @@ Route::post('auth/login', [LoginController::class, 'login'])
 
 Route::post('auth/logout', [LoginController::class, 'logout'])
     ->middleware('auth:sanctum');
+
+/*
+ * Redefinição de senha.
+ *
+ * Mesmas defesas do login, e pelo mesmo motivo: os dois endpoints aceitam
+ * e-mail de qualquer origem e disparam trabalho no servidor. O `request` ainda
+ * envia e-mail para terceiros, então soma um limite por conta (no controller)
+ * ao limite por IP daqui — sem ele, repetir o POST enche a caixa de um lojista.
+ *
+ * O `reset` não leva Turnstile: quem chega nele veio de um link no próprio
+ * e-mail, e um desafio ali só atrapalharia o lojista que já provou ter acesso
+ * à caixa. O throttle por IP continua, contra quem tenta adivinhar token.
+ */
+Route::post('auth/forgot-password', [PasswordResetController::class, 'request'])
+    ->middleware(['throttle:5,1', 'turnstile']);
+
+Route::post('auth/reset-password', [PasswordResetController::class, 'reset'])
+    ->middleware('throttle:5,1');
 
 /*
 |--------------------------------------------------------------------------
