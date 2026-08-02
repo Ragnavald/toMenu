@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Tenant;
+use App\Tenancy\PendingMenuInvalidations;
 use App\Tenancy\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -26,8 +27,28 @@ function actingAsTenant(Tenant $tenant): Tenant
     return $tenant;
 }
 
-/** Limpa o contexto — usado para simular jobs e rotas centrais. */
+/**
+ * Limpa o contexto — usado para simular jobs e rotas centrais.
+ *
+ * Drena também as invalidações de cardápio pendentes. Em produção quem faz
+ * isso é o `terminating` da request que gravou; num teste não há troca de
+ * request entre a escrita e a leitura seguinte, então sem este flush o
+ * cardápio continuaria servido na versão anterior e o teste mediria uma
+ * defasagem que o sistema real não tem.
+ */
 function forgetTenant(): void
 {
+    flushMenuInvalidations();
     app(TenantContext::class)->forget();
+}
+
+/**
+ * Aplica os bumps de `menu_version` acumulados, como o fim da request faria.
+ *
+ * Exposto à parte porque nem todo teste que escreve no cardápio chama
+ * `forgetTenant` em seguida.
+ */
+function flushMenuInvalidations(): void
+{
+    app(PendingMenuInvalidations::class)->flush();
 }

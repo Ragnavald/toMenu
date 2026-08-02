@@ -4,10 +4,12 @@
 #
 # - PHP-FPM atrás de nginx, não `php artisan serve` (single-threaded).
 # - Código copiado para a imagem, não montado por volume.
-# - Worker de fila como serviço próprio: hoje QUEUE_CONNECTION=database e
-#   NotifyNewOrder/ProcessStripeEvent são ShouldQueue. Sem este processo, o
-#   restaurante nunca é avisado do pedido e o webhook do Stripe nunca é
-#   processado — falha silenciosa, porque o job só fica enfileirado.
+# - Worker de fila como serviço próprio: NotifyNewOrder/ProcessStripeEvent são
+#   ShouldQueue. Sem este processo, o restaurante nunca é avisado do pedido e o
+#   webhook do Stripe nunca é processado — falha silenciosa, porque o job só
+#   fica enfileirado. Em produção a fila é Redis (QUEUE_CONNECTION=redis, ver
+#   DEPLOY.md §"Variáveis"); o `database` do .env.example vale só para o
+#   desenvolvimento local.
 # - Sem Postgres: o banco roda no host ou é gerenciado. Rodar o banco de
 #   produção como container efêmero ao lado da aplicação convida a perda de
 #   dados num `docker compose down -v`.

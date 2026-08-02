@@ -4,6 +4,8 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\Tenant;
 use App\Models\TenantSettings;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
     $this->tenantA = Tenant::factory()->create(['slug' => 'loja-a']);
@@ -219,4 +221,90 @@ it('respeita o fechamento manual mesmo dentro do horário declarado', function (
     $this->withHeader('X-Tenant', 'loja-a')->getJson('/api/menu')
         ->assertOk()
         ->assertJsonPath('tenant.isOpen', false);
+});
+
+/*
+ * Stampede na primeira carga.
+ *
+ * O caminho crítico é o lock ocupado SEM cópia stale disponível: loja nova,
+ * primeiro acesso, ou stale_ttl vencido. Antes, esse caso caía direto no build
+ * e todos os processos consultavam o banco simultaneamente — o stampede que o
+ * lock existe para evitar, no momento em que nada está aquecido.
+ *
+ * O teste simula o concorrente segurando o lock e conferindo que a request
+ * ainda responde o cardápio correto. Sem `block()` a resposta também viria,
+ * mas às custas de uma reconstrução por processo.
+ */
+it('espera o vencedor do lock em vez de reconstruir junto', function () {
+    $tenant = $this->tenantA;
+    $key = "menu:{$tenant->id}:v{$tenant->menu_version}";
+
+    Cache::forget($key);
+    Cache::forget("menu:{$tenant->id}:stale");
+
+    // O concorrente segura o lock e, como faria um processo real, deixa o
+    // payload pronto no cache antes de soltá-lo.
+    $lock = Cache::lock("{$key}:build", 10);
+    expect($lock->get())->toBeTrue();
+    Cache::put($key, [
+        'tenant' => ['slug' => 'loja-a'],
+        'version' => (string) $tenant->menu_version,
+        'marca' => 'do-vencedor',
+    ], 60);
+    $lock->release();
+
+    $queries = 0;
+    DB::listen(function ($query) use (&$queries) {
+        if (str_contains($query->sql, 'from "categories"')) {
+            $queries++;
+        }
+    });
+
+    $response = $this->withHeader('X-Tenant', 'loja-a')->getJson('/api/menu');
+
+    // Serviu o que o vencedor gravou, sem tocar no banco.
+    $response->assertOk()->assertJsonPath('marca', 'do-vencedor');
+    expect($queries)->toBe(0);
+});
+
+it('reconstrói sozinho quando o vencedor do lock demora demais', function () {
+    $tenant = $this->tenantA;
+    $key = "menu:{$tenant->id}:v{$tenant->menu_version}";
+
+    Cache::forget($key);
+    Cache::forget("menu:{$tenant->id}:stale");
+
+    // Lock preso e nada gravado: o esperador estoura o block(3) e assume o
+    // trabalho. Preferir o custo extra a deixar o visitante sem resposta.
+    $lock = Cache::lock("{$key}:build", 30);
+    expect($lock->get())->toBeTrue();
+
+    $response = $this->withHeader('X-Tenant', 'loja-a')->getJson('/api/menu');
+
+    $lock->release();
+
+    $response->assertOk()->assertJsonPath('tenant.slug', 'loja-a');
+});
+
+it('reaproveita o payload que o vencedor do lock gravou', function () {
+    $tenant = $this->tenantA;
+    $key = "menu:{$tenant->id}:v{$tenant->menu_version}";
+
+    Cache::forget($key);
+    Cache::forget("menu:{$tenant->id}:stale");
+
+    // O vencedor terminou: o lock está livre e a chave, quente. A request não
+    // deve reconstruir nada — nenhuma query de categoria sai daqui.
+    $this->withHeader('X-Tenant', 'loja-a')->getJson('/api/menu')->assertOk();
+
+    $queries = 0;
+    DB::listen(function ($query) use (&$queries) {
+        if (str_contains($query->sql, 'from "categories"')) {
+            $queries++;
+        }
+    });
+
+    $this->withHeader('X-Tenant', 'loja-a')->getJson('/api/menu')->assertOk();
+
+    expect($queries)->toBe(0);
 });

@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Category;
+use App\Tenancy\PendingMenuInvalidations;
+use App\Tenancy\TenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -112,8 +114,11 @@ class CategoryAdminController extends Controller
     }
 
     /** Reordenação por arrastar-e-soltar no painel. */
-    public function reorder(Request $request): JsonResponse
-    {
+    public function reorder(
+        Request $request,
+        PendingMenuInvalidations $pending,
+        TenantContext $tenants,
+    ): JsonResponse {
         $data = $request->validate([
             'ids' => ['required', 'array', 'min:1'],
             'ids.*' => ['integer'],
@@ -130,6 +135,21 @@ class CategoryAdminController extends Controller
                 }
             }
         });
+
+        /*
+         * Invalidação explícita, e não pelo observer.
+         *
+         * `Builder::update()` desce para o query builder e não dispara evento
+         * de model, então o InvalidatesMenuCache nunca via esta escrita. O
+         * lojista arrastava as seções, salvava, e o cardápio publicado seguia
+         * na ordem antiga até o TTL expirar — a ordem das seções é justamente
+         * o que esta tela existe para controlar.
+         *
+         * O update em lote é mantido: carregar e salvar cada model só para
+         * disparar o observer trocaria uma query por N, e a única coisa que
+         * falta é o sinal, que damos aqui.
+         */
+        $pending->push($tenants->getOrFail()->getKey());
 
         return response()->json(['message' => 'Ordem atualizada.']);
     }

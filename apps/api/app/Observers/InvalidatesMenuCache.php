@@ -2,8 +2,7 @@
 
 namespace App\Observers;
 
-use App\Jobs\PurgeMenuCache;
-use App\Models\Tenant;
+use App\Tenancy\PendingMenuInvalidations;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -12,9 +11,17 @@ use Illuminate\Database\Eloquent\Model;
  * Centralizar aqui evita o modo de falha mais comum deste tipo de sistema:
  * o admin edita um preço, o cache não é invalidado, e a loja segue vendendo
  * pelo valor antigo até o TTL expirar.
+ *
+ * O observer apenas ANOTA o tenant afetado; quem incrementa a versão e dispara
+ * o purge é o PendingMenuInvalidations, uma vez por request. A diferença
+ * importa: incrementar aqui fazia uma operação em lote virar uma sequência de
+ * UPDATEs na mesma linha de `tenants` — a linha que o OrderNumberGenerator
+ * precisa travar para numerar cada pedido.
  */
 class InvalidatesMenuCache
 {
+    public function __construct(private PendingMenuInvalidations $pending) {}
+
     public function saved(Model $model): void
     {
         $this->bump($model);
@@ -33,19 +40,6 @@ class InvalidatesMenuCache
             return;
         }
 
-        // withoutGlobalScopes: Tenant não é tenant-scoped, mas o contexto pode
-        // estar ativo — e um increment é mais barato que carregar a relação.
-        Tenant::withoutGlobalScopes()
-            ->whereKey($tenantId)
-            ->increment('menu_version');
-
-        // O bump acima só resolve o cache do Redis. Next e Cloudflare guardam
-        // suas próprias cópias e precisam ser avisados, senão o lojista salva
-        // e não vê a mudança no site.
-        //
-        // afterCommit é essencial: despachado dentro da transação, o worker
-        // poderia rodar antes do commit, reconstruir o cardápio lendo o estado
-        // antigo e recachear justamente o dado obsoleto que viemos invalidar.
-        PurgeMenuCache::dispatch($tenantId)->afterCommit();
+        $this->pending->push((int) $tenantId);
     }
 }

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Category;
 use App\Models\Tenant;
 use App\Models\TenantSettings;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -20,7 +21,8 @@ use Illuminate\Support\Facades\Cache;
  *
  * 2. Lock + stale fallback. Quando a chave expira às 12h05 com centenas de
  *    requests simultâneas, apenas uma reconstrói; as demais recebem a versão
- *    anterior em vez de irem todas ao banco (cache stampede).
+ *    anterior em vez de irem todas ao banco (cache stampede). Sem cópia stale
+ *    disponível, esperam pelo vencedor em vez de competir com ele.
  *
  * 3. Payload pronto para serializar. O cache guarda o array final, não models —
  *    evita hidratar Eloquent e re-executar transformações a cada hit.
@@ -49,19 +51,54 @@ class MenuService
             if ($stale = Cache::get($this->staleKey($tenant))) {
                 return $stale;
             }
+
+            /*
+             * Sem cópia stale para servir — loja nova, primeiro acesso, ou
+             * stale_ttl vencido. Antes daqui o código seguia direto para o
+             * build, e nesse ponto TODOS os processos iam ao banco de uma vez:
+             * exatamente o stampede que o lock existe para evitar, no pior
+             * momento possível (a primeira carga, quando nada está aquecido).
+             *
+             * Esperar pelo vencedor e reler o cache é mais barato que competir
+             * com ele. O timeout é curto de propósito: se o vencedor demorar
+             * mais que isso, construir também é melhor que fazer o visitante
+             * esperar mais — degradação de custo, não de disponibilidade.
+             */
+            try {
+                $lock->block(3);
+            } catch (LockTimeoutException) {
+                return $this->buildAndCache($tenant, $key, $ttl);
+            }
+
+            // Chegamos aqui donos do lock, e o vencedor anterior já gravou.
+            try {
+                if ($fresh = Cache::get($key)) {
+                    return $fresh;
+                }
+
+                return $this->buildAndCache($tenant, $key, $ttl);
+            } finally {
+                $lock->release();
+            }
         }
 
         try {
-            $payload = $this->build($tenant);
-
-            Cache::put($key, $payload, $ttl);
-            // Cópia de longa duração usada apenas como rede de proteção.
-            Cache::put($this->staleKey($tenant), $payload, (int) config('tenancy.cache.stale_ttl'));
-
-            return $payload;
+            return $this->buildAndCache($tenant, $key, $ttl);
         } finally {
-            optional($lock)->release();
+            $lock->release();
         }
+    }
+
+    /** Reconstrói o payload e repovoa as duas cópias (viva e stale). */
+    private function buildAndCache(Tenant $tenant, string $key, int $ttl): array
+    {
+        $payload = $this->build($tenant);
+
+        Cache::put($key, $payload, $ttl);
+        // Cópia de longa duração usada apenas como rede de proteção.
+        Cache::put($this->staleKey($tenant), $payload, (int) config('tenancy.cache.stale_ttl'));
+
+        return $payload;
     }
 
     private function build(Tenant $tenant): array

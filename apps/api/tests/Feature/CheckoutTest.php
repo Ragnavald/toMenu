@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\Tenant;
 use App\Models\TenantSettings;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 
 beforeEach(function () {
@@ -173,4 +174,75 @@ it('grava snapshot do preço no item do pedido', function () {
 
     expect($item->unit_price_cents)->toBe(5000)
         ->and($item->product_name)->toBe($this->product->name);
+});
+
+/*
+ * Corrida no cadastro do cliente.
+ *
+ * `firstOrCreate` faz SELECT e depois INSERT. Dois pedidos simultâneos do mesmo
+ * telefone — duplo-clique em "Finalizar", ou duas abas — passam ambos pelo
+ * SELECT vazio, e o segundo INSERT viola o unique (tenant_id, phone).
+ *
+ * Quem sustenta este caso é o `createOrFirst` do Eloquent, que envolve o INSERT
+ * num savepoint e relê a linha quando a violação acontece. O savepoint é o
+ * detalhe que importa no Postgres: sem ele a violação abortaria a transação do
+ * pedido inteiro e um pedido válido viraria 500.
+ *
+ * O teste existe porque essa garantia é invisível na leitura do OrderService e
+ * fácil de perder — trocar `firstOrCreate` por um SELECT seguido de `create()`,
+ * ou mover a criação para fora da transação, reabre o furo sem nenhum sinal.
+ * O concorrente é simulado inserindo a linha exatamente na janela entre as duas
+ * operações.
+ */
+it('não perde o pedido quando o cliente é criado por uma request concorrente', function () {
+    $phone = '11999998888';
+    $inserted = false;
+
+    DB::listen(function ($query) use ($phone, &$inserted) {
+        if ($inserted || ! str_contains($query->sql, 'select * from "customers"')) {
+            return;
+        }
+
+        if (! in_array($phone, $query->bindings, true)) {
+            return;
+        }
+
+        $inserted = true;
+
+        // A request concorrente cria o cliente e faz o commit dela.
+        DB::table('customers')->insert([
+            'tenant_id' => $this->tenant->id,
+            'name' => 'João (concorrente)',
+            'phone' => $phone,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    });
+
+    $this->withHeader('X-Tenant', 'loja-a')
+        ->postJson('/api/orders', orderPayload([
+            'items' => [['product_id' => $this->product->id, 'quantity' => 1]],
+        ]))
+        ->assertCreated();
+
+    expect($inserted)->toBeTrue('o hook deveria ter simulado a corrida');
+
+    // Um cliente só, e o pedido ficou vinculado a ele.
+    actingAsTenant($this->tenant);
+    expect(App\Models\Customer::where('phone', $phone)->count())->toBe(1);
+    expect(Order::first()->customer->phone)->toBe($phone);
+});
+
+it('reaproveita o cliente já cadastrado em pedidos seguintes', function () {
+    $payload = orderPayload([
+        'items' => [['product_id' => $this->product->id, 'quantity' => 1]],
+    ]);
+
+    $this->withHeader('X-Tenant', 'loja-a')->postJson('/api/orders', $payload)->assertCreated();
+    $this->withHeader('X-Tenant', 'loja-a')->postJson('/api/orders', $payload)->assertCreated();
+
+    actingAsTenant($this->tenant);
+
+    expect(App\Models\Customer::where('phone', '11999998888')->count())->toBe(1)
+        ->and(Order::count())->toBe(2);
 });

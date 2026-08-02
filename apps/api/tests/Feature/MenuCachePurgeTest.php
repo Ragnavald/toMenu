@@ -18,6 +18,7 @@ it('agenda o purge quando um produto do cardápio muda', function () {
     actingAsTenant($this->tenant);
     $category = Category::factory()->create();
     Product::factory()->create(['category_id' => $category->id]);
+    flushMenuInvalidations();
 
     Queue::assertPushed(PurgeMenuCache::class, fn ($job) => $job->tenantId === $this->tenant->id);
 });
@@ -27,8 +28,37 @@ it('agenda o purge quando a categoria muda', function () {
 
     actingAsTenant($this->tenant);
     Category::factory()->create();
+    flushMenuInvalidations();
 
     Queue::assertPushed(PurgeMenuCache::class);
+});
+
+/*
+ * O ganho que motivou o coletor: uma edição em lote toca a linha do tenant uma
+ * vez só.
+ *
+ * Antes disto cada save incrementava `menu_version` sozinho, e a linha de
+ * `tenants` — a mesma que o OrderNumberGenerator trava para numerar o pedido —
+ * era atualizada uma vez por model, dentro da transação. Salvar um produto com
+ * seus grupos e modificadores bloqueava a criação de pedidos da loja pelo tempo
+ * do lote inteiro.
+ */
+it('colapsa uma edição em lote num único bump de versão', function () {
+    Queue::fake();
+
+    actingAsTenant($this->tenant);
+    $before = $this->tenant->fresh()->menu_version;
+
+    $category = Category::factory()->create();
+    Product::factory()->count(10)->create(['category_id' => $category->id]);
+
+    // Nada tocou o banco ainda: as invalidações estão apenas acumuladas.
+    expect($this->tenant->fresh()->menu_version)->toBe($before);
+
+    flushMenuInvalidations();
+
+    expect($this->tenant->fresh()->menu_version)->toBe($before + 1);
+    Queue::assertPushed(PurgeMenuCache::class, 1);
 });
 
 it('avisa o storefront e o Cloudflare com a loja que mudou', function () {
@@ -77,3 +107,36 @@ it('não propaga falha do storefront para quem salvou o cardápio', function () 
     // quebrar o salvamento que o lojista acabou de fazer.
     app(MenuCachePurger::class)->purge($this->tenant);
 })->throwsNoExceptions();
+
+/*
+ * Reordenar as seções também invalida o cardápio.
+ *
+ * O endpoint de reorder usa `Builder::update()`, que desce para o query builder
+ * e NÃO dispara evento de model — o observer nunca via essa escrita. O lojista
+ * arrastava as seções, salvava, e o cardápio publicado continuava na ordem
+ * antiga até o TTL vencer. A invalidação é sinalizada à mão no controller, e
+ * este teste existe para que ela não se perca numa refatoração.
+ */
+it('invalida o cardápio ao reordenar as seções', function () {
+    $user = App\Models\User::factory()->create(['tenant_id' => $this->tenant->id]);
+    Laravel\Sanctum\Sanctum::actingAs($user);
+
+    actingAsTenant($this->tenant);
+    $ids = [
+        Category::factory()->create(['position' => 1])->id,
+        Category::factory()->create(['position' => 2])->id,
+    ];
+    flushMenuInvalidations();
+
+    $before = $this->tenant->fresh()->menu_version;
+    Queue::fake();
+
+    $this->withHeader('X-Tenant', 'loja-a')
+        ->postJson('/api/admin/categories/reorder', ['ids' => array_reverse($ids)])
+        ->assertOk();
+
+    flushMenuInvalidations();
+
+    expect($this->tenant->fresh()->menu_version)->toBe($before + 1);
+    Queue::assertPushed(PurgeMenuCache::class, 1);
+});
