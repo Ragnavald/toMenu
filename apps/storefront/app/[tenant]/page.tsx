@@ -1,5 +1,8 @@
 import { notFound } from 'next/navigation';
 import { fetchMenuResult } from '@/lib/api';
+import { canonicalStoreUrl } from '@/lib/store-url';
+import { restaurantSchema } from '@/lib/structured-data';
+import { JsonLd } from '@/components/json-ld';
 import { StoreSuspended } from '@/components/store-suspended';
 import { StoreHeader } from '@/components/store-header';
 import { MenuBrowser } from '@/components/menu-browser';
@@ -36,6 +39,17 @@ export default async function StorePage({ params }: Props) {
 
   return (
     <>
+      {/* Diz ao buscador que esta página é um restaurante — com endereço,
+          horário, faixa de preço e o cardápio inteiro. É o que habilita o
+          resultado rico; sem isso a página é só texto para o crawler. */}
+      <JsonLd
+        data={restaurantSchema({
+          tenant: menu.tenant,
+          categories: menu.categories,
+          url: canonicalStoreUrl(tenant),
+        })}
+      />
+
       {/* Header e cardápio são Server Components: o HTML já chega pronto,
           indexável e com LCP baixo. Só carrinho e modal são client. */}
       <StoreHeader tenant={menu.tenant} />

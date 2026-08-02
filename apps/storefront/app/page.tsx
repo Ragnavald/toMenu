@@ -1,13 +1,46 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
+import { platformSchema } from '@/lib/structured-data';
 import { BrandLogo } from '@/components/brand-logo';
+import { JsonLd } from '@/components/json-ld';
 import { SignupForm } from '@/components/signup-form';
 
+const SITE_URL =
+  (process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'localhost') === 'localhost'
+    ? 'http://localhost:3000'
+    : `https://${process.env.NEXT_PUBLIC_ROOT_DOMAIN}`;
+
+const TITLE = 'ToMenu — Cardápio digital e pedidos online para restaurantes';
+const DESCRIPTION =
+  'Publique seu cardápio em minutos por R$ 29/mês, ou receba pedidos com entrega e pagamento no plano Pro. Sem comissão por pedido.';
+
 export const metadata: Metadata = {
-  title: 'ToMenu — Cardápio digital e pedidos online para restaurantes',
-  description:
-    'Publique seu cardápio em minutos por R$ 29/mês, ou receba pedidos com entrega e pagamento no plano Pro. Sem comissão por pedido.',
+  title: TITLE,
+  description: DESCRIPTION,
+  // A landing responde em to-menu.com e www.to-menu.com; a canônica elege uma.
+  alternates: { canonical: SITE_URL },
+  keywords: [
+    'cardápio digital',
+    'cardápio online',
+    'QR code cardápio',
+    'sistema para restaurante',
+    'delivery próprio',
+    'pedidos online sem comissão',
+  ],
+  openGraph: {
+    title: TITLE,
+    description: DESCRIPTION,
+    url: SITE_URL,
+    siteName: 'ToMenu',
+    locale: 'pt_BR',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: TITLE,
+    description: DESCRIPTION,
+  },
 };
 
 /**
@@ -93,6 +126,11 @@ const FEATURES = [
 export default function LandingPage() {
   return (
     <div className="min-h-dvh bg-[rgb(var(--surface))] text-[rgb(var(--ink))]">
+      {/* Identifica a ToMenu como organização e produto, com os dois planos e
+          seus preços. É o que permite ao buscador exibir a marca com logo e
+          responder "quanto custa" sem abrir a página. */}
+      <JsonLd data={platformSchema(SITE_URL)} />
+
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
         <BrandLogo priority className="h-8 w-auto sm:h-9" />
 

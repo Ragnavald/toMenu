@@ -24,6 +24,31 @@ export async function storeBasePath(tenantSlug: string): Promise<string> {
   return fromSubdomain ? '' : `/${tenantSlug}`;
 }
 
+const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'localhost';
+
+/**
+ * URL canônica absoluta da loja.
+ *
+ * A mesma loja responde em dois endereços — subdomínio e caminho — e para o
+ * buscador isso é conteúdo duplicado: ele escolhe um sozinho, divide o sinal de
+ * relevância entre os dois e pode indexar o que a loja não divulga.
+ *
+ * O subdomínio é eleito canônico porque é o endereço que a plataforma imprime
+ * no QR code e vende como "endereço próprio da sua loja".
+ *
+ * Em desenvolvimento devolve o caminho, já que *.localhost não tem TLS e uma
+ * canônica https quebraria a navegação local.
+ */
+export function canonicalStoreUrl(tenantSlug: string, path = ''): string {
+  const suffix = path ? `/${path}` : '';
+
+  if (ROOT_DOMAIN === 'localhost') {
+    return `http://${tenantSlug}.localhost:3000${suffix}`;
+  }
+
+  return `https://${tenantSlug}.${ROOT_DOMAIN}${suffix}`;
+}
+
 /**
  * Caminho absoluto de uma rota interna da loja.
  *

@@ -51,6 +51,18 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  /*
+   * robots.txt e sitemap.xml pertencem ao host, não à loja.
+   *
+   * Sem esta saída eles viram /pizzaria/robots.txt — rota inexistente — e o
+   * buscador recebe a página 404 no lugar das diretivas. Os handlers já leem o
+   * Host para decidir o que responder (ver app/robots.ts), então basta deixá-los
+   * passar sem reescrita.
+   */
+  if (pathname === '/robots.txt' || pathname === '/sitemap.xml') {
+    return NextResponse.next();
+  }
+
   const url = request.nextUrl.clone();
   url.pathname = `/${sub}${pathname}`;
 
