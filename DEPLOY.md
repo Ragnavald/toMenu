@@ -1341,6 +1341,86 @@ grep ALERTA /var/log/tomenu-resources.log | tail -20
 journalctl -t tomenu-resources --since '7 days ago'   # correlaciona com o resto
 ```
 
+### Monitoramento de erros (Sentry)
+
+Os monitores acima veem a máquina e o HTTP. O que nenhum deles vê é a exceção
+dentro da aplicação: um 500 no checkout aparece como "pedido que não foi
+feito", sem rastro além de uma linha no log do container que ninguém lê no
+momento em que acontece.
+
+Em **`apps/api/.env`**:
+
+```dotenv
+SENTRY_LARAVEL_DSN=https://<chave>@o<org>.ingest.sentry.io/<projeto>
+SENTRY_ENVIRONMENT=production
+# Erro é o que interessa; tracing consome a cota gratuita rápido.
+SENTRY_TRACES_SAMPLE_RATE=0
+```
+
+E no storefront, como **variável de ambiente do serviço** (não build arg — é
+lida em runtime pelo `instrumentation.ts`, e não inlined no bundle):
+
+```yaml
+# docker-compose.prod.yml, serviço storefront
+environment:
+  SENTRY_DSN: ${SENTRY_DSN_STOREFRONT:-}
+  SENTRY_ENVIRONMENT: production
+```
+
+> **Sem DSN o SDK é inerte** nos dois lados: nada é enviado, nada quebra. É o
+> que mantém desenvolvimento e a suíte de testes sem tocar a rede.
+
+#### O que o alerta traz junto
+
+Cada evento da API leva a tag **`tenant`** com o slug da loja — ver
+`SentryContextProvider`. Numa plataforma multi-tenant, um erro sem essa
+informação obriga a cruzar horário do evento com log de acesso para descobrir
+quem foi afetado; com a tag, é um filtro. O id e o papel do usuário vão junto,
+mas **não** o e-mail nem o IP: `send_default_pii` fica `false`, e não há motivo
+para exportar dado pessoal do lojista para um serviço externo.
+
+#### O que é deliberadamente ignorado
+
+`config/sentry.php` lista as exceções que **não** viram alerta: 404, 422, 401,
+403, 405 e 429. Todas são respostas normais de uma API pública — quem digita
+uma URL errada ou preenche um formulário inválido não é um defeito. Sem esse
+filtro o volume de falso positivo faz o alerta ser ignorado, que é o mesmo que
+não ter monitoramento.
+
+#### Storefront: só o servidor
+
+Não há `instrumentation-client.ts`. O cardápio é a página mais acessada da
+plataforma e quase toda em Server Components; carregar o SDK no navegador
+custaria dezenas de KB no bundle de cada visitante do QR code, para capturar
+erro de JavaScript numa página que quase não tem JavaScript. O
+`instrumentation.ts` cobre o que dói: falha ao renderizar o cardápio e erro no
+fetch da API durante o SSR.
+
+Verifique que o bundle do cliente segue limpo após qualquer mudança:
+
+```bash
+grep -rl sentry apps/storefront/.next/static/chunks/ || echo "bundle do cliente limpo"
+```
+
+#### Verificação
+
+```bash
+cd /opt/tomenu
+
+# O container vê o DSN?
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    exec -T api printenv SENTRY_LARAVEL_DSN SENTRY_ENVIRONMENT
+
+# Dispara um evento de teste — deve aparecer no painel do Sentry em segundos.
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    exec -T -e HOME=/tmp api php artisan tinker --execute \
+    'throw new RuntimeException("teste de monitoramento");'
+```
+
+> O evento de teste chega com `tenant: nenhum`, porque o console roda fora de
+> qualquer request. Um erro real vindo do painel ou do storefront traz o slug
+> da loja.
+
 ### Rotação dos logs
 
 Os três scripts só acrescentam ao arquivo e nenhum limpa nada — sem rotação
