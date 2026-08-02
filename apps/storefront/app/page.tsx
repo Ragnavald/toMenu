@@ -13,7 +13,7 @@ const SITE_URL =
 
 const TITLE = 'ToMenu — Cardápio digital e pedidos online para restaurantes';
 const DESCRIPTION =
-  'Cardápio digital por QR Code em minutos, a partir de R$ 29/mês. No plano Pro, receba pedidos com entrega, pagamento online e relatórios. Sem comissão por pedido.';
+  'Cardápio digital por QR Code em minutos, a partir de R$ 29/mês. No plano Pro, receba pedidos com entrega, painel em tempo real e relatórios. Sem comissão por pedido.';
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -62,7 +62,6 @@ const CAPABILITIES = [
   { label: 'Carrinho e pedido pelo site', menu: false, pro: true },
   { label: 'Aviso sonoro de pedido novo no painel', menu: false, pro: true },
   { label: 'Entrega: taxa, raio, mínimo e tempo', menu: false, pro: true },
-  { label: 'Pagamento online com cartão e Pix', menu: false, pro: true },
   { label: 'Painel de pedidos em tempo real', menu: false, pro: true },
   { label: 'Relatórios de vendas', menu: false, pro: true },
 ];
@@ -92,7 +91,7 @@ const PLANS = [
     price: 'R$ 89',
     tagline: 'O cardápio e a operação de delivery inteira.',
     forWho:
-      'Para quem vende para viagem e quer receber o pedido pronto, com endereço e pagamento, sem depender de conversa no WhatsApp.',
+      'Para quem vende para viagem e quer receber o pedido pronto, com endereço e itens, sem depender de conversa no WhatsApp.',
     highlight: true,
     demo: { href: '/forno-di-napoli', label: 'Ver loja completa de exemplo' },
   },
@@ -129,7 +128,7 @@ const BENEFITS = [
 /**
  * `proOnly` marca o que só existe no Pro.
  *
- * Sem essa marca a grade prometia entrega e pagamento para quem estava
+ * Sem essa marca a grade prometia entrega e painel de pedidos para quem estava
  * lendo sobre o plano de R$ 29 — e a frustração apareceria depois da compra,
  * que é o pior lugar possível para descobrir o limite do plano.
  */
@@ -148,17 +147,12 @@ const FEATURES = [
   },
   {
     title: 'A cozinha sabe na hora',
-    body: 'Cada pedido aparece no painel com aviso sonoro, endereço e forma de pagamento — sem recarregar a página.',
+    body: 'Cada pedido aparece no painel com aviso sonoro, endereço e itens escolhidos — sem recarregar a página.',
     proOnly: true,
   },
   {
     title: 'Entrega do seu jeito',
     body: 'Defina taxa, pedido mínimo, raio de entrega, frete grátis acima de um valor e tempo estimado.',
-    proOnly: true,
-  },
-  {
-    title: 'Pague na entrega ou online',
-    body: 'Dinheiro, cartão na maquininha ou pagamento pelo site via cartão e Pix.',
     proOnly: true,
   },
 ];
@@ -185,14 +179,18 @@ export default function LandingPage() {
       <main>
         <section className="mx-auto max-w-5xl px-6 pb-16 pt-10 sm:pt-16">
           <div className="max-w-2xl">
+            {/* O teste grátis é o que derruba a objeção de quem chega: some
+                o risco de assinar antes de ver funcionando. Estava como chip
+                miúdo acima do título e passava batido — agora tem peso de
+                texto, não de etiqueta. */}
             <p
-              className="mb-4 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium"
+              className="mb-4 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold"
               style={{
                 background: 'rgb(var(--brand-soft))',
                 color: 'rgb(var(--brand))',
               }}
             >
-              14 dias grátis · sem cartão de crédito
+              Teste 14 dias grátis · sem cartão de crédito
             </p>
 
             <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl">
@@ -231,6 +229,14 @@ export default function LandingPage() {
                 Comparar planos
               </Link>
             </div>
+
+            {/* Junto do botão, não só no topo: é aqui que a pessoa decide
+                clicar, e é aqui que a dúvida "vou ter que pagar agora?"
+                aparece. */}
+            <p className="mt-3 text-sm text-muted">
+              Grátis por 14 dias. Sem cartão de crédito, sem fidelidade —
+              cancele quando quiser.
+            </p>
 
             {/* Uma loja de cada plano. Os dois links juntos são o argumento:
                 a diferença entre os planos fica visível em dois cliques, sem
@@ -290,7 +296,8 @@ export default function LandingPage() {
               O <strong className="font-semibold text-[rgb(var(--ink))]">Cardápio digital</strong>{' '}
               mostra o seu menu. O{' '}
               <strong className="font-semibold text-[rgb(var(--ink))]">Pro</strong> também recebe o
-              pedido, com entrega e pagamento. Sem comissão por venda nos dois.
+              pedido, com entrega e acompanhamento. Sem comissão por venda nos
+              dois.
             </p>
           </div>
 
@@ -417,8 +424,15 @@ export default function LandingPage() {
                         : '1px solid rgb(var(--brand) / 0.4)',
                     }}
                   >
-                    Começar no {plan.name}
+                    Testar {plan.name} grátis
                   </Link>
+
+                  {/* No próprio cartão de preço: é onde o número R$ 89 está
+                      olhando para a pessoa, e onde ela precisa saber que não
+                      paga hoje. */}
+                  <p className="mt-2 text-center text-xs text-muted">
+                    14 dias grátis · sem cartão
+                  </p>
 
                   <Link
                     href={plan.demo.href}

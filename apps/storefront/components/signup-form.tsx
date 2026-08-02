@@ -31,7 +31,7 @@ const PLAN_CHOICES: { slug: PlanSlug; name: string; price: string; note: string 
     slug: 'pro',
     name: 'Pro',
     price: 'R$ 89/mês',
-    note: 'Cardápio + pedidos, entrega e pagamento.',
+    note: 'Cardápio + pedidos, entrega e painel.',
   },
 ];
 
