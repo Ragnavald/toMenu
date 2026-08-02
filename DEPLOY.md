@@ -1212,6 +1212,63 @@ cache):
 tomenu-purge https://forno-di-napoli.to-menu.com/
 ```
 
+### Monitor de recursos (`tomenu-resources`)
+
+O `tomenu-watch` acima olha o HTTP — quando ele acusa, o visitante já viu o
+erro. O `tomenu-resources` cobre o que vem antes: memória, swap e disco, a cada
+5 minutos.
+
+```bash
+cp /opt/tomenu/docker/droplet/watch-resources.sh /usr/local/bin/tomenu-resources
+chmod +x /usr/local/bin/tomenu-resources
+
+crontab -e
+# */5 * * * *  /usr/local/bin/tomenu-resources >> /var/log/tomenu-resources.log 2>&1
+```
+
+Limiares padrão, ajustáveis por variável de ambiente no cron:
+
+| Variável | Padrão | Por quê |
+|---|---|---|
+| `MEM_MIN_MB` | 300 | Abaixo disso o php-fpm não forka worker novo sob pico |
+| `SWAP_MAX_MB` | 1024 | Metade do swapfile; só alarma junto com RAM curta |
+| `DISK_MAX_PCT` | 85 | O Postgres para de escrever com disco cheio |
+
+> **O alerta é sobre `MemAvailable`, não sobre "RAM usada".** O Linux ocupa a
+> memória livre com cache de disco e a devolve sob pressão, então `used` alto é
+> o estado normal de um servidor saudável — alarmar por ele produziria alerta
+> constante. Quem responde "cabe mais processo aqui?" é o `MemAvailable` do
+> `/proc/meminfo`, e é ele que o script observa.
+>
+> Pelo mesmo motivo, swap em uso sozinho **não** dispara alerta: com
+> `vm.swappiness=10` o kernel só parqueia página ociosa. O alarme exige swap
+> alto **e** memória disponível baixa ao mesmo tempo.
+
+Linha de base medida em 02/08/2026, para comparação futura: `mem=1076MB
+swap=162MB disco=28%`, com os 8 containers no ar.
+
+Consulta:
+
+```bash
+grep ALERTA /var/log/tomenu-resources.log | tail -20
+journalctl -t tomenu-resources --since '7 days ago'   # correlaciona com o resto
+```
+
+### Rotação dos logs
+
+Os três scripts só acrescentam ao arquivo e nenhum limpa nada — sem rotação
+crescem sem limite, e disco cheio é uma das falhas que o monitor acima existe
+para evitar.
+
+```bash
+cp /opt/tomenu/docker/droplet/logrotate-tomenu /etc/logrotate.d/tomenu
+logrotate --debug /etc/logrotate.d/tomenu   # confere sem aplicar nada
+```
+
+Semanal, 8 gerações comprimidas (~2 meses). Usa `copytruncate` porque os
+scripts não mantêm o arquivo aberto entre execuções, e `delaycompress` para que
+um `tail -f` durante incidente continue mostrando as linhas novas.
+
 ### Verificação pós-deploy
 
 ```bash

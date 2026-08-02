@@ -1,0 +1,28 @@
+# Rotação dos logs dos monitores e do backup.
+#
+# Os três rodam por cron e só acrescentam ao arquivo: o tomenu-watch a cada 2
+# min, o tomenu-resources a cada 5, o backup uma vez por dia. Sem rotação eles
+# crescem para sempre — devagar, mas sem limite, e o disco cheio é justamente
+# uma das falhas que o tomenu-resources existe para avisar.
+#
+# Instalação:
+#   cp docker/droplet/logrotate-tomenu /etc/logrotate.d/tomenu
+#   logrotate --debug /etc/logrotate.d/tomenu   # confere sem aplicar
+/var/log/tomenu-*.log {
+    weekly
+    # ~2 meses de histórico. Suficiente para investigar um incidente do mês
+    # passado sem guardar ruído de um ano.
+    rotate 8
+    compress
+    # A compressão do arquivo mais recente fica para o ciclo seguinte: sem
+    # isto, o log da semana corrente seria comprimido e um `tail -f` durante
+    # um incidente pararia de mostrar as linhas novas.
+    delaycompress
+    # O cron pode não ter escrito nada ainda, e um log ausente não é erro.
+    missingok
+    notifempty
+    # Nenhum dos scripts mantém o arquivo aberto entre execuções — cada
+    # invocação reabre pelo redirecionamento do cron. Truncar em vez de
+    # recriar evita qualquer janela em que o arquivo não exista.
+    copytruncate
+}
