@@ -162,6 +162,16 @@ services:
       # o cardápio no instante da edição. Sem ele a rota responde 503 e o
       # cardápio volta a depender só do TTL.
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
+      # Monitoramento de erros do render no servidor (instrumentation.ts).
+      #
+      # `environment` e não build arg de propósito: é lida em runtime, então
+      # trocar o DSN é um restart em vez de um rebuild da imagem. Vazio deixa o
+      # SDK inerte, que é o comportamento em desenvolvimento.
+      #
+      # DSN próprio, separado do da API: são dois projetos no Sentry, e misturar
+      # erro de PHP com erro de render num só faz o alerta perder o endereço.
+      SENTRY_DSN: ${SENTRY_DSN_STOREFRONT:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
     depends_on:
       nginx:
         condition: service_started

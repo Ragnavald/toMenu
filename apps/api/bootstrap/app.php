@@ -10,6 +10,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Sentry\Laravel\Integration;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -69,6 +70,19 @@ return Application::configure(basePath: dirname(__DIR__))
         );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        /*
+         * Relata exceções ao Sentry.
+         *
+         * Sem DSN configurado isto é inerte — nada é enviado e nada quebra —,
+         * então desenvolvimento e a suíte de testes seguem sem tocar na rede.
+         *
+         * O que NÃO é relatado está na lista `ignore_exceptions` de
+         * `config/sentry.php`: 404, 422, 401 e afins são respostas normais de
+         * uma API pública, e deixá-las passar afogaria o alerta que importa em
+         * ruído de gente digitando URL errada.
+         */
+        Integration::handles($exceptions);
+
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );
