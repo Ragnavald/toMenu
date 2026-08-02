@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { formatMoney } from '@/lib/api';
 import { mapsSearchUrl, osmEmbedUrl, type Coordinates } from '@/lib/geocode';
+import { storeHref } from '@/lib/store-url';
 import { formatSchedule, hasAnyHours, weekFromToday } from '@/lib/hours';
 import {
   FULFILLMENT_NOUNS,
@@ -20,19 +21,20 @@ import { StoreStatus } from './store-status';
  * é metade do motivo desta página existir: hoje "pizzaria tal endereço" não
  * encontra nada, porque o cardápio não publica esses dados em texto.
  */
-export function StoreProfile({
+export async function StoreProfile({
   tenant,
   coordinates,
 }: {
   tenant: TenantInfo;
   coordinates: Coordinates | null;
 }) {
+  const menuHref = await storeHref(tenant.slug);
   const hasHours = hasAnyHours(tenant.businessHours);
   const week = weekFromToday(tenant.businessHours);
 
   return (
     <div className="pb-16">
-      <ProfileHeader tenant={tenant} />
+      <ProfileHeader tenant={tenant} menuHref={menuHref} />
 
       <main className="mx-auto max-w-3xl px-4">
         {tenant.description && (
@@ -150,7 +152,7 @@ export function StoreProfile({
         )}
 
         <Link
-          href="./"
+          href={menuHref}
           className="mt-10 flex w-full items-center justify-center gap-2 px-5 py-3.5 text-sm font-semibold transition-opacity hover:opacity-90"
           style={{
             background: 'rgb(var(--brand))',
@@ -176,7 +178,17 @@ export function StoreProfile({
 }
 
 /** Capa, logo e nome, com o selo de status e o caminho de volta. */
-function ProfileHeader({ tenant }: { tenant: TenantInfo }) {
+/**
+ * `menuHref` chega pronto do pai em vez de ser resolvido aqui: este componente
+ * é síncrono e usar headers() dentro dele o tornaria assíncrono sem ganho.
+ */
+function ProfileHeader({
+  tenant,
+  menuHref,
+}: {
+  tenant: TenantInfo;
+  menuHref: string;
+}) {
   const initials = tenant.name
     .split(' ')
     .slice(0, 2)
@@ -203,11 +215,12 @@ function ProfileHeader({ tenant }: { tenant: TenantInfo }) {
         )}
       </div>
 
-      {/* Volta para o cardápio. `./` é relativo de propósito: no subdomínio a
-          URL é loja.tomenu.app/loja, e um href absoluto levaria para a landing
-          da plataforma em vez do cardápio da loja. */}
+      {/* Volta para o cardápio. Absoluto e montado a partir do prefixo real:
+          "./" resolvia certo no subdomínio e errado no acesso por caminho,
+          onde a partir de /pizzaria/loja ele apontava para /pizzaria/ apenas
+          por sorte da barra — e para a landing quando ela faltava. */}
       <Link
-        href="./"
+        href={menuHref}
         aria-label="Voltar ao cardápio"
         className="absolute left-4 top-4 grid size-10 place-items-center rounded-full shadow-soft backdrop-blur transition-transform hover:scale-105"
         style={{ background: 'rgb(var(--surface) / 0.92)' }}

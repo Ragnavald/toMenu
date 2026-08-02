@@ -54,7 +54,19 @@ export function proxy(request: NextRequest) {
   const url = request.nextUrl.clone();
   url.pathname = `/${sub}${pathname}`;
 
-  return NextResponse.rewrite(url);
+  /*
+   * Sinaliza que o slug veio do host, não da URL visível.
+   *
+   * A reescrita é interna: o navegador continua em pizzaria.tomenu.app/, sem
+   * o segmento do slug. Quem monta link precisa saber disso — no subdomínio a
+   * raiz da loja é "/", no acesso por caminho é "/pizzaria". Sem este sinal a
+   * página não tem como distinguir os dois casos, porque em ambos ela recebe
+   * o mesmo `params.tenant`.
+   */
+  const headers = new Headers(request.headers);
+  headers.set('x-tenant-subdomain', '1');
+
+  return NextResponse.rewrite(url, { request: { headers } });
 }
 
 export const config = {

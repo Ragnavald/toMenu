@@ -1,11 +1,13 @@
 import Link from 'next/link';
 import { formatMoney } from '@/lib/api';
+import { storeHref } from '@/lib/store-url';
 import type { TenantInfo } from '@/lib/types';
 import { OrderTrackingButton } from './order-tracking-button';
 
 /** Server Component: sem JS no cliente, entra direto no HTML inicial. */
-export function StoreHeader({ tenant }: { tenant: TenantInfo }) {
+export async function StoreHeader({ tenant }: { tenant: TenantInfo }) {
   const { deliveryConfig: config } = tenant;
+  const profileHref = await storeHref(tenant.slug, 'loja');
   const initials = tenant.name
     .split(' ')
     .slice(0, 2)
@@ -74,11 +76,13 @@ export function StoreHeader({ tenant }: { tenant: TenantInfo }) {
             A seta é o que sinaliza que o título é navegável — sem ela o
             cliente não descobre que existe algo além do cardápio.
 
-            `loja` é relativo de propósito: no subdomínio a URL é
-            pizzaria.tomenu.app, e um href absoluto ("/loja") sairia do
-            cardápio para uma rota que não pertence a loja alguma. */}
+            O href é absoluto e montado a partir do prefixo real (ver
+            storeHref). Já foi relativo — "loja" — e quebrava no acesso por
+            caminho: a partir de to-menu.com/pizzaria, sem barra final, o
+            navegador troca o último segmento e o link vira to-menu.com/loja,
+            que é 404. */}
         <h1 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
-          <Link href="loja" className="group inline-flex items-start gap-1.5">
+          <Link href={profileHref} className="group inline-flex items-start gap-1.5">
             <span>{tenant.name}</span>
 
             {/* shrink-0: a seta é o sinal de que dá para navegar; se encolher
