@@ -65,6 +65,14 @@ const CAPABILITIES = [
   { label: 'Relatórios de vendas', menu: false, pro: true },
 ];
 
+/**
+ * `demo` aponta para a loja de exemplo daquele plano, semeada pelo DemoSeeder.
+ *
+ * Cada cartão leva ao exemplo do próprio plano: a lista riscada diz o que falta
+ * no plano barato, mas quem está decidindo quer ver o que recebe. A cafeteria
+ * roda no plano vitrine de verdade, então a ausência de carrinho na página dela
+ * é a mesma regra que vale para o assinante — não uma maquete.
+ */
 const PLANS = [
   {
     slug: 'cardapio',
@@ -74,6 +82,7 @@ const PLANS = [
     forWho:
       'Para quem atende no salão ou no balcão e só quer trocar o cardápio impresso por um link e um QR code.',
     highlight: false,
+    demo: { href: '/grao-e-folha', label: 'Ver loja somente com cardápio digital' },
   },
   {
     slug: 'pro',
@@ -83,6 +92,7 @@ const PLANS = [
     forWho:
       'Para quem vende para viagem e quer receber o pedido pronto, com endereço e pagamento, sem depender de conversa no WhatsApp.',
     highlight: true,
+    demo: { href: '/forno-di-napoli', label: 'Ver loja completa de exemplo' },
   },
 ];
 
@@ -183,12 +193,24 @@ export default function LandingPage() {
               >
                 Comparar os planos
               </Link>
+            </div>
 
+            {/* Uma loja de cada plano. Os dois links juntos são o argumento:
+                a diferença entre os planos fica visível em dois cliques, sem
+                depender de o visitante acreditar na tabela de preços. */}
+            <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
               <Link
                 href="/forno-di-napoli"
-                className="rounded-xl px-5 py-3 text-sm font-medium text-muted transition-colors hover:text-[rgb(var(--ink))]"
+                className="font-medium underline decoration-[var(--hairline)] underline-offset-4 transition-colors hover:decoration-[rgb(var(--ink))]"
               >
-                Ver uma loja de exemplo
+                Ver loja completa de exemplo
+              </Link>
+
+              <Link
+                href="/grao-e-folha"
+                className="font-medium text-muted underline decoration-[var(--hairline)] underline-offset-4 transition-colors hover:text-[rgb(var(--ink))] hover:decoration-[rgb(var(--ink))]"
+              >
+                Ver loja somente com cardápio digital
               </Link>
             </div>
           </div>
@@ -359,6 +381,13 @@ export default function LandingPage() {
                     }}
                   >
                     Começar no {plan.name}
+                  </Link>
+
+                  <Link
+                    href={plan.demo.href}
+                    className="mt-3 block text-center text-sm font-medium text-muted underline decoration-[var(--hairline)] underline-offset-4 transition-colors hover:text-[rgb(var(--ink))] hover:decoration-[rgb(var(--ink))]"
+                  >
+                    {plan.demo.label}
                   </Link>
                 </div>
               </div>

@@ -5,38 +5,79 @@ namespace Database\Seeders;
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\TenantSettings;
-use App\Models\User;
 use Database\Seeders\Concerns\BuildsDemoStores;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 /**
- * Lojas com identidades visuais distintas — o objetivo é demonstrar que o
- * mesmo build do frontend produz aparências completamente diferentes, sem
- * rebuild, apenas trocando os tokens vindos da API.
+ * As duas lojas de exemplo que a landing page linka, em PRODUÇÃO.
  *
- * Seeder de DESENVOLVIMENTO: assume banco vazio (é chamada pelo `make fresh`,
- * logo depois do `migrate:fresh`) e cria usuários com senha conhecida. As duas
- * lojas que a landing linka em produção são responsabilidade da
- * ExampleStoresSeeder, que é idempotente e não cria login nenhum.
+ * Existe separada da DemoSeeder porque as duas têm públicos opostos. A
+ * DemoSeeder recria o banco de desenvolvimento do zero — cria usuários com
+ * senha 'password', assume tabelas vazias e serve para o desenvolvedor ter o
+ * que olhar. Esta aqui roda contra o banco de produção, ao lado de lojas de
+ * clientes pagantes, e por isso obedece a três regras que a outra não precisa:
+ *
+ *   1. É idempotente. Roda a cada deploy (via `deploy-migrate`), então precisa
+ *      atravessar sem erro um banco que já tem as duas lojas. `Tenant::create`
+ *      estouraria no slug único na segunda execução.
+ *   2. Nunca reescreve uma loja existente. Se `forno-di-napoli` já está lá, o
+ *      seeder sai sem tocar em nada — nem no cardápio, nem no tema. Um deploy
+ *      não pode desfazer o que alguém ajustou pelo painel.
+ *   3. Não cria usuário nenhum. A loja de exemplo é uma vitrine pública; ela
+ *      não precisa de login, e uma conta com senha conhecida no banco de
+ *      produção seria uma porta aberta para o painel de um tenant real caso o
+ *      isolamento falhe.
+ *
+ * As lojas ficam com `status = 'active'` e onboarding concluído para não caírem
+ * no wizard, e são as MESMAS duas que `apps/storefront/app/page.tsx` referencia
+ * por slug. Mudar um slug aqui quebra o link da landing.
  */
-class DemoSeeder extends Seeder
+class ExampleStoresSeeder extends Seeder
 {
     use BuildsDemoStores;
 
+    /**
+     * Slugs das lojas de exemplo.
+     *
+     * O storefront esconde essas lojas de qualquer listagem pública que venha a
+     * existir; aqui elas servem só para o seeder saber o que já criou.
+     */
+    public const SLUGS = ['forno-di-napoli', 'grao-e-folha'];
+
     public function run(): void
     {
-        // Os planos vêm do PlanSeeder e não de um firstOrCreate local: a
-        // definição inline que existia aqui não tinha `allows_orders`, então a
-        // loja de demonstração do plano vitrine nasceria aceitando pedidos —
-        // justamente o que ela precisa NÃO fazer para servir de exemplo.
+        // Os planos precisam existir antes: é o plano que decide se a loja
+        // aceita pedidos, e é justamente esse contraste que os dois exemplos
+        // existem para mostrar.
         (new PlanSeeder)->run();
 
         $pro = Plan::where('slug', Plan::PRO)->firstOrFail();
         $menuOnly = Plan::where('slug', Plan::MENU_ONLY)->firstOrFail();
 
-        $this->createPizzaria($pro);
-        $this->createSushi($pro);
-        $this->createCafeteria($menuOnly);
+        $this->createIfMissing('forno-di-napoli', fn () => $this->createPizzaria($pro));
+        $this->createIfMissing('grao-e-folha', fn () => $this->createCafeteria($menuOnly));
+    }
+
+    /**
+     * Cria a loja só se o slug ainda não existe, dentro de uma transação.
+     *
+     * A transação é o que impede a meia-loja: sem ela, uma falha no meio do
+     * cardápio deixaria em produção um tenant ativo, linkado pela landing, com
+     * duas categorias das quatro. Como o slug já estaria gravado, a execução
+     * seguinte pularia a loja e o defeito ficaria permanente.
+     */
+    private function createIfMissing(string $slug, callable $build): void
+    {
+        if (Tenant::where('slug', $slug)->exists()) {
+            $this->command?->info("Loja de exemplo '{$slug}' já existe; mantida como está.");
+
+            return;
+        }
+
+        DB::transaction($build);
+
+        $this->command?->info("Loja de exemplo '{$slug}' criada.");
     }
 
     private function createPizzaria(Plan $plan): void
@@ -46,8 +87,6 @@ class DemoSeeder extends Seeder
             'slug' => 'forno-di-napoli',
             'plan_id' => $plan->id,
             'status' => 'active',
-            // Lojas de demonstração já nascem publicadas: sem isto o painel
-            // abriria no wizard em vez da tela de pedidos.
             'onboarding_step' => 5,
             'onboarding_completed_at' => now(),
         ]);
@@ -75,20 +114,10 @@ class DemoSeeder extends Seeder
                 'radius_km' => 8,
                 'accepts_pickup' => true,
                 'accepts_delivery' => true,
-                // Só uma das lojas de demonstração atende no salão: assim o
-                // seed cobre os dois lados do seletor de modalidade.
                 'accepts_dine_in' => true,
             ],
             'payment_methods' => ['cash', 'card_on_delivery', 'pix_on_delivery'],
             'business_hours' => $this->hours('18:00', '23:30', closedOn: ['mon']),
-        ]);
-
-        User::create([
-            'tenant_id' => $tenant->id,
-            'name' => 'Marco Rossi',
-            'email' => 'admin@fornodinapoli.test',
-            'password' => 'password',
-            'role' => 'owner',
         ]);
 
         $this->seedMenu($tenant, [
@@ -103,70 +132,6 @@ class DemoSeeder extends Seeder
         ], withSizes: true);
 
         $this->seedPizzas($tenant);
-    }
-
-    private function createSushi(Plan $plan): void
-    {
-        $tenant = Tenant::create([
-            'name' => 'Aoi Sushi',
-            'slug' => 'aoi-sushi',
-            'plan_id' => $plan->id,
-            'status' => 'active',
-            'onboarding_step' => 5,
-            'onboarding_completed_at' => now(),
-        ]);
-
-        TenantSettings::create([
-            'tenant_id' => $tenant->id,
-            'theme' => [
-                'brand' => '23 79 122',      // índigo profundo
-                'brandSoft' => '226 239 248',
-                'surface' => '250 252 254',
-                'ink' => '17 28 38',
-                'font' => 'sora',
-                'radius' => '8px',
-                'layout' => 'grid',
-            ],
-            'phone' => '1144445555',
-            'whatsapp' => '11999990002',
-            'address' => 'Alameda Santos, 800 — Jardins, São Paulo',
-            'description' => 'Peixe fresco selecionado diariamente pelo chef.',
-            'delivery_config' => [
-                'fee_cents' => 900,
-                'min_order_cents' => 5000,
-                'eta_minutes' => 55,
-                'free_above_cents' => null,
-                'radius_km' => 5,
-                'accepts_pickup' => true,
-                'accepts_delivery' => true,
-            ],
-            'payment_methods' => ['cash', 'card_on_delivery'],
-            'business_hours' => $this->hours('19:00', '01:00'),
-        ]);
-
-        User::create([
-            'tenant_id' => $tenant->id,
-            'name' => 'Yuki Tanaka',
-            'email' => 'admin@aoisushi.test',
-            'password' => 'password',
-            'role' => 'owner',
-        ]);
-
-        $this->seedMenu($tenant, [
-            'Entradas' => [
-                ['Edamame', 'Vagem de soja com flor de sal', 2200],
-                ['Gyoza', 'Seis unidades, recheio de porco e cebolinha', 3200],
-            ],
-            'Sushi' => [
-                ['Combinado Aoi', '16 peças selecionadas pelo chef', 8900],
-                ['Sashimi Salmão', '10 fatias de salmão fresco', 6400],
-                ['Uramaki Philadelphia', '8 peças com cream cheese e salmão', 4800],
-            ],
-            'Bebidas' => [
-                ['Chá Verde Gelado', 'Sencha artesanal, 500ml', 1400],
-                ['Sake Junmai', 'Dose de 90ml', 3600],
-            ],
-        ], withSizes: false);
     }
 
     /**
@@ -209,14 +174,6 @@ class DemoSeeder extends Seeder
             'address' => 'Rua Fradique Coutinho, 320 — Pinheiros, São Paulo',
             'description' => 'Torra própria e pães do dia. Peça no balcão.',
             'business_hours' => $this->hours('07:00', '19:00', closedOn: ['sun']),
-        ]);
-
-        User::create([
-            'tenant_id' => $tenant->id,
-            'name' => 'Marina Alves',
-            'email' => 'admin@graoefolha.test',
-            'password' => 'password',
-            'role' => 'owner',
         ]);
 
         $this->seedMenu($tenant, [

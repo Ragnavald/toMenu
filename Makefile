@@ -18,6 +18,9 @@ PROD_API = $(PROD) run --rm api
 up:
 	$(COMPOSE) up -d postgres redis
 	$(API_ADMIN) php artisan migrate --force
+	@# Mesmo motivo do deploy-migrate: sem a linha do plano, o wizard e a
+	@# navegação do painel leem as capacidades erradas num banco que já existe.
+	$(API_ADMIN) php artisan db:seed --class=PlanSeeder --force
 	$(COMPOSE) up -d api
 	@echo "API em http://localhost:8000"
 
@@ -81,8 +84,20 @@ deploy: deploy-migrate
 	@echo "Deploy concluído."
 
 # Migrations isoladas, para quando o deploy já rodou e faltou só o schema.
+#
+# O seed dos planos anda junto com o migrate e não só no provisionamento: a
+# migration cria as colunas de capacidade, mas quem cria a LINHA de um plano
+# novo é o seeder. Rodar só o migrate deixa o plano inexistente, e aí toda loja
+# cai no fallback `?? true` do Tenant — o painel passa a oferecer entrega e
+# pagamento para quem contratou só o cardápio. É idempotente (updateOrCreate),
+# então repetir a cada deploy não custa nada além de um UPDATE.
 deploy-migrate:
 	$(PROD_API) php artisan migrate --force
+	$(PROD_API) php artisan db:seed --class=PlanSeeder --force
+	@# As duas lojas que a landing linka ("ver exemplo") precisam existir em
+	@# produção, senão os links dão 404. A seeder é idempotente e não toca em
+	@# loja que já existe, então repetir a cada deploy é seguro.
+	$(PROD_API) php artisan db:seed --class=ExampleStoresSeeder --force
 
 # Republica só os painéis (lojista e plataforma), sem tocar em API nem
 # storefront. É o caminho para uma mudança que só existe no bundle do Vite.
