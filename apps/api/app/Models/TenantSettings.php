@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'tenant_id', 'segment', 'theme', 'logo_url', 'cover_url', 'business_hours',
     'delivery_config', 'payment_methods', 'is_open_override',
     'phone', 'whatsapp', 'address', 'description',
+    'street_map', 'street_map_address',
 ])]
 class TenantSettings extends Model
 {
@@ -29,6 +30,7 @@ class TenantSettings extends Model
             'business_hours' => 'array',
             'delivery_config' => 'array',
             'payment_methods' => 'array',
+            'street_map' => 'array',
             'is_open_override' => 'boolean',
         ];
     }

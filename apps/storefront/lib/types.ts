@@ -218,6 +218,12 @@ export type TenantInfo = {
   phone: string | null;
   whatsapp: string | null;
   address: string | null;
+  /**
+   * Traçado das ruas do entorno, já projetado em coordenadas de viewBox pela
+   * API. Desenhado no perfil da loja; `null` quando não há mapa disponível
+   * para o endereço atual (ver `StreetMap`).
+   */
+  streetMap: { d: string; width: number }[] | null;
   paymentMethods: string[];
   deliveryConfig: {
     fee_cents?: number;

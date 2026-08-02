@@ -2,9 +2,9 @@
  * Coordenadas de um endereço, para o mapa da página da loja.
  *
  * O endereço da loja é texto livre digitado no painel — não há lat/lng em
- * `tenant_settings`. O embed do OpenStreetMap, por sua vez, exige uma bbox
- * numérica: não aceita busca por texto como o Google Maps. Daí a geocodificação
- * aqui, no servidor.
+ * `tenant_settings`. O desenho do mapa (ver `lib/street-map.ts`) precisa de um
+ * ponto numérico para centrar e para consultar a malha viária ao redor. Daí a
+ * geocodificação aqui, no servidor.
  *
  * Roda apenas no render server-side e nunca no caminho do cardápio: se o
  * Nominatim estiver fora do ar ou não reconhecer o endereço, a página cai no
@@ -60,25 +60,6 @@ export async function geocodeAddress(
     // Mapa é enfeite: o endereço em texto já resolve a necessidade do cliente.
     return null;
   }
-}
-
-/**
- * URL do embed do OpenStreetMap centrado no ponto.
- *
- * O `bbox` define o enquadramento; o delta pequeno equivale a um zoom de
- * quarteirão, suficiente para reconhecer a esquina sem expor o ponto exato
- * como se fosse precisão de GPS.
- */
-export function osmEmbedUrl({ lat, lng }: Coordinates): string {
-  const delta = 0.004;
-
-  const params = new URLSearchParams({
-    bbox: `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`,
-    layer: 'mapnik',
-    marker: `${lat},${lng}`,
-  });
-
-  return `https://www.openstreetmap.org/export/embed.html?${params}`;
 }
 
 /**

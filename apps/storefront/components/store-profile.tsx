@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { formatMoney } from '@/lib/api';
-import { mapsSearchUrl, osmEmbedUrl, type Coordinates } from '@/lib/geocode';
+import { mapsSearchUrl } from '@/lib/geocode';
+import { StreetMap } from '@/components/street-map';
 import { storeHref } from '@/lib/store-url';
 import { formatSchedule, hasAnyHours, weekFromToday } from '@/lib/hours';
 import {
@@ -21,13 +22,7 @@ import { StoreStatus } from './store-status';
  * é metade do motivo desta página existir: hoje "pizzaria tal endereço" não
  * encontra nada, porque o cardápio não publica esses dados em texto.
  */
-export async function StoreProfile({
-  tenant,
-  coordinates,
-}: {
-  tenant: TenantInfo;
-  coordinates: Coordinates | null;
-}) {
+export async function StoreProfile({ tenant }: { tenant: TenantInfo }) {
   const menuHref = await storeHref(tenant.slug);
   const hasHours = hasAnyHours(tenant.businessHours);
   const week = weekFromToday(tenant.businessHours);
@@ -59,7 +54,10 @@ export async function StoreProfile({
 
         {tenant.address && (
           <Section title="Localização">
-            <LocationCard address={tenant.address} coordinates={coordinates} />
+            <LocationCard
+              address={tenant.address}
+              streetMap={tenant.streetMap}
+            />
           </Section>
         )}
 
@@ -288,32 +286,27 @@ function Section({
 }
 
 /**
- * Mapa embutido do OpenStreetMap, com o endereço abaixo.
+ * Mapa da vizinhança, com o endereço abaixo.
  *
- * Sem coordenadas o iframe é omitido: um mapa apontando para o lugar errado é
- * pior do que mapa nenhum. O endereço em texto e o botão continuam ali.
+ * O traçado vem pronto da API e pode não existir: endereço que a
+ * geocodificação não reconheceu, região sem vias mapeadas, ou desenho ainda em
+ * processamento logo após uma troca de endereço. Nesses casos sobra o cartão
+ * de endereço com o botão "Como chegar" — que é a informação de que o cliente
+ * precisa de fato. Um mapa apontando para o lugar errado é pior que mapa
+ * nenhum.
  */
 function LocationCard({
   address,
-  coordinates,
+  streetMap,
 }: {
   address: string;
-  coordinates: Coordinates | null;
+  streetMap: TenantInfo['streetMap'];
 }) {
+  const hasMap = streetMap !== null && streetMap.length > 0;
+
   return (
     <div className="surface-card overflow-hidden">
-      {coordinates && (
-        <iframe
-          src={osmEmbedUrl(coordinates)}
-          title={`Mapa da localização: ${address}`}
-          loading="lazy"
-          referrerPolicy="no-referrer-when-downgrade"
-          // A altura folgada é de propósito: o embed do OSM ancora a barra de
-          // atribuição no rodapé do próprio iframe, e num quadro baixo ela
-          // cobre justamente o pin.
-          className="block h-64 w-full border-0 sm:h-72"
-        />
-      )}
+      {hasMap && <StreetMap paths={streetMap} label={address} />}
 
       <div className="flex items-start gap-3 p-4">
         <span className="mt-0.5 shrink-0" style={{ color: 'rgb(var(--brand))' }}>
@@ -362,6 +355,24 @@ function LocationCard({
               />
             </svg>
           </a>
+
+          {/* Atribuição exigida pela ODbL. Antes vinha na barra do próprio
+              iframe do OSM; desenhando o mapa aqui, ela passa a ser nossa
+              obrigação. Só aparece quando há mapa — sem desenho não há dado do
+              OSM em tela para atribuir. */}
+          {hasMap && (
+            <p className="mt-2.5 text-[11px] text-subtle">
+              Mapa:{' '}
+              <a
+                href="https://www.openstreetmap.org/copyright"
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-2"
+              >
+                © colaboradores do OpenStreetMap
+              </a>
+            </p>
+          )}
         </div>
       </div>
     </div>

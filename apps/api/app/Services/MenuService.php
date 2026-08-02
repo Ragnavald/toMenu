@@ -151,6 +151,19 @@ class MenuService
                 'phone' => $settings?->phone,
                 'whatsapp' => $settings?->whatsapp,
                 'address' => $settings?->address,
+                /*
+                 * Traçado das ruas do entorno, para o mapa da página de perfil.
+                 *
+                 * Só é enviado quando corresponde ao endereço atual: o job que
+                 * o gera roda em background, então entre salvar um endereço novo
+                 * e o desenho ficar pronto há uma janela em que o traçado
+                 * guardado ainda é do endereço anterior. Mostrar o mapa antigo
+                 * ao lado do endereço novo seria apontar o cliente para o lugar
+                 * errado — a página fica sem mapa até o job concluir.
+                 */
+                'streetMap' => $settings?->street_map_address === $settings?->address
+                    ? $settings?->street_map
+                    : null,
                 'acceptsOnlinePayment' => $tenant->acceptsOnlinePayment(),
                 // Plano somente-cardápio: a loja é uma vitrine. O storefront
                 // não monta carrinho nem checkout, e a API recusa o POST.
