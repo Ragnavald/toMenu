@@ -13,7 +13,10 @@ export function LoginPage({
   onAuthenticated: (session: Session) => void;
   onForgotPassword: () => void;
 }) {
-  const [tenant, setTenant] = useState('forno-di-napoli');
+  // Vazio, e não pré-preenchido com uma loja: o valor de demonstração que
+  // ficava aqui aparecia para todo lojista e sugeria que ele deveria entrar
+  // numa loja que não é a dele.
+  const [tenant, setTenant] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -163,10 +166,6 @@ export function LoginPage({
             Esqueci minha senha
           </button>
         </form>
-
-        <p className="mt-4 text-center text-xs text-muted">
-          Demo: admin@fornodinapoli.test · senha <code>password</code>
-        </p>
       </div>
     </div>
   );
