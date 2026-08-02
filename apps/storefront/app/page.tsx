@@ -13,7 +13,7 @@ const SITE_URL =
 
 const TITLE = 'ToMenu — Cardápio digital e pedidos online para restaurantes';
 const DESCRIPTION =
-  'Publique seu cardápio em minutos por R$ 29/mês, ou receba pedidos com entrega e pagamento no plano Pro. Sem comissão por pedido.';
+  'Cardápio digital por QR Code em minutos, a partir de R$ 29/mês. No plano Pro, receba pedidos com entrega, pagamento online e relatórios. Sem comissão por pedido.';
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -24,7 +24,9 @@ export const metadata: Metadata = {
     'cardápio digital',
     'cardápio online',
     'QR code cardápio',
+    'cardápio digital para restaurante',
     'sistema para restaurante',
+    'gestão de pedidos',
     'delivery próprio',
     'pedidos online sem comissão',
   ],
@@ -93,6 +95,34 @@ const PLANS = [
       'Para quem vende para viagem e quer receber o pedido pronto, com endereço e pagamento, sem depender de conversa no WhatsApp.',
     highlight: true,
     demo: { href: '/forno-di-napoli', label: 'Ver loja completa de exemplo' },
+  },
+];
+
+/**
+ * O argumento de valor, em benefício e não em funcionalidade.
+ *
+ * FEATURES abaixo responde "o que o sistema faz"; esta seção responde "o que
+ * muda no meu restaurante", que é a pergunta de quem ainda não decidiu trocar
+ * o cardápio impresso. As duas listas não se sobrepõem de propósito: repetir
+ * as mesmas capacidades em outras palavras faria a página parecer mais longa
+ * sem responder nada novo.
+ */
+const BENEFITS = [
+  {
+    title: 'Experiência do cliente impecável',
+    body: 'Navegação rápida, interface intuitiva e zero necessidade de baixar aplicativos — o seu cliente foca apenas em escolher o que vai pedir.',
+  },
+  {
+    title: 'Assinatura transparente e sem surpresas',
+    body: 'Cobrança segura e automatizada, sem comissão por pedido. Você foca na comida, a tecnologia cuida da estabilidade da sua conta.',
+  },
+  {
+    title: 'Operação livre de gargalos',
+    body: 'Elimine erros de anotação de pedidos e libere a sua equipe de salão para focar no relacionamento e na satisfação do cliente.',
+  },
+  {
+    title: 'Crescimento baseado em dados',
+    body: 'Com o plano Pro você para de adivinhar: saiba quais pratos são mais rentáveis, os horários de pico e o desempenho financeiro do dia.',
   },
 ];
 
@@ -166,13 +196,20 @@ export default function LandingPage() {
             </p>
 
             <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl">
-              O cardápio digital do seu restaurante, pronto hoje.
+              Transforme seu atendimento com um cardápio digital inteligente
             </h1>
 
             <p className="mt-5 text-lg leading-relaxed text-muted">
-              Comece com o cardápio no ar em um link e um QR code. Quando quiser
-              vender para viagem, ligue carrinho, entrega e pagamento — sem
-              comissão por pedido e sem app para o cliente baixar.
+              Da mesa ao delivery, a tecnologia que o seu restaurante precisa
+              para vender mais e operar sem complicações.
+            </p>
+
+            <p className="mt-4 leading-relaxed text-muted">
+              Modernize a experiência dos seus clientes e otimize a sua operação
+              em minutos. Ofereça um cardápio atrativo e de carregamento rápido
+              via QR Code, ou assuma o controle total da operação com gestão de
+              pedidos em tempo real, entrega configurável e relatórios
+              financeiros detalhados.
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -184,14 +221,14 @@ export default function LandingPage() {
                   color: 'rgb(var(--brand-ink))',
                 }}
               >
-                Criar minha loja grátis
+                Começar agora
               </Link>
 
               <Link
                 href="#planos"
                 className="rounded-xl border border-[var(--hairline)] px-5 py-3 text-sm font-medium transition-colors hover:bg-[var(--hairline)]"
               >
-                Comparar os planos
+                Comparar planos
               </Link>
             </div>
 
@@ -398,6 +435,27 @@ export default function LandingPage() {
             14 dias grátis nos dois planos, sem cartão de crédito. Você troca de
             plano quando quiser.
           </p>
+        </section>
+
+        {/* Vem depois dos planos: quem chegou até aqui já viu o preço, e a
+            última dúvida deixa de ser "o que faz" para virar "vale a pena". */}
+        <section className="border-t border-[var(--hairline)]">
+          <div className="mx-auto max-w-5xl px-6 py-16">
+            <h2 className="max-w-2xl text-2xl font-semibold tracking-tight">
+              Por que levar a nossa tecnologia para o seu restaurante?
+            </h2>
+
+            <div className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-2">
+              {BENEFITS.map((benefit) => (
+                <div key={benefit.title}>
+                  <h3 className="text-sm font-semibold">{benefit.title}</h3>
+                  <p className="mt-1.5 text-sm leading-relaxed text-muted">
+                    {benefit.body}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
 
         <section
