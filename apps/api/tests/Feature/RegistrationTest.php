@@ -1,8 +1,10 @@
 <?php
 
+use App\Mail\WelcomeStoreOwner;
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\User;
+use Illuminate\Support\Facades\Mail;
 
 beforeEach(function () {
     Plan::create([
@@ -184,4 +186,47 @@ it('o token de uma loja não acessa o admin de outra', function () {
         'Authorization' => "Bearer {$token}",
         'X-Tenant' => 'outra-loja',
     ])->getJson('/api/admin/settings')->assertForbidden();
+});
+
+it('envia o e-mail de boas-vindas para o dono da loja criada', function () {
+    Mail::fake();
+
+    $this->postJson('/api/register', signupPayload())->assertCreated();
+
+    Mail::assertQueued(WelcomeStoreOwner::class, function ($mail) {
+        return $mail->hasTo('ana@cantina.test')
+            && $mail->tenant->slug === 'cantina-da-nona'
+            && $mail->user->name === 'Ana Souza';
+    });
+});
+
+/*
+ * O e-mail sai depois do commit, e não de dentro da transação.
+ *
+ * Enfileirado lá dentro, um rollback deixaria o lojista com as boas-vindas de
+ * uma loja que não existe — e o worker poderia pegar o job antes de o tenant
+ * estar visível para outra conexão, falhando ao desserializar o model.
+ */
+it('não envia boas-vindas quando o cadastro é recusado', function () {
+    Mail::fake();
+
+    $this->postJson('/api/register', signupPayload(['accepted_terms' => false]))
+        ->assertStatus(422);
+
+    Mail::assertNothingQueued();
+});
+
+/*
+ * O cadastro já está gravado quando o e-mail sai: o lojista tem loja, token e
+ * sessão. Devolver 500 por causa do e-mail o mandaria de volta a um formulário
+ * que agora recusaria o slug ocupado por ele mesmo.
+ */
+it('conclui o cadastro mesmo se o envio do e-mail falhar', function () {
+    Mail::shouldReceive('to')->andThrow(new RuntimeException('Resend fora do ar'));
+
+    $this->postJson('/api/register', signupPayload())
+        ->assertCreated()
+        ->assertJsonPath('tenant.slug', 'cantina-da-nona');
+
+    expect(Tenant::where('slug', 'cantina-da-nona')->exists())->toBeTrue();
 });

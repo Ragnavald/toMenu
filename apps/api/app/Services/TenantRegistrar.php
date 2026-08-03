@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Mail\WelcomeStoreOwner;
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\TenantSettings;
@@ -9,6 +10,8 @@ use App\Models\User;
 use App\Tenancy\TenantContext;
 use Database\Seeders\PlanSeeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 /**
@@ -30,7 +33,7 @@ class TenantRegistrar
 
     public function register(array $data): array
     {
-        return DB::transaction(function () use ($data) {
+        $result = DB::transaction(function () use ($data) {
             $plan = $this->resolvePlan($data['plan'] ?? Plan::PRO);
 
             $tenant = Tenant::create([
@@ -86,6 +89,37 @@ class TenantRegistrar
                 'user' => $user,
             ];
         });
+
+        $this->sendWelcome($result['user'], $result['tenant']);
+
+        return $result;
+    }
+
+    /**
+     * Boas-vindas, depois do commit.
+     *
+     * Fora da transação de propósito. Dentro dela o e-mail sairia antes do
+     * commit e um rollback deixaria o lojista com as boas-vindas de uma loja
+     * que não existe — e, na fila, o worker poderia pegar o job antes de o
+     * tenant estar visível para outra conexão e falhar ao desserializar o
+     * model.
+     *
+     * O try/catch existe porque o cadastro já está gravado neste ponto: o
+     * lojista tem loja, token e sessão, e derrubar a resposta com 500 por
+     * causa de um e-mail o mandaria de volta a um formulário que recusaria o
+     * slug agora ocupado por ele mesmo. Falha aqui vira log, não erro de
+     * cadastro.
+     */
+    private function sendWelcome(User $user, Tenant $tenant): void
+    {
+        try {
+            Mail::to($user->email)->send(new WelcomeStoreOwner($user, $tenant));
+        } catch (\Throwable $e) {
+            Log::warning('Falha ao enviar o e-mail de boas-vindas.', [
+                'tenant_id' => $tenant->id,
+                'exception' => $e,
+            ]);
+        }
     }
 
     /**
