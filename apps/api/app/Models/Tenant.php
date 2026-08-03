@@ -14,10 +14,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 #[Fillable([
     'name', 'slug', 'plan_id', 'status', 'trial_ends_at', 'deletion_reason',
     'stripe_customer_id', 'stripe_account_id', 'stripe_charges_enabled',
+    'stripe_subscription_id', 'subscription_status', 'current_period_ends_at',
     'onboarding_step', 'onboarding_completed_at',
     'terms_accepted_at', 'terms_version', 'terms_accepted_ip',
 ])]
-#[Hidden(['stripe_customer_id'])]
+#[Hidden(['stripe_customer_id', 'stripe_subscription_id'])]
 class Tenant extends Model
 {
     use HasFactory, SoftDeletes;
@@ -30,7 +31,46 @@ class Tenant extends Model
             'onboarding_completed_at' => 'datetime',
             'onboarding_step' => 'integer',
             'stripe_charges_enabled' => 'boolean',
+            'current_period_ends_at' => 'datetime',
         ];
+    }
+
+    /**
+     * A assinatura está em dia?
+     *
+     * `trialing` conta como em dia: o lojista tem cartão cadastrado e o Stripe
+     * vai cobrar sozinho no fim do trial.
+     */
+    public function hasActiveSubscription(): bool
+    {
+        return in_array($this->subscription_status, ['active', 'trialing'], true);
+    }
+
+    /** Já assinou alguma vez, mesmo que a assinatura hoje esteja cancelada. */
+    public function hasSubscribed(): bool
+    {
+        return $this->stripe_subscription_id !== null;
+    }
+
+    /**
+     * Trial vencido e sem assinatura em dia.
+     *
+     * Distingue quem nunca assinou de quem assinou e falhou no pagamento: os
+     * dois pedem cobrança, mas a mensagem no painel é diferente.
+     */
+    public function trialHasExpired(): bool
+    {
+        return $this->trial_ends_at !== null
+            && $this->trial_ends_at->isPast()
+            && ! $this->hasActiveSubscription();
+    }
+
+    /** Dias restantes do trial; negativo quando já venceu. */
+    public function trialDaysLeft(): ?int
+    {
+        return $this->trial_ends_at
+            ? (int) ceil(now()->diffInDays($this->trial_ends_at, false))
+            : null;
     }
 
     public function settings(): HasOne

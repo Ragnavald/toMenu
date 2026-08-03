@@ -22,12 +22,14 @@ use Stripe\StripeClient;
  * `withTrashed()`. Reaproveitar o subdomínio faria uma loja nova herdar URLs
  * indexadas, links em WhatsApp e cache de CDN de uma loja anterior.
  *
- * Sobre cobrança: a plataforma hoje não cria assinatura no Stripe — não há
- * `customers.create` nem `subscriptions.create` em lugar nenhum, e
- * `tenants.stripe_customer_id` nunca recebe valor. Não existe, portanto,
- * assinatura a cancelar aqui. O que existe é a conta Connect (o lojista
- * recebendo dos clientes dele), tratada em `detachConnectAccount`. Se um dia
- * houver assinatura de fato, o ponto de extensão é `cancelPlatformSubscription`.
+ * Sobre cobrança, são dois vínculos opostos com o Stripe e ambos precisam ser
+ * desfeitos:
+ *
+ *   1. A assinatura da loja NA plataforma (a plataforma cobra o lojista), em
+ *      `cancelPlatformSubscription` — sem cancelar, o lojista seguiria pagando
+ *      a mensalidade de uma loja que excluiu.
+ *   2. A conta Connect (o lojista recebe dos clientes dele), em
+ *      `detachConnectAccount`, que apenas desvincula: o dinheiro é dele.
  */
 class TenantDeleter
 {
@@ -134,20 +136,17 @@ class TenantDeleter
     /**
      * Cancela a assinatura da loja NA plataforma.
      *
-     * Ponto de extensão, hoje inerte por um motivo concreto: nenhuma assinatura
-     * é criada em lugar nenhum do código, então `stripe_customer_id` é sempre
-     * NULL e não há id de subscription a cancelar. O guard abaixo não é
-     * defensivo — ele é a implementação correta enquanto o registro do
-     * customer não existir.
+     * Cancela toda assinatura ativa do customer. O guard continua valendo para
+     * a loja que nunca assinou (trial que nunca virou pagamento): ali
+     * `stripe_customer_id` é NULL e não há o que cancelar.
      *
-     * Quando a cobrança recorrente for implementada (customer no signup +
-     * subscription no plano), o corpo do `if` passa a valer e deve chamar
-     * `subscriptions->cancel()` para cada assinatura ativa do customer.
+     * Cancelar é obrigatório aqui: sem isto o lojista continuaria sendo cobrado
+     * todo mês por uma loja que ele mesmo excluiu.
      */
     private function cancelPlatformSubscription(Tenant $tenant): string
     {
         if (! $tenant->stripe_customer_id) {
-            // Caminho real hoje: não há cobrança recorrente na plataforma.
+            // Loja que nunca assinou: trial que terminou sem pagamento.
             return 'not_applicable';
         }
 
@@ -159,7 +158,11 @@ class TenantDeleter
             ]);
 
             foreach ($subscriptions->data as $subscription) {
-                $this->stripe->subscriptions->cancel($subscription->id);
+                // `stripe()` e não `$this->stripe`: não existe tal propriedade
+                // — o client é resolvido sob demanda (ver o método acima). Era
+                // código morto enquanto não havia assinatura; agora que existe,
+                // a chamada errada derrubaria a exclusão de toda loja assinante.
+                $this->stripe()->subscriptions->cancel($subscription->id);
             }
 
             return $subscriptions->data === [] ? 'none' : 'cancelled';

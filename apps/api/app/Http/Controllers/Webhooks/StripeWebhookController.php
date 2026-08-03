@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Webhooks;
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessStripeEvent;
 use App\Models\WebhookEvent;
+use App\Services\StripeMode;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -25,15 +26,19 @@ use Stripe\Webhook;
  */
 class StripeWebhookController extends Controller
 {
-    public function __invoke(Request $request): Response
+    public function __invoke(Request $request, StripeMode $mode): Response
     {
         try {
             // getContent() e não $request->all(): qualquer normalização do corpo
             // invalida o HMAC e a verificação passa a falhar sem motivo aparente.
+            //
+            // O signing secret é o do modo ativo: cada endpoint de webhook (o de
+            // teste e o de produção) tem o seu, e cruzá-los faz toda verificação
+            // falhar com 400 — sintoma que se confunde com ataque.
             $event = Webhook::constructEvent(
                 $request->getContent(),
                 $request->header('Stripe-Signature', ''),
-                (string) config('services.stripe.webhook_secret'),
+                $mode->webhookSecret(),
             );
         } catch (SignatureVerificationException|\UnexpectedValueException) {
             // 400 sem detalhe: não confirmar a um chamador não autenticado

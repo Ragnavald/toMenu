@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 #[Fillable([
-    'name', 'slug', 'price_cents', 'max_products',
+    'name', 'slug', 'price_cents', 'stripe_price_id', 'max_products',
     'allows_online_payment', 'allows_orders', 'allows_delivery', 'sort_order',
 ])]
 class Plan extends Model

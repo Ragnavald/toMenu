@@ -16,6 +16,7 @@ import { StorePage } from '@/pages/store';
 import { DeliveryPage } from '@/pages/delivery';
 import { HoursPage } from '@/pages/hours';
 import { AppearancePage } from '@/pages/appearance';
+import { SubscriptionPage } from '@/pages/subscription';
 import { OnboardingPage } from '@/pages/onboarding';
 import { PlatformApp } from '@/pages/platform/app';
 
@@ -228,6 +229,9 @@ function StoreRoutes() {
       <Route path="/loja" element={<StorePage />} />
       <Route path="/horarios" element={<HoursPage />} />
       <Route path="/aparencia" element={<AppearancePage />} />
+      {/* Fora do bloco `allowsOrders`: o plano somente-cardápio também é pago,
+          e sem esta rota a loja mais barata não teria como assinar. */}
+      <Route path="/assinatura" element={<SubscriptionPage />} />
       <Route path="*" element={<Navigate to={home} replace />} />
     </Routes>
   );
