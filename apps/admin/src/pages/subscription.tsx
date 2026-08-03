@@ -47,6 +47,24 @@ export function SubscriptionPage() {
   const [error, setError] = useState<string | null>(null);
   const owner = isOwner();
 
+  /*
+   * O redirect não termina quando a mutation resolve.
+   *
+   * `isPending` volta a false no instante em que a API responde, mas aí começa
+   * a parte mais lenta e mais visível: o navegador ainda vai carregar a página
+   * do Stripe, em outro domínio. Sem este estado o botão pisca de volta para
+   * "Assinar agora" justamente durante essa espera, e o lojista clica de novo.
+   *
+   * Nunca volta para false de propósito — a página inteira está de saída.
+   */
+  const [redirecting, setRedirecting] = useState(false);
+
+  function redirectTo(url: string) {
+    setRedirecting(true);
+    // Link de uso único e que expira; navegar na hora, sem guardar.
+    window.location.assign(url);
+  }
+
   // Cupom aplicado (validado pela API) e o que está sendo digitado.
   const [coupon, setCoupon] = useState<Coupon | null>(null);
   const [couponInput, setCouponInput] = useState('');
@@ -88,8 +106,7 @@ export function SubscriptionPage() {
         // entre aplicar e assinar, o código pode esgotar.
         body: JSON.stringify({ coupon: coupon?.code ?? null }),
       }),
-    // O link é de uso único e expira; navegar na hora, sem guardar.
-    onSuccess: ({ url }) => window.location.assign(url),
+    onSuccess: ({ url }) => redirectTo(url),
     onError: (caught) =>
       setError(
         // O 422 do cupom traz mensagem própria; usá-la evita dizer "tente
@@ -121,7 +138,7 @@ export function SubscriptionPage() {
   const portal = useMutation({
     mutationFn: () =>
       apiFetch<{ url: string }>('/admin/billing/portal', { method: 'POST' }),
-    onSuccess: ({ url }) => window.location.assign(url),
+    onSuccess: ({ url }) => redirectTo(url),
     onError: () => setError('Não foi possível abrir o portal de cobrança.'),
   });
 
@@ -227,10 +244,12 @@ export function SubscriptionPage() {
                     setError(null);
                     portal.mutate();
                   }}
-                  disabled={portal.isPending}
+                  disabled={portal.isPending || redirecting}
                   className="rounded-lg border border-line px-4 py-2 text-sm font-medium transition-colors hover:bg-line/40 disabled:opacity-50"
                 >
-                  {portal.isPending ? 'Abrindo…' : 'Gerenciar assinatura'}
+                  {portal.isPending || redirecting
+                    ? 'Abrindo…'
+                    : 'Gerenciar assinatura'}
                 </button>
               ) : (
                 <button
@@ -239,11 +258,11 @@ export function SubscriptionPage() {
                     setError(null);
                     checkout.mutate();
                   }}
-                  disabled={checkout.isPending}
+                  disabled={checkout.isPending || redirecting}
                   className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
-                  {checkout.isPending
-                    ? 'Abrindo…'
+                  {checkout.isPending || redirecting
+                    ? 'Abrindo pagamento seguro…'
                     : billing.subscribed
                       ? 'Reativar assinatura'
                       : 'Assinar agora'}
@@ -259,10 +278,10 @@ export function SubscriptionPage() {
                     setError(null);
                     portal.mutate();
                   }}
-                  disabled={portal.isPending}
+                  disabled={portal.isPending || redirecting}
                   className="rounded-lg border border-line px-4 py-2 text-sm font-medium transition-colors hover:bg-line/40 disabled:opacity-50"
                 >
-                  Atualizar cartão
+                  {portal.isPending || redirecting ? 'Abrindo…' : 'Atualizar cartão'}
                 </button>
               )}
               </div>

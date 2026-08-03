@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Exceptions\InvalidCouponException;
 use App\Http\Controllers\Controller;
+use App\Jobs\EnsureStripeCustomer;
 use App\Services\StripeMode;
 use App\Services\SubscriptionService;
 use App\Tenancy\TenantContext;
@@ -26,6 +27,18 @@ class BillingController extends Controller
     {
         $tenant = $context->getOrFail();
         $plan = $tenant->plan;
+
+        /*
+         * Adianta a criação do cliente no Stripe enquanto o lojista lê a tela.
+         *
+         * Sem isto, esse round-trip acontece entre o clique em assinar e o
+         * redirect — a janela em que a espera é percebida. Só para quem ainda
+         * pode assinar: criar cliente para quem já assinou não adianta nada, e
+         * o job confere de novo antes de chamar o Stripe.
+         */
+        if (! $tenant->stripe_customer_id && $mode->isConfigured() && $plan?->stripe_price_id) {
+            EnsureStripeCustomer::dispatch($tenant->id);
+        }
 
         return response()->json([
             'plan' => [
