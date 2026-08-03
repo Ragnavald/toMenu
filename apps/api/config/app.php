@@ -78,11 +78,20 @@ return [
     |
     */
 
-    'locale' => env('APP_LOCALE', 'en'),
+    /*
+     * O produto é inteiramente pt-BR: lojista e cliente final só veem
+     * português. O default aqui é `pt_BR` e não `en` porque um ambiente que
+     * esqueça de definir APP_LOCALE deve errar para o idioma certo — era o que
+     * fazia mensagens de validação chegarem em inglês ao lojista.
+     *
+     * As traduções ficam em `lang/pt_BR/`; o Laravel só embarca `en`, que
+     * permanece como fallback para qualquer chave ainda não traduzida.
+     */
+    'locale' => env('APP_LOCALE', 'pt_BR'),
 
     'fallback_locale' => env('APP_FALLBACK_LOCALE', 'en'),
 
-    'faker_locale' => env('APP_FAKER_LOCALE', 'en_US'),
+    'faker_locale' => env('APP_FAKER_LOCALE', 'pt_BR'),
 
     /*
     |--------------------------------------------------------------------------

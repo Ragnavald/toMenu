@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export function PageHeader({
   title,
@@ -188,6 +188,71 @@ export function SaveBar({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Modal sobre o conteúdo da página.
+ *
+ * Usa o <dialog> nativo em vez de uma div posicionada: ele já entrega foco
+ * preso dentro da caixa, fechamento no Esc e inertização do resto da página —
+ * três coisas que uma reimplementação à mão costuma errar em parte.
+ *
+ * `showModal()` precisa ser chamado por efeito, e não no JSX, porque o
+ * elemento tem que existir no DOM antes. Desmontar o conteúdo quando fechado
+ * (em vez de só escondê-lo) garante que reabrir comece do estado inicial.
+ */
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+
+    if (open && !dialog.open) dialog.showModal();
+    if (!open && dialog.open) dialog.close();
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <dialog
+      ref={ref}
+      // `close` cobre as saídas que não passam por um clique nosso: Esc e o
+      // fechamento programático. Sem isto o estado do pai ficaria `open` com a
+      // caixa já fechada, e o próximo clique no botão não reabriria nada.
+      onClose={onClose}
+      // Clique no backdrop fecha. O <dialog> reporta o próprio elemento como
+      // alvo quando o clique cai fora da caixa de conteúdo.
+      onClick={(event) => {
+        if (event.target === ref.current) onClose();
+      }}
+      className="panel m-auto w-[calc(100%-2rem)] max-w-lg p-0 backdrop:bg-black/50"
+    >
+      <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-3.5">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Fechar"
+          className="-mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="px-5 py-4">{children}</div>
+    </dialog>
   );
 }
 
