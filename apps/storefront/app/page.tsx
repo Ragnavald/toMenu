@@ -83,7 +83,7 @@ const PLANS = [
     forWho:
       'Para quem atende no salão ou no balcão e só quer trocar o cardápio impresso por um link e um QR code.',
     highlight: false,
-    demo: { href: '/grao-e-folha', label: 'Ver loja somente com cardápio digital' },
+    demo: { href: '/to-menu-cardapio', label: 'Ver loja somente com cardápio digital' },
   },
   {
     slug: 'pro',
@@ -93,7 +93,7 @@ const PLANS = [
     forWho:
       'Para quem vende para viagem e quer receber o pedido pronto, com endereço e itens, sem depender de conversa no WhatsApp.',
     highlight: true,
-    demo: { href: '/forno-di-napoli', label: 'Ver loja completa de exemplo' },
+    demo: { href: '/to-menu-loja', label: 'Ver loja completa de exemplo' },
   },
 ];
 
@@ -245,14 +245,14 @@ export default function LandingPage() {
                 depender de o visitante acreditar na tabela de preços. */}
             <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
               <Link
-                href="/forno-di-napoli"
+                href="/to-menu-loja"
                 className="font-medium underline decoration-[var(--hairline)] underline-offset-4 transition-colors hover:decoration-[rgb(var(--ink))]"
               >
                 Ver loja completa de exemplo
               </Link>
 
               <Link
-                href="/grao-e-folha"
+                href="/to-menu-cardapio"
                 className="font-medium text-muted underline decoration-[var(--hairline)] underline-offset-4 transition-colors hover:text-[rgb(var(--ink))] hover:decoration-[rgb(var(--ink))]"
               >
                 Ver loja somente com cardápio digital

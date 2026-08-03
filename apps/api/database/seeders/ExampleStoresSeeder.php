@@ -5,9 +5,11 @@ namespace Database\Seeders;
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\TenantSettings;
+use App\Models\User;
 use Database\Seeders\Concerns\BuildsDemoStores;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 
 /**
  * As duas lojas de exemplo que a landing page linka, em PRODUÇÃO.
@@ -24,10 +26,11 @@ use Illuminate\Support\Facades\DB;
  *   2. Nunca reescreve uma loja existente. Se `forno-di-napoli` já está lá, o
  *      seeder sai sem tocar em nada — nem no cardápio, nem no tema. Um deploy
  *      não pode desfazer o que alguém ajustou pelo painel.
- *   3. Não cria usuário nenhum. A loja de exemplo é uma vitrine pública; ela
- *      não precisa de login, e uma conta com senha conhecida no banco de
- *      produção seria uma porta aberta para o painel de um tenant real caso o
- *      isolamento falhe.
+ *   3. Nunca embute senha. As lojas têm um owner para que a equipe ajuste o
+ *      cardápio pelo painel, mas a senha vem de `EXAMPLE_STORE_PASSWORD` no
+ *      ambiente. Sem a variável o seeder cria a loja e PULA o usuário: uma
+ *      senha fixa no repositório seria credencial pública de produção, e um
+ *      default previsível é pior que login nenhum.
  *
  * As lojas ficam com `status = 'active'` e onboarding concluído para não caírem
  * no wizard, e são as MESMAS duas que `apps/storefront/app/page.tsx` referencia
@@ -43,7 +46,18 @@ class ExampleStoresSeeder extends Seeder
      * O storefront esconde essas lojas de qualquer listagem pública que venha a
      * existir; aqui elas servem só para o seeder saber o que já criou.
      */
-    public const SLUGS = ['forno-di-napoli', 'grao-e-folha'];
+    public const SLUGS = ['to-menu-loja', 'to-menu-cardapio'];
+
+    /**
+     * E-mail do owner de cada loja de exemplo.
+     *
+     * Fixos e derivados do slug: são contas de equipe, não de cliente, e o
+     * seeder precisa reconhecê-las para não criar uma segunda a cada deploy.
+     */
+    private const OWNER_EMAILS = [
+        'to-menu-loja' => 'loja@to-menu.com',
+        'to-menu-cardapio' => 'cardapio@to-menu.com',
+    ];
 
     public function run(): void
     {
@@ -55,8 +69,85 @@ class ExampleStoresSeeder extends Seeder
         $pro = Plan::where('slug', Plan::PRO)->firstOrFail();
         $menuOnly = Plan::where('slug', Plan::MENU_ONLY)->firstOrFail();
 
-        $this->createIfMissing('forno-di-napoli', fn () => $this->createPizzaria($pro));
-        $this->createIfMissing('grao-e-folha', fn () => $this->createCafeteria($menuOnly));
+        $this->createIfMissing('to-menu-loja', fn () => $this->createPizzaria($pro));
+        $this->createIfMissing('to-menu-cardapio', fn () => $this->createCafeteria($menuOnly));
+
+        /*
+         * Os owners são garantidos FORA do createIfMissing.
+         *
+         * Aquele guard sai cedo quando a loja já existe, e é o caso normal a
+         * partir do segundo deploy. Criar o usuário lá dentro faria a conta
+         * nascer só junto com a loja: quem já tem as lojas em produção nunca
+         * ganharia o login, que é justamente o motivo desta mudança existir.
+         */
+        $this->ensureOwner('to-menu-loja', 'Equipe ToMenu');
+        $this->ensureOwner('to-menu-cardapio', 'Equipe ToMenu');
+    }
+
+    /**
+     * Garante o owner da loja de exemplo, sem nunca sobrescrever senha.
+     *
+     * A senha só é gravada na CRIAÇÃO. Um `updateOrCreate` com a senha no
+     * payload desfaria, a cada deploy, qualquer troca feita pelo painel — e
+     * pior, silenciosamente: o login voltaria a aceitar a senha antiga do
+     * ambiente e ninguém perceberia que a nova deixou de valer.
+     */
+    private function ensureOwner(string $slug, string $name): void
+    {
+        $password = env('EXAMPLE_STORE_PASSWORD');
+
+        if (! $password) {
+            $this->command?->warn(
+                "EXAMPLE_STORE_PASSWORD ausente; loja '{$slug}' fica sem usuário de acesso."
+            );
+
+            return;
+        }
+
+        $tenant = Tenant::where('slug', $slug)->first();
+
+        if (! $tenant) {
+            return;
+        }
+
+        $email = self::OWNER_EMAILS[$slug];
+
+        // withoutGlobalScopes: o seeder roda sem tenant no contexto, e sem isto
+        // a busca por (tenant_id, email) dependeria de um escopo que não existe
+        // aqui — a conta seria recriada a cada deploy e estouraria no unique.
+        $exists = User::withoutGlobalScopes()
+            ->where('tenant_id', $tenant->id)
+            ->where('email', $email)
+            ->exists();
+
+        if ($exists) {
+            $this->command?->info("Usuário de '{$slug}' já existe; senha mantida.");
+
+            return;
+        }
+
+        /*
+         * `forceFill` para o email_verified_at, e não `create`.
+         *
+         * A coluna está FORA do $fillable do User de propósito — é o que impede
+         * um payload de request marcar a própria conta como confirmada. Passada
+         * ao `create`, ela é descartada em silêncio e o usuário nasce sem
+         * confirmação: o LoginController barra com 403 `email_unverified` e a
+         * conta fica inutilizável, inclusive para a impersonação, que esbarra na
+         * mesma trava. Mesmo caminho que o EmailVerifier usa ao confirmar.
+         *
+         * Confirmar aqui é correto: ninguém vai clicar no link de um e-mail
+         * @to-menu.com que não existe como caixa de entrada.
+         */
+        User::create([
+            'tenant_id' => $tenant->id,
+            'name' => $name,
+            'email' => $email,
+            'password' => Hash::make($password),
+            'role' => 'owner',
+        ])->forceFill(['email_verified_at' => now()])->save();
+
+        $this->command?->info("Usuário '{$email}' criado para a loja '{$slug}'.");
     }
 
     /**
@@ -83,8 +174,8 @@ class ExampleStoresSeeder extends Seeder
     private function createPizzaria(Plan $plan): void
     {
         $tenant = Tenant::create([
-            'name' => 'Forno di Napoli',
-            'slug' => 'forno-di-napoli',
+            'name' => 'ToMenu Loja',
+            'slug' => 'to-menu-loja',
             'plan_id' => $plan->id,
             'status' => 'active',
             'onboarding_step' => 5,
@@ -150,8 +241,8 @@ class ExampleStoresSeeder extends Seeder
     private function createCafeteria(Plan $plan): void
     {
         $tenant = Tenant::create([
-            'name' => 'Grão & Folha',
-            'slug' => 'grao-e-folha',
+            'name' => 'ToMenu Cardápio',
+            'slug' => 'to-menu-cardapio',
             'plan_id' => $plan->id,
             'status' => 'active',
             'onboarding_step' => 5,
