@@ -6,6 +6,7 @@ import type { Category, ModifierGroup, Paginated, Product } from '@/lib/types';
 import {
   EmptyState,
   Field,
+  Modal,
   MoneyInput,
   PageHeader,
   Toggle,
@@ -42,6 +43,7 @@ export function MenuPage() {
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [flavorHelpOpen, setFlavorHelpOpen] = useState(false);
 
   const { data: categoriesData } = useQuery({
     queryKey: ['categories'],
@@ -323,14 +325,26 @@ export function MenuPage() {
             Vínculo com os grupos de opções. É aqui que a "Pizza Grande" ganha
             os sabores e a borda — sem isso o produto é só um nome com preço.
           */}
-          <Field
-            label="Grupos de opções"
-            hint={
-              groups.length > 0
-                ? 'O cliente escolhe estas opções ao abrir o item na loja.'
-                : undefined
-            }
-          >
+          {/*
+            Cabeçalho fora do <Field>: o Field envolve tudo num <label>, e um
+            <button> ali dentro faria o clique de "Como inserir sabores?"
+            alcançar também o primeiro checkbox da lista.
+          */}
+          <div className="grid gap-1.5">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <span className="text-xs font-medium text-muted">
+                Grupos de opções
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setFlavorHelpOpen(true)}
+                className="text-xs font-medium text-accent underline"
+              >
+                Como inserir sabores para esse item?
+              </button>
+            </div>
+
             {groups.length === 0 ? (
               <p className="text-xs text-muted">
                 Nenhum grupo criado ainda.{' '}
@@ -385,9 +399,18 @@ export function MenuPage() {
                 >
                   Criar outro grupo de opções
                 </Link>
+
+                <span className="text-xs text-muted">
+                  O cliente escolhe estas opções ao abrir o item na loja.
+                </span>
               </>
             )}
-          </Field>
+          </div>
+
+          <FlavorHelpModal
+            open={flavorHelpOpen}
+            onClose={() => setFlavorHelpOpen(false)}
+          />
 
           <Toggle
             checked={draft.is_available}
@@ -670,5 +693,105 @@ function ProductImageUploader({
 
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
+  );
+}
+
+/**
+ * Explica como um item ganha sabores.
+ *
+ * O passo que não é adivinhável: o sabor não é digitado dentro do produto, é
+ * um produto próprio numa categoria à parte. Quem procura um campo "sabores"
+ * aqui no editor não encontra, porque a ligação é feita por um grupo do tipo
+ * "Sabores de pizza", que aponta para aquela categoria inteira.
+ *
+ * O texto descreve o caminho em ordem e nomeia as telas como elas aparecem no
+ * menu lateral — sem isso o lojista lê a explicação e ainda não sabe onde
+ * clicar.
+ */
+function FlavorHelpModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <Modal open={open} onClose={onClose} title="Como inserir sabores para esse item?">
+      <div className="grid gap-4 text-sm">
+        <p className="text-muted">
+          No ToMenu o sabor não é digitado dentro do produto: cada sabor é um
+          item do cardápio, com preço e foto próprios. Assim, reajustar a
+          Calabresa muda o preço dela em todas as pizzas de uma vez.
+        </p>
+
+        <ol className="grid gap-3">
+          <li className="grid gap-0.5">
+            <span className="font-medium">
+              1. Crie uma categoria para os sabores
+            </span>
+            <span className="text-muted">
+              Em <strong>Categorias</strong>, algo como “Sabores de pizza”.
+              Depois use o botão <strong>“Só opção”</strong> nela: os sabores
+              passam a existir apenas como escolha dentro da pizza, sem virar
+              uma seção à parte no cardápio.
+            </span>
+          </li>
+
+          <li className="grid gap-0.5">
+            <span className="font-medium">
+              2. Cadastre cada sabor como um item dessa categoria
+            </span>
+            <span className="text-muted">
+              Calabresa, Margherita, Portuguesa… com o preço que a pizza inteira
+              daquele sabor custa.
+            </span>
+          </li>
+
+          <li className="grid gap-0.5">
+            <span className="font-medium">
+              3. Em Opções, crie um grupo “Sabores de pizza”
+            </span>
+            <span className="text-muted">
+              Escolha a categoria do passo 1 como origem e defina quantos
+              sabores o cliente pode combinar (2 para meio a meio, 3 para um
+              terço cada).
+            </span>
+          </li>
+
+          <li className="grid gap-0.5">
+            <span className="font-medium">4. Volte aqui e marque o grupo</span>
+            <span className="text-muted">
+              Na lista <strong>Grupos de opções</strong> acima. É isso que faz o
+              seletor de sabores aparecer para o cliente neste item.
+            </span>
+          </li>
+        </ol>
+
+        {/*
+          A regra de preço é a dúvida que chega depois: o lojista teme que meia
+          calabresa + meia portuguesa vire a soma das duas.
+        */}
+        <p className="rounded-lg bg-accent/10 px-3 py-2.5 text-xs text-muted">
+          <strong className="text-ink">Sobre o preço:</strong> ao combinar
+          sabores, o cliente paga o valor do sabor mais caro — nunca a soma. Uma
+          meia calabresa (R$ 50) com meia portuguesa (R$ 60) sai por R$ 60.
+        </p>
+
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to="/categorias"
+            className="rounded-lg border border-line px-3 py-2 text-xs font-semibold transition-colors hover:bg-line/40"
+          >
+            Ir para Categorias
+          </Link>
+          <Link
+            to="/opcoes"
+            className="rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            Ir para Opções
+          </Link>
+        </div>
+      </div>
+    </Modal>
   );
 }

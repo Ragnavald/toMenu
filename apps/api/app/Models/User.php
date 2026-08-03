@@ -63,4 +63,18 @@ class User extends Authenticatable
     {
         return $this->role === 'owner';
     }
+
+    /**
+     * O e-mail já foi confirmado?
+     *
+     * Método próprio em vez do contrato MustVerifyEmail do framework: aquele
+     * traz junto o broker de verificação por URL assinada, que casa a conta
+     * apenas pelo id e envia notificação pela stack de Notifications. Aqui o
+     * link é emitido e validado pelo EmailVerifier, com token com hash em
+     * tabela própria, e a conta é o par (loja, e-mail).
+     */
+    public function hasVerifiedEmail(): bool
+    {
+        return $this->email_verified_at !== null;
+    }
 }

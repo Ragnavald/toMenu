@@ -34,6 +34,31 @@ class LoginController extends Controller
             ]);
         }
 
+        /*
+         * E-mail não confirmado barra o login.
+         *
+         * Depois da checagem de senha, e não antes: responder "confirme seu
+         * e-mail" a quem errou a senha revelaria que a conta existe, desfazendo
+         * o cuidado da mensagem única acima.
+         *
+         * 403 e não 422 para que o painel distinga este caso de credencial
+         * errada sem depender do texto da mensagem — é ele que decide levar o
+         * lojista à tela de confirmação em vez de mostrar erro no formulário.
+         * O `code` é o contrato: a mensagem pode mudar, ele não.
+         *
+         * Contas anteriores à confirmação de e-mail não são afetadas: a
+         * migration marcou `email_verified_at` para todas elas, porque trancar
+         * fora do painel quem já usava a plataforma seria uma quebra sem aviso.
+         */
+        if (! $user->hasVerifiedEmail()) {
+            return response()->json([
+                'code' => 'email_unverified',
+                'message' => 'Confirme seu e-mail antes de entrar. Enviamos um link para '.$user->email.'.',
+                'email' => $user->email,
+                'tenant' => $tenant->slug,
+            ], 403);
+        }
+
         return response()->json([
             'token' => $user->createToken('admin')->plainTextToken,
             'user' => [

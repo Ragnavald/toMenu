@@ -187,6 +187,18 @@ it('sanitiza tema malicioso antes de servir ao storefront', function () {
         ->and($response->json('theme.font'))->toBe('inter');    // fallback
 });
 
+/*
+ * O relógio é fixado, e não lido do ambiente.
+ *
+ * `isOpen` compara o horário declarado com `now()`, então um horário fixo no
+ * fixture torna o resultado dependente de QUANDO a suíte roda: com
+ * segunda 18:00–23:00 e nenhuma viagem no tempo, este teste passava o dia
+ * inteiro e falhava sozinho toda segunda à noite — uma falha que não aponta
+ * para nenhum defeito e que se conserta esperando o relógio virar.
+ *
+ * Terça é o dia desligado no fixture, o que exercita o `enabled: false` do
+ * `isOpen` sem depender da hora.
+ */
 it('publica horário de funcionamento e status de abertura no cardápio', function () {
     // A página da loja no storefront monta a lista de horários e o selo
     // aberto/fechado a partir destes dois campos.
@@ -198,10 +210,55 @@ it('publica horário de funcionamento e status de abertura no cardápio', functi
         ],
     ]);
 
+    $this->travelTo('2026-08-04 20:00:00'); // terça, dia desligado
+
     $this->withHeader('X-Tenant', 'loja-a')->getJson('/api/menu')
         ->assertOk()
         ->assertJsonPath('tenant.businessHours.mon.open', '18:00')
         ->assertJsonPath('tenant.businessHours.tue.enabled', false)
+        ->assertJsonPath('tenant.isOpen', false);
+});
+
+/*
+ * O outro lado da decisão de `isOpen`.
+ *
+ * O teste acima só cobria o caso fechado; sem este, uma regressão que fizesse
+ * `isOpen` devolver `false` sempre passaria despercebida — e o selo "aberto"
+ * some do storefront no horário em que a loja mais vende.
+ */
+it('marca a loja como aberta dentro do horário declarado', function () {
+    TenantSettings::create([
+        'tenant_id' => $this->tenantA->id,
+        'business_hours' => [
+            'mon' => ['enabled' => true, 'open' => '18:00', 'close' => '23:00'],
+        ],
+    ]);
+
+    $this->travelTo('2026-08-03 20:00:00'); // segunda, dentro da faixa
+
+    $this->withHeader('X-Tenant', 'loja-a')->getJson('/api/menu')
+        ->assertOk()
+        ->assertJsonPath('tenant.isOpen', true);
+});
+
+/*
+ * Mesma segunda habilitada, porém fora da faixa.
+ *
+ * Separa "o dia está ligado" de "estamos dentro do horário": sem este caso, um
+ * `isOpen` que só olhasse o `enabled` passaria nos dois testes acima.
+ */
+it('marca a loja como fechada fora do horário do dia habilitado', function () {
+    TenantSettings::create([
+        'tenant_id' => $this->tenantA->id,
+        'business_hours' => [
+            'mon' => ['enabled' => true, 'open' => '18:00', 'close' => '23:00'],
+        ],
+    ]);
+
+    $this->travelTo('2026-08-03 09:00:00'); // segunda de manhã, antes de abrir
+
+    $this->withHeader('X-Tenant', 'loja-a')->getJson('/api/menu')
+        ->assertOk()
         ->assertJsonPath('tenant.isOpen', false);
 });
 
