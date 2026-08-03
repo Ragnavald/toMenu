@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, formatMoney } from '@/lib/api';
 import {
@@ -34,6 +34,35 @@ function nextStatus(order: Order): string | null {
   }
 }
 
+/*
+ * Largura a partir da qual o Kanban cabe na tela.
+ *
+ * Mesmo valor do breakpoint `sm` do Tailwind, usado no seletor de visão logo
+ * abaixo. Os dois precisam concordar: se o seletor aparecesse numa largura em
+ * que o Kanban não é oferecido, o botão "Kanban" não faria nada.
+ */
+const KANBAN_MIN_WIDTH = '(min-width: 640px)';
+
+/**
+ * Acompanha uma media query.
+ *
+ * `useSyncExternalStore` em vez de `useState` + `useEffect` porque o valor
+ * mora fora do React: assim a primeira renderização já lê a largura real, sem
+ * o frame intermediário em que o celular mostraria o Kanban antes de corrigir.
+ */
+function useMediaQuery(query: string): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const list = window.matchMedia(query);
+      list.addEventListener('change', onChange);
+
+      return () => list.removeEventListener('change', onChange);
+    },
+    () => window.matchMedia(query).matches,
+    () => true, // No SSR não há janela; o desktop é o padrão histórico da tela.
+  );
+}
+
 const KANBAN_COLUMNS: { key: string; label: string; tone: string }[] = [
   {
     key: 'confirmed',
@@ -67,6 +96,22 @@ export function OrdersPage() {
   const [filter, setFilter] = useState<string>('');
   const [search, setSearch] = useState<string>('');
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
+
+  /*
+   * No celular a lista não é uma preferência, é a única visão possível.
+   *
+   * O Kanban tem colunas de 280px de largura mínima e 680px de altura mínima
+   * dentro de um scroll horizontal, e muda o status por drag and drop do
+   * HTML5 — que não dispara em toque. Numa tela estreita isso é um quadro que
+   * não cabe e cujos cards não se movem. Pior: o seletor de visão é
+   * `hidden sm:flex`, então o lojista no celular também não tinha como sair
+   * dali.
+   *
+   * Por isso a escolha do usuário só vale acima do breakpoint; abaixo dele a
+   * visão é decidida pela largura, não pelo estado.
+   */
+  const fitsKanban = useMediaQuery(KANBAN_MIN_WIDTH);
+  const effectiveViewMode = fitsKanban ? viewMode : 'list';
 
   // Drag and drop state
   const [draggingId, setDraggingId] = useState<number | null>(null);
@@ -155,7 +200,7 @@ export function OrdersPage() {
                 type="button"
                 onClick={() => setViewMode('kanban')}
                 className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                  viewMode === 'kanban'
+                  effectiveViewMode === 'kanban'
                     ? 'bg-accent text-white'
                     : 'text-muted hover:text-foreground'
                 }`}
@@ -169,7 +214,7 @@ export function OrdersPage() {
                 type="button"
                 onClick={() => setViewMode('list')}
                 className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                  viewMode === 'list'
+                  effectiveViewMode === 'list'
                     ? 'bg-accent text-white'
                     : 'text-muted hover:text-foreground'
                 }`}
@@ -294,7 +339,7 @@ export function OrdersPage() {
       )}
 
       {/* KANBAN VIEW (Exibe Kanban quando estiver no modo Kanban E sem filtro de status específico selecionado) */}
-      {!isLoading && orders.length > 0 && viewMode === 'kanban' && !filter && (
+      {!isLoading && orders.length > 0 && effectiveViewMode === 'kanban' && !filter && (
         <div className="flex overflow-x-auto pb-4 gap-4 scrollbar-thin">
           {columns.map((col) => {
             const columnOrders = orders.filter((o) => o.status === col.key);
@@ -420,7 +465,7 @@ export function OrdersPage() {
       )}
 
       {/* LISTA VIEW (Exibida no modo lista OU quando há filtro de status específico selecionado) */}
-      {!isLoading && orders.length > 0 && (viewMode === 'list' || Boolean(filter)) && (
+      {!isLoading && orders.length > 0 && (effectiveViewMode === 'list' || Boolean(filter)) && (
         <ul className="grid gap-3">
           {orders.map((order) => (
             <li key={order.id} className="panel p-4">
