@@ -51,29 +51,54 @@ class ProductAdminController extends Controller
         return response()->json($product->load('modifierGroups.modifiers'));
     }
 
-    public function update(Request $request, Product $product): JsonResponse
+    public function update(Request $request, Product $product, ImageStorage $images): JsonResponse
     {
+        $data = $this->validated($request, $product->id);
+
+        // Lida antes da escrita: depois do update a coluna já foi sobrescrita e
+        // não há mais como saber qual arquivo ficou órfão.
+        $previousImage = $product->image_url;
+
         // Eloquent devolve true mesmo quando 0 linhas são afetadas. Se o RLS
         // recusar a escrita, a resposta 200 seria uma confirmação falsa — o
         // cliente veria "salvo" enquanto o banco permanece intacto.
         abort_if(
             $product->newQueryWithoutScopes()
                 ->whereKey($product->getKey())
-                ->update($this->validated($request, $product->id)) === 0,
+                ->update($data) === 0,
             404,
         );
+
+        /*
+         * Só depois do update confirmado, e só se a foto realmente mudou: o
+         * painel manda o produto inteiro a cada salvamento, então na maioria das
+         * edições `image_url` chega igual ao que já estava lá. Apagar sem
+         * comparar destruiria a foto de quem só corrigiu o preço.
+         *
+         * A ordem também importa. Apagar antes da escrita deixaria o produto
+         * apontando para um arquivo inexistente se o update falhasse — imagem
+         * quebrada no cardápio é pior do que arquivo órfão no bucket.
+         */
+        if (array_key_exists('image_url', $data) && $data['image_url'] !== $previousImage) {
+            $images->delete($previousImage, $product->tenant_id);
+        }
 
         return response()->json($product->fresh());
     }
 
-    public function destroy(Product $product): JsonResponse
+    public function destroy(Product $product, ImageStorage $images): JsonResponse
     {
+        $image = $product->image_url;
+        $tenantId = $product->tenant_id;
+
         abort_if(
             $product->newQueryWithoutScopes()
                 ->whereKey($product->getKey())
                 ->delete() === 0,
             404,
         );
+
+        $images->delete($image, $tenantId);
 
         return response()->json(status: 204);
     }
