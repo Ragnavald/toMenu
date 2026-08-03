@@ -50,26 +50,29 @@
  *
  * Apenas as superfícies invertem; a cor de marca do tenant é preservada,
  * porque ela é a identidade da loja e deve permanecer reconhecível.
+ *
+ * A superfície é carvão, não preto: a landing é quase toda fundo, e um valor
+ * quase puro contra o texto claro deixa o contraste duro em tela grande.
  */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']):not(:has([data-tenant])) {
-    --surface: 17 17 19;
+    --surface: 24 24 27;
     --ink: 244 244 245;
     --ink-muted: rgb(var(--ink) / 0.64);
     --ink-subtle: rgb(var(--ink) / 0.46);
     --hairline: rgb(var(--ink) / 0.13);
-    --elevated: rgb(var(--ink) / 0.05);
+    --elevated: rgb(var(--ink) / 0.06);
     --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.28);
   }
 }
 
 :root[data-theme='dark']:not(:has([data-tenant])) {
-  --surface: 17 17 19;
+  --surface: 24 24 27;
   --ink: 244 244 245;
   --ink-muted: rgb(var(--ink) / 0.64);
   --ink-subtle: rgb(var(--ink) / 0.46);
   --hairline: rgb(var(--ink) / 0.13);
-  --elevated: rgb(var(--ink) / 0.05);
+  --elevated: rgb(var(--ink) / 0.06);
   --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.28);
 }
 
