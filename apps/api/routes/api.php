@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\FinanceAdminController;
 use App\Http\Controllers\Admin\ModifierGroupAdminController;
 use App\Http\Controllers\Admin\OrderAdminController;
 use App\Http\Controllers\Admin\ProductAdminController;
+use App\Http\Controllers\Admin\QrCodeController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\StoreDeletionController;
 use App\Http\Controllers\Auth\EmailVerificationController;
@@ -291,6 +292,21 @@ Route::prefix('admin')
             ->middleware('throttle:20,1');
         Route::post('billing/portal', [BillingController::class, 'portal'])
             ->middleware('throttle:10,1');
+
+        /*
+         * QR Code do endereço da loja.
+         *
+         * FORA do grupo `plan.orders`, pelo mesmo motivo do billing: o QR abre
+         * o cardápio, que os dois planos têm. Travá-lo atrás da capacidade de
+         * pedidos tiraria o recurso justamente de quem depende dele para levar
+         * o cliente da mesa ao cardápio.
+         *
+         * O throttle é folgado porque a resposta quase sempre sai do cache (ou
+         * nem chega a sair, quando o navegador revalida por ETag); serve só
+         * para conter a geração em rajada de tamanhos diferentes.
+         */
+        Route::get('store/qrcode', [QrCodeController::class, 'show'])
+            ->middleware('throttle:60,1');
 
         Route::get('settings', [SettingsController::class, 'show']);
         Route::put('settings/profile', [SettingsController::class, 'updateProfile']);

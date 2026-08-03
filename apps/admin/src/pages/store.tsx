@@ -4,6 +4,7 @@ import { ApiError, apiFetch } from '@/lib/api';
 import type { Settings } from '@/lib/types';
 import { Field, PageHeader, SaveBar, Section } from '@/components/ui';
 import { DeleteStore } from '@/components/delete-store';
+import { StoreQrCode } from '@/components/store-qrcode';
 import {
   buildAddressString,
   fetchViaCep,
@@ -243,6 +244,13 @@ export function StorePage() {
               Abrir
             </a>
           </div>
+        </Section>
+
+        <Section
+          title="QR Code do cardápio"
+          description="Leva direto para o endereço acima."
+        >
+          <StoreQrCode storefrontUrl={settings.store.storefrontUrl} />
         </Section>
 
         <Section title="Identificação">
