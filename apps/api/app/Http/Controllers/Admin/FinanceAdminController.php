@@ -3,21 +3,36 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\GenerateFinancialReport;
-use App\Models\ReportJob;
 use App\Services\FinanceReportService;
-use App\Tenancy\TenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class FinanceAdminController extends Controller
 {
     /** Além disso o gráfico diário vira uma serra ilegível; agrupa por mês. */
     private const DAILY_GRANULARITY_MAX_DAYS = 92;
+
+    /**
+     * Rótulos legíveis no CSV — os mesmos que o PDF usava e que a tela exibe.
+     *
+     * A planilha é lida por gente, não por máquina: `stripe_card` numa coluna
+     * de "Pagamento" não diz nada ao dono do restaurante.
+     */
+    private const PAYMENT_LABELS = [
+        'cash' => 'Dinheiro na entrega',
+        'card_on_delivery' => 'Cartão na entrega',
+        'pix_on_delivery' => 'Pix na entrega',
+        'stripe_card' => 'Cartão pelo site',
+        'stripe_pix' => 'Pix pelo site',
+    ];
+
+    private const FULFILLMENT_LABELS = [
+        'delivery' => 'Entrega',
+        'pickup' => 'Retirada',
+    ];
 
     public function __construct(
         private readonly FinanceReportService $finance,
@@ -70,103 +85,92 @@ class FinanceAdminController extends Controller
     }
 
     /**
-     * Enfileira a geração do PDF e responde 202 imediatamente.
+     * Exporta os pedidos do período em CSV, direto na resposta.
      *
-     * Gerar em linha travaria o request por segundos num mês cheio e estouraria
-     * o timeout do PHP-FPM justamente nos relatórios maiores — os que mais
-     * importam. O cliente acompanha o progresso por `show`.
+     * Substituiu a geração de PDF em fila. O PDF custava caro por linha — o
+     * dompdf monta a árvore de layout inteira em memória e o custo de quebrar
+     * uma tabela longa entre páginas explode: 2.500 pedidos levavam ~5 min e
+     * ~2 GB, acima do `--memory=256` e do `--timeout=240` do worker. Ou seja, o
+     * limite de 5.000 linhas que a validação prometia nunca foi alcançável.
+     *
+     * Aqui nada é acumulado: cada linha é escrita e descartada, então a memória
+     * é constante e o arquivo começa a chegar antes de a query terminar. Medido
+     * em 100 mil pedidos: ~1s e ~34 MB, dos quais a maior parte é o boot do
+     * framework. Por isso não há mais teto de linhas nem fila — o custo deixou
+     * de escalar com o tamanho do período.
+     *
+     * O callback roda DEPOIS que o Laravel envia os headers, o que tem duas
+     * consequências que moldam este método:
+     *
+     *   1. o cursor é aberto aqui fora, ainda dentro do contexto de tenant do
+     *      request. Abrir lá dentro arriscaria montar a query sem o escopo;
+     *   2. um erro no meio do streaming não vira mais 500 — a resposta já
+     *      começou com 200. Daí a validação do intervalo acontecer antes.
      */
-    public function requestExport(Request $request, TenantContext $context): JsonResponse
+    public function export(Request $request): StreamedResponse
     {
         [$from, $to] = $this->resolveRange($request);
         $search = trim($request->string('search')->toString());
 
-        $rowCount = $this->finance->applySearch(
-            $this->finance->revenueQuery($from, $to),
-            $search,
-        )->count();
+        // Sem isto o Laravel guarda cada query executada em memória. Numa
+        // exportação longa é vazamento puro, e some justamente o ganho do
+        // cursor.
+        DB::disableQueryLog();
 
-        if ($rowCount > FinanceReportService::MAX_EXPORT_ROWS) {
-            throw ValidationException::withMessages([
-                'range' => sprintf(
-                    'O período selecionado tem %s pedidos, acima do limite de %s por relatório. Escolha um intervalo menor.',
-                    number_format($rowCount, 0, ',', '.'),
-                    number_format(FinanceReportService::MAX_EXPORT_ROWS, 0, ',', '.'),
-                ),
-            ]);
-        }
+        $rows = $this->finance->exportCursor($from, $to, $search);
 
-        // Um relatório idêntico já em andamento é reaproveitado: clicar duas
-        // vezes no botão não deve custar dois PDFs iguais na fila.
-        $pending = ReportJob::query()
-            ->whereIn('status', ['queued', 'processing'])
-            ->where('from_date', $from->toDateString())
-            ->where('to_date', $to->toDateString())
-            ->where('search', $search !== '' ? $search : null)
-            ->first();
+        $filename = sprintf(
+            'financeiro-%s-a-%s.csv',
+            $from->format('Y-m-d'),
+            $to->format('Y-m-d'),
+        );
 
-        if ($pending) {
-            return response()->json($this->present($pending), 202);
-        }
+        return response()->streamDownload(function () use ($rows) {
+            $out = fopen('php://output', 'w');
 
-        $report = ReportJob::create([
-            'user_id' => $request->user()?->getKey(),
-            'type' => 'financial',
-            'status' => 'queued',
-            'from_date' => $from->toDateString(),
-            'to_date' => $to->toDateString(),
-            'search' => $search !== '' ? $search : null,
-            'row_count' => $rowCount,
+            /*
+             * BOM UTF-8 na frente do arquivo.
+             *
+             * É o que faz o Excel no Windows reconhecer a codificação: sem ele
+             * "Ação" e "R$" chegam quebrados no acento, que é exatamente o que
+             * o lojista vê ao abrir a planilha. Editor de texto e LibreOffice
+             * ignoram o BOM, então não custa nada aos outros leitores.
+             */
+            fwrite($out, "\xEF\xBB\xBF");
+
+            fputcsv($out, FinanceReportService::EXPORT_HEADER, ';');
+
+            foreach ($rows as $row) {
+                fputcsv($out, [
+                    $row->number,
+                    $row->placed_at ? Carbon::parse($row->placed_at)->format('d/m/Y H:i') : '',
+                    $row->customer_name ?? 'Não informado',
+                    $row->customer_phone ?? '',
+                    self::PAYMENT_LABELS[$row->payment_method] ?? $row->payment_method,
+                    self::FULFILLMENT_LABELS[$row->fulfillment] ?? $row->fulfillment,
+                    $this->decimal($row->subtotal_cents),
+                    $this->decimal($row->delivery_fee_cents),
+                    $this->decimal($row->total_cents),
+                ], ';');
+            }
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Cache-Control' => 'no-cache, no-store, must-revalidate',
         ]);
-
-        GenerateFinancialReport::dispatch($report->getKey(), $context->getOrFail()->getKey());
-
-        return response()->json($this->present($report), 202);
-    }
-
-    /** Estado de uma exportação — alvo do polling do admin. */
-    public function showExport(string $report, TenantContext $context): JsonResponse
-    {
-        return response()->json($this->present($this->findForTenant($report, $context)));
-    }
-
-    /** Histórico recente de exportações. */
-    public function exports(): JsonResponse
-    {
-        $reports = ReportJob::query()
-            ->latest()
-            ->limit(20)
-            ->get()
-            ->map(fn (ReportJob $report) => $this->present($report));
-
-        return response()->json(['data' => $reports]);
     }
 
     /**
-     * Entrega o PDF pronto.
+     * Centavos → decimal com vírgula, no formato que o Excel pt-BR entende.
      *
-     * O arquivo fica em disco privado e passa por aqui de propósito: uma URL
-     * pública em storage/app/public seria acessível a qualquer um que
-     * descobrisse o caminho, sem passar por auth nem pela checagem de tenant.
+     * Sem separador de milhar de propósito: "1.234,56" com ponto faria o Excel
+     * ler como texto em algumas configurações regionais, e aí a coluna não
+     * soma — que é a primeira coisa que o lojista tenta fazer na planilha.
      */
-    public function download(string $report, TenantContext $context): StreamedResponse
+    private function decimal(int $cents): string
     {
-        $report = $this->findForTenant($report, $context);
-
-        abort_unless($report->isDone(), 404);
-
-        $disk = Storage::disk('local');
-
-        abort_unless($disk->exists($report->file_path), 404);
-
-        return $disk->download(
-            $report->file_path,
-            sprintf(
-                'financeiro-%s-a-%s.pdf',
-                $report->from_date->format('Y-m-d'),
-                $report->to_date->format('Y-m-d'),
-            ),
-        );
+        return number_format($cents / 100, 2, ',', '');
     }
 
     /**
@@ -197,48 +201,9 @@ class FinanceAdminController extends Controller
         return [$from, $to];
     }
 
-    /**
-     * Busca a exportação filtrando o tenant explicitamente.
-     *
-     * Não usa route model binding de propósito. O binding roda em
-     * `substituteBindings`, que é avaliado ANTES do middleware de rota — ou
-     * seja, antes de identify.tenant popular o contexto. Sem tenant no
-     * contexto o global scope do BelongsToTenant não tem o que filtrar, e o
-     * registro de qualquer loja era resolvido normalmente: um usuário
-     * autenticado conseguia baixar o PDF financeiro de outra loja informando o
-     * id na URL. Filtrar aqui não depende da ordem dos middlewares.
-     */
-    private function findForTenant(string $id, TenantContext $context): ReportJob
-    {
-        $report = ReportJob::query()
-            ->where('id', $id)
-            ->where('tenant_id', $context->getOrFail()->getKey())
-            ->first();
-
-        abort_if($report === null, 404);
-
-        return $report;
-    }
-
     /** Cópia da data mais antiga entre as duas, sem mutar nenhuma delas. */
     private function earliest(Carbon $a, Carbon $b): Carbon
     {
         return $a->lte($b) ? $a->copy() : $b->copy();
-    }
-
-    private function present(ReportJob $report): array
-    {
-        return [
-            'id' => $report->getKey(),
-            'status' => $report->status,
-            'from' => $report->from_date?->toDateString(),
-            'to' => $report->to_date?->toDateString(),
-            'search' => $report->search,
-            'rowCount' => $report->row_count,
-            'fileSize' => $report->file_size,
-            'error' => $report->error,
-            'createdAt' => $report->created_at?->toIso8601String(),
-            'finishedAt' => $report->finished_at?->toIso8601String(),
-        ];
     }
 }

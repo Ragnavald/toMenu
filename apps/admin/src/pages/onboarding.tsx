@@ -110,22 +110,16 @@ export function OnboardingPage() {
   return (
     <div>
       <header className="mb-6">
-        {/* O texto do logo é escuro; no tema escuro entra a variante clara.
-            A troca segue a classe .dark do <html>, não a media query, senão
-            quem alterna o tema manualmente veria o logo errado. */}
+        {/* Um logo só: o wizard fixa o tema claro (ver `useForcedLightTheme`
+            no OnboardingShell), então a variante para fundo escuro nunca
+            apareceria. Se o tema voltar a variar aqui, o par de <img> com
+            `dark:hidden` / `dark:block` precisa voltar junto. */}
         <img
           src="/tomenu-wordmark.png"
           alt="ToMenu"
           width={560}
           height={133}
-          className="mb-5 h-8 w-auto dark:hidden"
-        />
-        <img
-          src="/tomenu-wordmark-dark.png"
-          alt="ToMenu"
-          width={560}
-          height={133}
-          className="mb-5 hidden h-8 w-auto dark:block"
+          className="mb-5 h-8 w-auto"
         />
         <h1 className="text-xl font-semibold tracking-tight">
           Vamos deixar sua loja pronta

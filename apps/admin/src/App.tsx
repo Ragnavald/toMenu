@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { apiFetch, loadSession, saveSession, type Session } from '@/lib/api';
 import type { Settings } from '@/lib/types';
+import { useForcedLightTheme } from '@/lib/theme';
 import { LoginPage } from '@/pages/login';
 import { ForgotPasswordPage } from '@/pages/forgot-password';
 import { ResetPasswordPage } from '@/pages/reset-password';
@@ -238,6 +239,10 @@ function StoreRoutes() {
 }
 
 function OnboardingShell() {
+  // Os passos do bem-vindo são sempre claros; a preferência do lojista é
+  // restaurada quando ele termina e entra no painel.
+  useForcedLightTheme();
+
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
       <OnboardingPage />

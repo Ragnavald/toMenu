@@ -29,8 +29,15 @@ class FinanceReportService
 
     public const REVENUE_PAYMENT_STATUS = 'paid';
 
-    /** Teto de linhas por exportação: acima disso o PDF vira inutilizável. */
-    public const MAX_EXPORT_ROWS = 5000;
+    /**
+     * Colunas do CSV, na ordem em que saem.
+     *
+     * @var list<string>
+     */
+    public const EXPORT_HEADER = [
+        'Pedido', 'Data', 'Cliente', 'Telefone', 'Pagamento',
+        'Entrega', 'Subtotal', 'Taxa de entrega', 'Total',
+    ];
 
     /**
      * Query base do período, já com os filtros de receita aplicados.
@@ -45,6 +52,55 @@ class FinanceReportService
             ->where('status', self::REVENUE_STATUS)
             ->where('payment_status', self::REVENUE_PAYMENT_STATUS)
             ->whereBetween('placed_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()]);
+    }
+
+    /**
+     * Linhas da exportação, uma por vez, sem carregar o período na memória.
+     *
+     * Três decisões sustentam o consumo constante de RAM, e nenhuma é opcional:
+     *
+     *   `toBase()`   devolve o query builder cru por baixo do Eloquent. Cada
+     *                linha vira um stdClass em vez de um model hidratado — o
+     *                model traz atributos originais, casts e relações, e é o
+     *                que fazia a versão antiga acumular. O filtro por tenant
+     *                NÃO se perde: ele já foi aplicado pelo global scope na
+     *                montagem da query, e o RLS do Postgres é a rede de baixo.
+     *
+     *   `cursor()`   percorre o resultado em streaming (PDO unbuffered), então
+     *                a memória não cresce com o número de pedidos. `get()` e
+     *                até `chunkById()` materializam lotes; aqui nada é
+     *                acumulado, porque quem consome escreve direto na saída.
+     *
+     *   `leftJoin`   o nome do cliente vem na mesma query. Com `with()` seria
+     *                um segundo SELECT por lote, e com acesso lazy seria um
+     *                por pedido — o N+1 clássico, que num cursor de 100 mil
+     *                linhas significa 100 mil consultas.
+     *
+     * `leftJoin` e não `join`: pedido sem cliente (balcão, cadastro removido)
+     * precisa aparecer no relatório financeiro, senão a soma do CSV não bate
+     * com o total exibido na tela.
+     *
+     * @return \Illuminate\Support\LazyCollection<int, \stdClass>
+     */
+    public function exportCursor(Carbon $from, Carbon $to, string $search = ''): \Illuminate\Support\LazyCollection
+    {
+        return $this->applySearch($this->revenueQuery($from, $to), $search)
+            ->leftJoin('customers', 'customers.id', '=', 'orders.customer_id')
+            ->orderBy('orders.placed_at')
+            ->orderBy('orders.id') // Desempate estável entre pedidos do mesmo instante.
+            ->select([
+                'orders.number',
+                'orders.placed_at',
+                'customers.name AS customer_name',
+                'customers.phone AS customer_phone',
+                'orders.payment_method',
+                'orders.fulfillment',
+                'orders.subtotal_cents',
+                'orders.delivery_fee_cents',
+                'orders.total_cents',
+            ])
+            ->toBase()
+            ->cursor();
     }
 
     /**

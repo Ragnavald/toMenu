@@ -36,10 +36,10 @@ export const LEGAL = {
    * lojista vê na tela ao aceitar. Se divergirem, o registro deixa de provar
    * qual texto estava no ar no momento do cadastro.
    */
-  version: '2026-08-02',
+  version: '2026-08-03',
 
   /** A mesma data de `version`, escrita para leitura humana. */
-  effectiveDate: '2 de agosto de 2026',
+  effectiveDate: '3 de agosto de 2026',
 
   /** Foro eleito para as controvérsias do contrato. */
   jurisdiction: '[Comarca de Cidade/UF]',

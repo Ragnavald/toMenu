@@ -34,6 +34,30 @@ export function initTheme() {
 }
 
 /**
+ * Força o tema claro enquanto o componente estiver montado.
+ *
+ * Serve ao wizard de boas-vindas, que é a primeira tela do lojista e a única
+ * apresentada em versão clara — as capturas e o material de apresentação são
+ * claros, e o escuro entregava uma primeira impressão diferente conforme o
+ * sistema operacional de quem cadastrou.
+ *
+ * NÃO grava nada: a preferência do lojista continua no localStorage e volta a
+ * valer assim que ele entra no painel. Sobrescrevê-la faria quem escolheu o
+ * escuro perder a escolha por ter passado pelo cadastro.
+ */
+export function useForcedLightTheme() {
+  useEffect(() => {
+    applyTheme('light');
+
+    return () => {
+      // Na saída devolve o que estava valendo — a escolha salva, ou o sistema
+      // para quem nunca tocou no toggle.
+      applyTheme(getStoredTheme() ?? getSystemTheme());
+    };
+  }, []);
+}
+
+/**
  * Hook que gerencia o tema do admin.
  *
  * Persiste a preferência em localStorage, isolada do storefront.

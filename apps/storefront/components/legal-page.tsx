@@ -27,7 +27,8 @@ export function LegalPage({
       <header className="border-b border-[var(--hairline)]">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-6 py-5">
           <Link href="/" aria-label="ToMenu — início">
-            <BrandLogo variant="wordmark" className="h-5 w-auto" />
+            {/* Páginas da plataforma são sempre claras; ver globals.css. */}
+            <BrandLogo variant="wordmark" scheme="light" className="h-5 w-auto" />
           </Link>
 
           <Link
@@ -56,7 +57,7 @@ export function LegalPage({
         {PENDING_IDENTITY && (
           <p
             role="alert"
-            className="mt-6 border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-700 dark:text-amber-400"
+            className="mt-6 border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-700"
             style={{ borderRadius: 'calc(var(--radius) * 0.5)' }}
           >
             <strong className="font-semibold">Documento em preparação.</strong>{' '}

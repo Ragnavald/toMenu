@@ -166,7 +166,9 @@ export default function LandingPage() {
       <JsonLd data={platformSchema(SITE_URL)} />
 
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
-        <BrandLogo priority className="h-8 w-auto sm:h-9" />
+        {/* A landing é sempre clara — `auto` traria a arte clara no aparelho
+            em modo escuro, deixando "ToMenu" branco sobre fundo branco. */}
+        <BrandLogo priority scheme="light" className="h-8 w-auto sm:h-9" />
 
         <Link
           href="#comecar"

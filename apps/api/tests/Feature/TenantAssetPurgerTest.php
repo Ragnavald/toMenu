@@ -47,6 +47,7 @@ class TenantAssetPurgerTest extends TestCase
     public function test_apaga_as_imagens_da_loja(): void
     {
         Storage::fake('public');
+        Storage::fake('local');
 
         Storage::disk('public')->put('products/7-111-abc.jpg', 'x');
         Storage::disk('public')->put('products/7-222-def.jpg', 'x');
@@ -74,6 +75,7 @@ class TenantAssetPurgerTest extends TestCase
     public function test_nao_toca_em_lojas_com_id_de_prefixo_parecido(): void
     {
         Storage::fake('public');
+        Storage::fake('local');
 
         Storage::disk('public')->put('products/7-111-abc.jpg', 'x');
         Storage::disk('public')->put('products/70-999-zzz.jpg', 'x');
@@ -94,10 +96,59 @@ class TenantAssetPurgerTest extends TestCase
     public function test_loja_sem_imagens_nao_falha(): void
     {
         Storage::fake('public');
+        Storage::fake('local');
 
         $outcome = app(TenantAssetPurger::class)->purge($this->makeTenant(7));
 
         $this->assertSame(0, $outcome['deleted']);
         $this->assertSame(0, $outcome['failed']);
+        $this->assertSame('none', $outcome['reports']);
+    }
+
+    /**
+     * Os PDFs de relatório ficam noutro disco e noutra convenção.
+     *
+     * São resíduo da época em que a exportação era PDF gerado em fila: nada
+     * mais grava ali, mas os arquivos antigos continuam no volume e
+     * sobreviveriam a uma exclusão anunciada como permanente.
+     */
+    public function test_apaga_os_relatorios_da_loja(): void
+    {
+        Storage::fake('public');
+        Storage::fake('local');
+
+        Storage::disk('local')->put('reports/7/financeiro-1.pdf', 'x');
+        Storage::disk('local')->put('reports/7/financeiro-2.pdf', 'x');
+
+        $outcome = app(TenantAssetPurger::class)->purge($this->makeTenant(7));
+
+        $this->assertSame('deleted', $outcome['reports']);
+
+        Storage::disk('local')->assertMissing('reports/7/financeiro-1.pdf');
+        Storage::disk('local')->assertMissing('reports/7/financeiro-2.pdf');
+    }
+
+    /**
+     * O equivalente, para relatórios, do teste de id com prefixo parecido.
+     *
+     * Aqui o diretório por tenant já protege — `reports/7` é comparado inteiro
+     * pelo storage, não por `str_starts_with` —, mas o caso fica registrado
+     * porque é a suposição que sustenta o uso de `deleteDirectory`: se a
+     * convenção de caminho mudar, este teste é que denuncia.
+     */
+    public function test_nao_apaga_relatorios_de_loja_com_id_parecido(): void
+    {
+        Storage::fake('public');
+        Storage::fake('local');
+
+        Storage::disk('local')->put('reports/7/financeiro-1.pdf', 'x');
+        Storage::disk('local')->put('reports/70/financeiro-9.pdf', 'x');
+        Storage::disk('local')->put('reports/71/financeiro-9.pdf', 'x');
+
+        app(TenantAssetPurger::class)->purge($this->makeTenant(7));
+
+        Storage::disk('local')->assertMissing('reports/7/financeiro-1.pdf');
+        Storage::disk('local')->assertExists('reports/70/financeiro-9.pdf');
+        Storage::disk('local')->assertExists('reports/71/financeiro-9.pdf');
     }
 }

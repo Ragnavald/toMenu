@@ -127,19 +127,6 @@ export type FinanceOverview = {
   }[];
 };
 
-export type ReportExport = {
-  id: number;
-  status: 'queued' | 'processing' | 'done' | 'failed' | 'expired';
-  from: string;
-  to: string;
-  search: string | null;
-  rowCount: number | null;
-  fileSize: number | null;
-  error: string | null;
-  createdAt: string | null;
-  finishedAt: string | null;
-};
-
 export type ThemeTokens = {
   brand: string;
   brandSoft: string;

@@ -1,14 +1,11 @@
 <?php
 
-use App\Jobs\GenerateFinancialReport;
 use App\Models\Customer;
 use App\Models\Order;
-use App\Models\ReportJob;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\FinanceReportService;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 
 beforeEach(function () {
@@ -121,55 +118,63 @@ it('troca a granularidade de diária para mensal em intervalos longos', function
 // Exportação
 // ---------------------------------------------------------------------------
 
-it('enfileira a geração do PDF e responde 202', function () {
-    Queue::fake();
-    makeOrder($this->tenant);
+it('exporta os pedidos do período em CSV', function () {
+    makeOrder($this->tenant, ['total_cents' => 12345, 'placed_at' => '2026-07-10 12:00:00']);
 
-    $this->withHeader('X-Tenant', 'loja-a')
-        ->postJson('/api/admin/finance/exports', ['from' => '2026-07-01', 'to' => '2026-07-31'])
-        ->assertStatus(202)
-        ->assertJsonPath('status', 'queued');
+    $response = $this->withHeader('X-Tenant', 'loja-a')
+        ->get('/api/admin/finance/export?from=2026-07-01&to=2026-07-31');
 
-    Queue::assertPushed(GenerateFinancialReport::class);
+    $response->assertOk()
+        ->assertHeader('content-type', 'text/csv; charset=UTF-8')
+        ->assertDownload('financeiro-2026-07-01-a-2026-07-31.csv');
+
+    $csv = $response->streamedContent();
+
+    // BOM na frente, senão o Excel no Windows quebra os acentos.
+    expect($csv)->toStartWith("\xEF\xBB\xBF")
+        ->and($csv)->toContain('Pedido;Data;Cliente')
+        // Decimal com vírgula e sem separador de milhar: é o que o Excel
+        // pt-BR soma. Com ponto, a coluna vira texto.
+        ->and($csv)->toContain('123,45');
 });
 
-it('reaproveita a exportação pendente em vez de enfileirar duas iguais', function () {
-    Queue::fake();
-    makeOrder($this->tenant);
+/*
+ * O período vazio precisa devolver um CSV válido, não um arquivo de zero byte.
+ *
+ * Uma planilha só com cabeçalho comunica "não houve venda"; um arquivo vazio
+ * parece falha de download e gera chamado de suporte.
+ */
+it('exporta apenas o cabeçalho quando não há pedidos no período', function () {
+    $response = $this->withHeader('X-Tenant', 'loja-a')
+        ->get('/api/admin/finance/export?from=2026-07-01&to=2026-07-31');
 
-    $payload = ['from' => '2026-07-01', 'to' => '2026-07-31'];
+    $response->assertOk();
 
-    $first = $this->withHeader('X-Tenant', 'loja-a')
-        ->postJson('/api/admin/finance/exports', $payload)->json('id');
+    $linhas = array_filter(explode("\n", trim($response->streamedContent())));
 
-    $second = $this->withHeader('X-Tenant', 'loja-a')
-        ->postJson('/api/admin/finance/exports', $payload)->json('id');
-
-    expect($second)->toBe($first);
-    Queue::assertPushed(GenerateFinancialReport::class, 1);
+    expect($linhas)->toHaveCount(1);
 });
 
-it('gera o PDF de verdade ao rodar o job', function () {
-    Storage::fake('local');
-    makeOrder($this->tenant, ['total_cents' => 12345]);
+/*
+ * O que sustenta o consumo constante de memória.
+ *
+ * `toBase()` devolve stdClass em vez de model hidratado, e `cursor()` percorre
+ * em streaming. Se alguém trocar por `get()` num refactor, a memória volta a
+ * crescer com o período — e o estouro só apareceria em produção, na loja com
+ * mais pedidos. Este teste falha antes disso.
+ */
+it('percorre a exportação sem hidratar models', function () {
+    makeOrder($this->tenant);
 
-    $report = actingAsTenantAnd($this->tenant, fn () => ReportJob::create([
-        'user_id' => $this->user->id,
-        'status' => 'queued',
-        'from_date' => now()->startOfMonth()->toDateString(),
-        'to_date' => now()->endOfMonth()->toDateString(),
-    ]));
+    $rows = actingAsTenantAnd($this->tenant, fn () => app(FinanceReportService::class)
+        ->exportCursor(Carbon::parse('2026-07-01'), Carbon::parse('2026-07-31')));
 
-    (new GenerateFinancialReport($report->id, $this->tenant->id))
-        ->handle(app(App\Tenancy\TenantContext::class), app(App\Services\FinanceReportService::class));
+    expect($rows)->toBeInstanceOf(Illuminate\Support\LazyCollection::class);
 
-    $report->refresh();
-
-    expect($report->status)->toBe('done')
-        ->and($report->file_path)->not->toBeNull()
-        ->and($report->file_size)->toBeGreaterThan(0);
-
-    Storage::disk('local')->assertExists($report->file_path);
+    foreach ($rows as $row) {
+        expect($row)->toBeInstanceOf(stdClass::class)
+            ->and($row)->not->toBeInstanceOf(Order::class);
+    }
 });
 
 // ---------------------------------------------------------------------------
@@ -187,46 +192,25 @@ it('não soma no financeiro os pedidos de outra loja', function () {
 });
 
 /*
- * Regressão de vazamento entre lojas.
+ * Regressão de vazamento entre lojas, agora na exportação.
  *
- * O route model binding roda em `substituteBindings`, ANTES do middleware que
- * popula o tenant. Sem contexto, o global scope não filtra nada e o registro de
- * qualquer loja era resolvido: bastava trocar o id na URL para baixar o PDF
- * financeiro de outro estabelecimento. O controller passou a filtrar tenant_id
- * explicitamente; este teste garante que ninguém volte ao binding implícito.
+ * A versão em PDF guardava cada relatório numa linha com id sequencial, e o
+ * route model binding resolvia o registro ANTES de o middleware popular o
+ * tenant: bastava trocar o id na URL para baixar o financeiro de outra loja.
+ *
+ * O CSV não tem id na URL — o recorte vem do contexto de tenant —, então aquele
+ * vetor deixou de existir. O que continua valendo a pena travar é a garantia
+ * equivalente: o conteúdo do arquivo só pode conter pedidos da loja que pediu.
  */
-it('não deixa uma loja baixar o relatório de outra', function () {
+it('não inclui no CSV os pedidos de outra loja', function () {
     $other = Tenant::factory()->create(['slug' => 'loja-b']);
+    makeOrder($other, ['total_cents' => 999999, 'placed_at' => '2026-07-10 12:00:00']);
+    makeOrder($this->tenant, ['total_cents' => 1000, 'placed_at' => '2026-07-10 12:00:00']);
 
-    $foreignReport = actingAsTenantAnd($other, fn () => ReportJob::create([
-        'status' => 'done',
-        'from_date' => '2026-07-01',
-        'to_date' => '2026-07-31',
-        'file_path' => 'reports/999/secreto.pdf',
-        'file_size' => 100,
-    ]));
+    $csv = $this->withHeader('X-Tenant', 'loja-a')
+        ->get('/api/admin/finance/export?from=2026-07-01&to=2026-07-31')
+        ->streamedContent();
 
-    $this->withHeader('X-Tenant', 'loja-a')
-        ->getJson("/api/admin/finance/exports/{$foreignReport->id}")
-        ->assertNotFound();
-
-    $this->withHeader('X-Tenant', 'loja-a')
-        ->get("/api/admin/finance/exports/{$foreignReport->id}/download")
-        ->assertNotFound();
-});
-
-it('lista no histórico apenas as exportações da própria loja', function () {
-    $other = Tenant::factory()->create(['slug' => 'loja-b']);
-
-    actingAsTenantAnd($other, fn () => ReportJob::create([
-        'status' => 'done', 'from_date' => '2026-07-01', 'to_date' => '2026-07-31',
-    ]));
-    actingAsTenantAnd($this->tenant, fn () => ReportJob::create([
-        'status' => 'done', 'from_date' => '2026-07-01', 'to_date' => '2026-07-31',
-    ]));
-
-    $this->withHeader('X-Tenant', 'loja-a')
-        ->getJson('/api/admin/finance/exports')
-        ->assertOk()
-        ->assertJsonCount(1, 'data');
+    expect($csv)->toContain('10,00')
+        ->and($csv)->not->toContain('9999,99');
 });

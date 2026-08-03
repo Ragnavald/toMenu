@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiError, apiDownload, apiFetch, formatMoney } from '@/lib/api';
+import { useQuery } from '@tanstack/react-query';
+import { apiDownload, apiFetch, formatMoney } from '@/lib/api';
 import {
   PAYMENT_LABELS,
   type FinanceOverview,
   type Order,
   type Paginated,
-  type ReportExport,
 } from '@/lib/types';
 import { PageHeader } from '@/components/ui';
 import { PaymentMixBar, RevenueBars } from '@/components/charts';
@@ -130,9 +129,10 @@ export function FinancePage() {
             type="date"
             value={range.from}
             onChange={(e) => {
-              setPreset('custom');
+              // applyPreset('custom') preserva o range escolhido à mão e já
+              // devolve a paginação para a primeira página.
+              applyPreset('custom');
               setRange((current) => ({ ...current, from: e.target.value }));
-              setPage(1);
             }}
             className="field w-auto text-xs"
             aria-label="Data inicial"
@@ -142,9 +142,8 @@ export function FinancePage() {
             type="date"
             value={range.to}
             onChange={(e) => {
-              setPreset('custom');
+              applyPreset('custom');
               setRange((current) => ({ ...current, to: e.target.value }));
-              setPage(1);
             }}
             className="field w-auto text-xs"
             aria-label="Data final"
@@ -347,11 +346,17 @@ function OrdersTable({
   );
 }
 
+
 /**
- * Botão de exportar PDF.
+ * Botão de exportar CSV.
  *
- * A geração acontece na fila, então o botão não “trava” esperando: dispara o
- * pedido e passa a consultar o estado até o arquivo ficar pronto.
+ * Antes isto enfileirava um PDF e ficava consultando o estado até o arquivo
+ * ficar pronto. O CSV é gerado em streaming na própria resposta, então não há
+ * job, nem histórico, nem polling: o clique baixa o arquivo.
+ *
+ * O estado de "gerando" continua existindo porque a resposta não é instantânea
+ * num período longo — o servidor começa a enviar antes de terminar a consulta,
+ * mas o `apiDownload` só resolve quando o corpo inteiro chegou.
  */
 function ExportButton({
   range,
@@ -360,82 +365,38 @@ function ExportButton({
   range: { from: string; to: string };
   search: string;
 }) {
-  const queryClient = useQueryClient();
-  const [trackingId, setTrackingId] = useState<number | null>(null);
+  const [working, setWorking] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const request = useMutation({
-    mutationFn: () =>
-      apiFetch<ReportExport>('/admin/finance/exports', {
-        method: 'POST',
-        body: JSON.stringify({ from: range.from, to: range.to, search }),
-      }),
-    onSuccess: (report) => {
-      setMessage(null);
-      setTrackingId(report.id);
-      queryClient.invalidateQueries({ queryKey: ['finance', 'exports'] });
-    },
-    onError: (error) => {
-      // O limite de linhas volta como erro de validação; mostrar a mensagem do
-      // servidor é mais útil que um "erro ao exportar" genérico.
-      const detail =
-        error instanceof ApiError
-          ? (error.errors?.range?.[0] ?? error.message)
-          : 'Não foi possível gerar o relatório.';
-      setMessage(detail);
-    },
-  });
+  function exportCsv() {
+    setWorking(true);
+    setMessage(null);
 
-  const { data: tracked } = useQuery({
-    queryKey: ['finance', 'exports', trackingId],
-    queryFn: () => apiFetch<ReportExport>(`/admin/finance/exports/${trackingId}`),
-    enabled: trackingId !== null,
-    // Consulta enquanto estiver na fila; para assim que houver desfecho.
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status === 'queued' || status === 'processing' ? 1500 : false;
-    },
-  });
-
-  // Baixa sozinho assim que o worker termina — o dono pediu o PDF, não um
-  // segundo clique.
-  useEffect(() => {
-    if (tracked?.status !== 'done' || trackingId === null) return;
+    const query = new URLSearchParams({ from: range.from, to: range.to });
+    if (search) query.set('search', search);
 
     apiDownload(
-      `/admin/finance/exports/${trackingId}/download`,
-      `financeiro-${tracked.from}-a-${tracked.to}.pdf`,
-    ).catch(() => setMessage('O relatório ficou pronto, mas o download falhou.'));
-
-    setTrackingId(null);
-  }, [tracked, trackingId]);
-
-  useEffect(() => {
-    if (tracked?.status === 'failed') {
-      setMessage(tracked.error ?? 'Não foi possível gerar o relatório.');
-      setTrackingId(null);
-    }
-  }, [tracked]);
-
-  const working =
-    request.isPending ||
-    tracked?.status === 'queued' ||
-    tracked?.status === 'processing';
+      `/admin/finance/export?${query}`,
+      `financeiro-${range.from}-a-${range.to}.csv`,
+    )
+      .catch(() => setMessage('Não foi possível gerar o relatório.'))
+      .finally(() => setWorking(false));
+  }
 
   return (
     <div className="text-right">
       <button
         type="button"
-        onClick={() => request.mutate()}
+        onClick={exportCsv}
         disabled={working}
         className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
       >
-        {working ? 'Gerando PDF…' : 'Exportar PDF'}
+        {working ? 'Gerando CSV…' : 'Exportar CSV'}
       </button>
 
       {working && (
         <p className="mt-1 text-[11px] text-muted">
-          Pode fechar esta tela — o arquivo continua sendo gerado.
+          Períodos longos podem levar alguns segundos.
         </p>
       )}
 

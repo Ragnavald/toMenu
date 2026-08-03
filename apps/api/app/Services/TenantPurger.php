@@ -21,12 +21,14 @@ use Stripe\StripeClient;
  * delete e preserva pedidos como documento fiscal. Aqui a linha do tenant é
  * apagada de verdade, e as FKs `cascadeOnDelete` levam junto categorias,
  * produtos, modificadores, clientes, endereços, pedidos, itens, pagamentos,
- * report_jobs, settings e usuários. Não há desfazer — só restore de backup.
+ * settings e usuários. Não há desfazer — só restore de backup.
  *
  * Os três estados fora do Postgres também são limpos, porque nenhum deles
  * desaparece com o DELETE:
  *
  *   R2/S3   as imagens continuariam servidas por URL pública indefinidamente;
+ *   local   PDFs de relatório gerados antes de a exportação virar CSV: nada
+ *           mais escreve ali, mas o que já existe não sai com o DELETE;
  *   Redis   o mapa slug -> id sobreviveria por até uma hora, e o cardápio
  *           cacheado seria servido a quem tivesse a URL;
  *   Stripe  a conta Connect não é apagada de propósito (o dinheiro é do
@@ -38,7 +40,7 @@ use Stripe\StripeClient;
  *   2. Stripe    — precisa do stripe_account_id, que some com a linha;
  *   3. DELETE    — dentro de transação;
  *   4. cache     — depois do commit, senão uma leitura concorrente repovoa;
- *   5. R2        — por último, porque é o passo que pode falhar e não deve
+ *   5. arquivos  — por último, porque é o passo que pode falhar e não deve
  *                  impedir a exclusão dos dados.
  */
 class TenantPurger
@@ -59,7 +61,7 @@ class TenantPurger
     }
 
     /**
-     * @return array{counts: array<string,int>, assets: array{disk: string|null, deleted: int, failed: int}, connect: string}
+     * @return array{counts: array<string,int>, assets: array{disk: string|null, deleted: int, failed: int, reports: string}, connect: string}
      */
     public function purge(
         Tenant $tenant,
