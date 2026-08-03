@@ -30,6 +30,13 @@
  * que não pertencem a loja nenhuma.
  */
 :root {
+  /*
+   * Sem isto, um aparelho em modo escuro ainda pinta de escuro o que é do
+   * navegador e não nosso — barra de rolagem, campos de formulário, o backdrop
+   * do <dialog> do checkout — sobre uma página que já é branca.
+   */
+  color-scheme: light;
+
   --brand: 234 88 12;
   --brand-soft: 255 237 213;
   --brand-ink: 255 255 255;
@@ -46,36 +53,21 @@
 }
 
 /*
- * Modo escuro.
+ * As páginas da plataforma — landing e documentos legais — são sempre claras.
  *
- * Apenas as superfícies invertem; a cor de marca do tenant é preservada,
- * porque ela é a identidade da loja e deve permanecer reconhecível.
+ * Havia aqui um modo escuro por `prefers-color-scheme`, removido de propósito:
+ * a landing é material de apresentação, e a versão clara é a que corresponde à
+ * identidade da marca. Deixá-la seguir o aparelho do visitante significava
+ * publicar duas primeiras impressões diferentes sem controle sobre qual delas
+ * cada pessoa veria.
  *
- * A superfície é carvão, não preto: a landing é quase toda fundo, e um valor
- * quase puro contra o texto claro deixa o contraste duro em tela grande.
+ * Isto NÃO afeta o cardápio das lojas: o tema do tenant é declarado em
+ * [data-tenant] (abaixo) e nunca dependeu destas regras.
+ *
+ * Para reintroduzir o escuro aqui, o seletor precisa continuar escapando o
+ * tenant — era `:not(:has([data-tenant]))` — senão a superfície da plataforma
+ * vaza por cima da identidade da loja.
  */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']):not(:has([data-tenant])) {
-    --surface: 24 24 27;
-    --ink: 244 244 245;
-    --ink-muted: rgb(var(--ink) / 0.64);
-    --ink-subtle: rgb(var(--ink) / 0.46);
-    --hairline: rgb(var(--ink) / 0.13);
-    --elevated: rgb(var(--ink) / 0.06);
-    --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.28);
-  }
-}
-
-:root[data-theme='dark']:not(:has([data-tenant])) {
-  --surface: 24 24 27;
-  --ink: 244 244 245;
-  --ink-muted: rgb(var(--ink) / 0.64);
-  --ink-subtle: rgb(var(--ink) / 0.46);
-  --hairline: rgb(var(--ink) / 0.13);
-  --elevated: rgb(var(--ink) / 0.06);
-  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.28);
-}
-
 body {
   background: rgb(var(--surface));
   color: rgb(var(--ink));

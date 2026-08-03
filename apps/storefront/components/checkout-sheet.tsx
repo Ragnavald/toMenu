@@ -4,6 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import { formatMoney, submitOrder } from '@/lib/api';
 import { addStoredOrder } from '@/lib/orders-storage';
 import {
+  clearStoredCustomer,
+  getStoredCustomer,
+  saveStoredCustomer,
+} from '@/lib/customer-storage';
+import {
   FULFILLMENT_LABELS,
   isDelivery,
   type Fulfillment,
@@ -68,6 +73,9 @@ export function CheckoutSheet({
   const [loadingCep, setLoadingCep] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [orderNumber, setOrderNumber] = useState<number | null>(null);
+  // Só vira true quando havia perfil salvo — é o que decide mostrar o "não é
+  // você?" em vez de um botão que não limpa nada.
+  const [prefilled, setPrefilled] = useState(false);
 
   const [form, setForm] = useState({
     name: '',
@@ -86,6 +94,16 @@ export function CheckoutSheet({
 
   useEffect(() => {
     dialogRef.current?.showModal();
+  }, []);
+
+  // Ler localStorage no initializer do useState quebraria a hidratação: o HTML
+  // do servidor sai com os campos vazios. Preenche depois da montagem.
+  useEffect(() => {
+    const saved = getStoredCustomer();
+    if (!saved) return;
+
+    setForm((current) => ({ ...current, ...saved }));
+    setPrefilled(true);
   }, []);
 
   const deliveryFee = isDelivery(fulfillment)
@@ -171,6 +189,20 @@ export function CheckoutSheet({
       });
 
       setOrderNumber(result.number);
+
+      // Depois do aceite da API, nunca antes: um endereço que o servidor
+      // recusou não deve voltar preenchido no próximo pedido.
+      saveStoredCustomer({
+        name: form.name,
+        phone: form.phone,
+        zip: form.zip,
+        street: form.street,
+        number: form.number,
+        complement: form.complement,
+        district: form.district,
+        city: form.city,
+        state: form.state,
+      });
 
       addStoredOrder(tenantSlug, {
         id: result.id,
@@ -375,6 +407,50 @@ export function CheckoutSheet({
 
               {step === 'details' && (
                 <div className="grid gap-3.5">
+                  {/*
+                    Celular emprestado ou pedido para outra pessoa: sem esta
+                    saída, o jeito de trocar os dados seria apagar dez campos
+                    na mão.
+                  */}
+                  {prefilled && (
+                    <div
+                      className="flex items-center justify-between gap-3 px-3 py-2.5 text-xs"
+                      style={{
+                        background: 'rgb(var(--brand-soft) / 0.6)',
+                        borderRadius: 'calc(var(--radius) * 0.55)',
+                      }}
+                    >
+                      <span className="text-muted">
+                        Preenchemos com os dados do seu último pedido.
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearStoredCustomer();
+                          setForm((current) => ({
+                            ...current,
+                            name: '',
+                            phone: '',
+                            cpf: '',
+                            zip: '',
+                            street: '',
+                            number: '',
+                            complement: '',
+                            district: '',
+                            city: '',
+                            state: '',
+                          }));
+                          setPrefilled(false);
+                        }}
+                        className="shrink-0 font-semibold underline underline-offset-2"
+                        style={{ color: 'rgb(var(--brand))' }}
+                      >
+                        Não é você?
+                      </button>
+                    </div>
+                  )}
+
                   <div className="grid gap-1.5">
                     <label htmlFor="name" className="text-xs font-medium text-muted">
                       Nome

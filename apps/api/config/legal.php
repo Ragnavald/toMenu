@@ -24,7 +24,7 @@ return [
      * públicas precisam exibir a data sem consultar a API. Os dois valores
      * precisam andar juntos.
      */
-    'terms_version' => env('LEGAL_TERMS_VERSION', '2026-08-02'),
+    'terms_version' => env('LEGAL_TERMS_VERSION', '2026-08-03'),
 
     /*
      * Canal do encarregado pelo tratamento de dados (LGPD, art. 41).

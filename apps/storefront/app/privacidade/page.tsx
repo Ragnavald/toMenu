@@ -239,9 +239,13 @@ export default function PrivacyPage() {
         </P>
         <P>
           Parte dessas informações fica no armazenamento local do seu navegador
-          — o carrinho e o histórico de pedidos, por exemplo — e pode ser
-          apagada limpando os dados do site. Não usamos cookies de publicidade
-          nem rastreamento entre sites.
+          — o carrinho, o histórico de pedidos e os dados de contato e entrega
+          que você digita no checkout (nome, telefone e endereço), guardados
+          para não precisar redigitá-los no próximo pedido. O CPF não é
+          guardado: você o informa a cada pedido em que quiser incluí-lo. Esses
+          dados ficam só no seu aparelho, e podem ser apagados pelo botão “Não é
+          você?” no checkout ou limpando os dados do site. Não usamos cookies de
+          publicidade nem rastreamento entre sites.
         </P>
       </Clause>
 

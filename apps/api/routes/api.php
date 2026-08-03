@@ -231,15 +231,13 @@ Route::prefix('admin')
             Route::get('orders', [OrderAdminController::class, 'index']);
             Route::patch('orders/{order}/status', [OrderAdminController::class, 'updateStatus']);
 
-            // Financeiro. As rotas de exportação vêm antes de {report} para não
-            // serem capturadas pelo route model binding.
             Route::get('finance/overview', [FinanceAdminController::class, 'overview']);
             Route::get('finance/orders', [FinanceAdminController::class, 'orders']);
-            Route::get('finance/exports', [FinanceAdminController::class, 'exports']);
-            Route::post('finance/exports', [FinanceAdminController::class, 'requestExport'])
-                ->middleware('throttle:20,1'); // Cada chamada enfileira trabalho pesado.
-            Route::get('finance/exports/{report}', [FinanceAdminController::class, 'showExport']);
-            Route::get('finance/exports/{report}/download', [FinanceAdminController::class, 'download']);
+            // CSV em streaming, direto na resposta. GET e não POST porque nada
+            // é criado: o navegador baixa pela própria navegação, sem fila,
+            // sem registro e sem arquivo em disco.
+            Route::get('finance/export', [FinanceAdminController::class, 'export'])
+                ->middleware('throttle:20,1'); // Consulta longa; não é para disparar em rajada.
 
             Route::put('settings/delivery', [SettingsController::class, 'updateDelivery']);
             Route::put('settings/payments', [SettingsController::class, 'updatePayments']);
