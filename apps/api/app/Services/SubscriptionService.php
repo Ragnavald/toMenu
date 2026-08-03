@@ -268,13 +268,43 @@ class SubscriptionService
      * Criar um cliente novo a cada tentativa de assinatura espalharia o
      * histórico de cobrança da mesma loja por vários customers, e o portal
      * mostraria só uma fatia das faturas.
+     *
+     * Público porque o `EnsureStripeCustomer` chama isto em fila, quando a tela
+     * de assinatura abre, para que o clique em assinar não pague este
+     * round-trip. O checkout continua chamando por conta própria: o job é
+     * oportunista e pode não ter rodado ainda.
      */
-    private function ensureCustomer(Tenant $tenant): string
+    public function ensureCustomer(Tenant $tenant): string
     {
         if ($tenant->stripe_customer_id) {
             return $tenant->stripe_customer_id;
         }
 
+        /*
+         * O job e o clique podem correr juntos — o lojista que abre a tela e
+         * clica em seguida dispara os dois. Reler dentro do lock e conferir de
+         * novo evita o cliente duplicado que o `uniqueId` do job sozinho não
+         * cobre, porque o checkout não passa por ele.
+         */
+        return $tenant->getConnection()->transaction(function () use ($tenant) {
+            $fresh = Tenant::withoutGlobalScopes()
+                ->lockForUpdate()
+                ->find($tenant->id);
+
+            if ($fresh?->stripe_customer_id) {
+                // Mantém o model do chamador coerente com o banco.
+                $tenant->stripe_customer_id = $fresh->stripe_customer_id;
+
+                return $fresh->stripe_customer_id;
+            }
+
+            return $this->createCustomer($tenant);
+        });
+    }
+
+    /** Cria o cliente no Stripe e guarda o id no tenant. */
+    private function createCustomer(Tenant $tenant): string
+    {
         $owner = $tenant->users()->where('role', 'owner')->first();
 
         $customer = $this->stripe->customers->create([
