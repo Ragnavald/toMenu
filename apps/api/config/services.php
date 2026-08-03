@@ -48,10 +48,34 @@ return [
         'timeout' => env('TURNSTILE_TIMEOUT', 5),
     ],
 
+    /*
+     * Stripe — dois conjuntos de chaves, um modo ativo.
+     *
+     * STRIPE_MODE (test|live) escolhe qual trio de credenciais vale. Os dois
+     * convivem no mesmo .env de propósito: trocar de ambiente vira a edição de
+     * UMA linha, e não a substituição de três chaves à mão — operação em que
+     * esquecer o webhook secret para trás é o erro clássico, e silencioso,
+     * porque a cobrança funciona e só a confirmação some.
+     *
+     * As chaves de teste também servem de fallback do modo live: um deploy com
+     * STRIPE_MODE=live e as chaves live ausentes falha na validação do
+     * StripeServiceProvider, e não com uma cobrança real feita por engano.
+     */
     'stripe' => [
-        'key' => env('STRIPE_KEY'),
-        'secret' => env('STRIPE_SECRET'),
-        'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+        'mode' => env('STRIPE_MODE', 'test'),
+
+        'test' => [
+            'key' => env('STRIPE_TEST_KEY'),
+            'secret' => env('STRIPE_TEST_SECRET'),
+            'webhook_secret' => env('STRIPE_TEST_WEBHOOK_SECRET'),
+        ],
+
+        'live' => [
+            'key' => env('STRIPE_LIVE_KEY'),
+            'secret' => env('STRIPE_LIVE_SECRET'),
+            'webhook_secret' => env('STRIPE_LIVE_WEBHOOK_SECRET'),
+        ],
+
         // Comissão retida pela plataforma em cada pedido (application_fee).
         'platform_fee_percent' => env('STRIPE_PLATFORM_FEE_PERCENT', 5.0),
     ],

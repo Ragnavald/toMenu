@@ -204,7 +204,13 @@ class StoreDeletionTest extends TestCase
     public function test_exclui_mesmo_sem_stripe_configurado(): void
     {
         $this->app->forgetInstance(StripeClient::class);
-        config(['services.stripe.secret' => '']);
+        // Zera as credenciais do modo ativo: resolver o StripeClient passa a
+        // lançar, que é exatamente a condição que este teste protege.
+        config([
+            'services.stripe.mode' => 'test',
+            'services.stripe.test.secret' => '',
+            'services.stripe.test.key' => '',
+        ]);
 
         $tenant = $this->makeTenant('sem-stripe');
         $owner = $this->owner($tenant);

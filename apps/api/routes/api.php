@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\BillingController;
 use App\Http\Controllers\Admin\CategoryAdminController;
 use App\Http\Controllers\Admin\FinanceAdminController;
 use App\Http\Controllers\Admin\ModifierGroupAdminController;
@@ -243,6 +244,33 @@ Route::prefix('admin')
             Route::put('settings/delivery', [SettingsController::class, 'updateDelivery']);
             Route::put('settings/payments', [SettingsController::class, 'updatePayments']);
         });
+
+        /*
+         * Assinatura da loja na plataforma.
+         *
+         * FORA do grupo `plan.orders`: o plano somente-cardápio também é pago,
+         * e travar a cobrança atrás da capacidade de pedidos impediria
+         * justamente a loja mais barata de assinar.
+         *
+         * O throttle do checkout é baixo porque cada chamada cria sessão (e,
+         * na primeira vez, um cliente) no Stripe.
+         */
+        Route::get('billing', [BillingController::class, 'show']);
+        Route::post('billing/checkout', [BillingController::class, 'checkout'])
+            ->middleware('throttle:10,1');
+
+        /*
+         * Validação do cupom digitado.
+         *
+         * Throttle mais apertado que os demais: o endpoint responde se um
+         * código existe ou não, o que o torna a superfície natural para varrer
+         * cupons por tentativa. 20/min ainda é folgado para quem digita um
+         * código de verdade.
+         */
+        Route::post('billing/coupon', [BillingController::class, 'coupon'])
+            ->middleware('throttle:20,1');
+        Route::post('billing/portal', [BillingController::class, 'portal'])
+            ->middleware('throttle:10,1');
 
         Route::get('settings', [SettingsController::class, 'show']);
         Route::put('settings/profile', [SettingsController::class, 'updateProfile']);

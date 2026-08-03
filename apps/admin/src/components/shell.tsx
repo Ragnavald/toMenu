@@ -40,6 +40,8 @@ const NAV: { section: string; items: NavItem[] }[] = [
       { to: '/entrega', label: 'Entrega e pagamento', icon: <IconTruck />, needsOrders: true },
       { to: '/horarios', label: 'Horários', icon: <IconClock /> },
       { to: '/aparencia', label: 'Aparência', icon: <IconPalette /> },
+      // Sem `needsOrders`: o plano somente-cardápio também paga mensalidade.
+      { to: '/assinatura', label: 'Assinatura', icon: <IconCard /> },
     ],
   },
 ];
@@ -306,6 +308,19 @@ export function Shell({
           </div>
         )}
 
+        {/* Cobrança pendente. Não é dispensável: some quando for resolvida,
+            e enquanto isso a loja segue no ar — a suspensão é decisão do
+            staff, não um efeito automático do vencimento. */}
+        {settings?.store.status === 'past_due' && (
+          <div className="border-b border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-900 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
+            Seu período de teste terminou.{' '}
+            <NavLink to="/assinatura" className="font-medium underline">
+              Assine para manter a loja funcionando
+            </NavLink>
+            .
+          </div>
+        )}
+
         <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6 sm:px-6">
           {children}
         </main>
@@ -388,6 +403,23 @@ function IconClock() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
       <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.7" />
       <path d="M12 7.5V12l3 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconCard() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect
+        x="3"
+        y="5.5"
+        width="18"
+        height="13"
+        rx="2.5"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+      <path d="M3 10h18" stroke="currentColor" strokeWidth="1.7" />
     </svg>
   );
 }
