@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Services\OrderService;
 use App\Tenancy\TenantContext;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class OrderController extends Controller
 {
@@ -38,11 +39,25 @@ class OrderController extends Controller
         ], 201);
     }
 
-    public function show(Order $order, TenantContext $context): JsonResponse
+    /*
+     * O pedido é resolvido pelo NOME do parâmetro, não por type-hint.
+     *
+     * Esta ação atende duas rotas: `/api/orders/{order}` e
+     * `/api/{tenant}/orders/{order}`. Com `Order $order` na assinatura o
+     * Laravel injeta o primeiro parâmetro da rota — que na segunda é o slug
+     * do tenant, uma string — e o binding implícito estoura TypeError.
+     * Lendo pelo nome, a mesma assinatura serve às duas.
+     */
+    public function show(Request $request, TenantContext $context): JsonResponse
     {
         $tenant = $context->getOrFail();
 
-        abort_if($order->tenant_id !== $tenant->id, 404);
+        // O global scope do tenant continua valendo: um id de outra loja não
+        // é encontrado aqui. A conferência de tenant_id logo abaixo é a
+        // segunda barreira, não a única.
+        $order = Order::whereKey($request->route('order'))->first();
+
+        abort_if($order === null || $order->tenant_id !== $tenant->id, 404);
 
         $order->load(['items:id,order_id,product_name,quantity,unit_price_cents,total_cents']);
 

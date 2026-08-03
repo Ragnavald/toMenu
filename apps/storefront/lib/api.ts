@@ -99,14 +99,21 @@ export async function fetchMenuResult(tenantSlug: string): Promise<MenuResult> {
 }
 
 /*
- * As funções abaixo rodam no browser, onde a página já está em
- * `pizzaria.tomenu.app` — o Host correto vai junto sem esforço e a API resolve
- * o tenant por ele. X-Tenant fica só para o desenvolvimento em localhost, sem
- * wildcard DNS; em produção é ignorado.
+ * As funções abaixo rodam no browser, e mesmo assim mandam o slug no PATH.
+ *
+ * O Host não serve aqui: elas chamam API_URL (NEXT_PUBLIC_API_URL), que em
+ * produção é `api.{dominio}` — a API trata `api` como subdomínio reservado e
+ * se recusa a lê-lo como slug. A página estar em `pizzaria.tomenu.app` não
+ * ajuda, porque o Host que chega na API é o do destino do fetch, não o da
+ * página. Sem o slug no path a API não tinha como identificar a loja e todo
+ * pedido respondia 404 no fim do checkout.
+ *
+ * X-Tenant continua indo junto só pelo desenvolvimento; em produção a API o
+ * ignora e usa o path.
  */
 
 export async function submitOrder(tenantSlug: string, payload: unknown) {
-  const response = await fetch(`${API_URL}/api/orders`, {
+  const response = await fetch(`${API_URL}/api/${tenantSlug}/orders`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -134,7 +141,7 @@ export function formatMoney(cents: number): string {
 
 export async function fetchOrderStatus(tenantSlug: string, orderId: number) {
   try {
-    const response = await fetch(`${API_URL}/api/orders/${orderId}`, {
+    const response = await fetch(`${API_URL}/api/${tenantSlug}/orders/${orderId}`, {
       headers: {
         'X-Tenant': tenantSlug,
         Accept: 'application/json',

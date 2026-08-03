@@ -172,6 +172,29 @@ Route::prefix('{tenant}')
     ->middleware(['identify.tenant'])
     ->group(function () {
         Route::get('menu', MenuController::class)->middleware('throttle:240,1');
+
+        /*
+         * O pedido também precisa do slug no path, e não só o cardápio.
+         *
+         * O storefront chama a API pelo browser em NEXT_PUBLIC_API_URL, que em
+         * produção é `api.{dominio}` — subdomínio RESERVADO no IdentifyTenant.
+         * O branch de subdomínio o recusa de propósito, X-Tenant é ignorado
+         * (TENANCY_TRUST_HEADER=false) e a rota sem `{tenant}` não tinha um
+         * terceiro caminho: todo pedido em produção respondia 404 "Loja não
+         * encontrada", no último passo do checkout.
+         *
+         * O mesmo vale em desenvolvimento no acesso por caminho
+         * (localhost:3000/loja), onde o Host é o domínio raiz e não um
+         * subdomínio de um nível.
+         *
+         * `plan.orders` e os throttles acompanham as rotas: sem repeti-los aqui
+         * o path viraria um desvio silencioso do gate de plano e dos limites.
+         */
+        Route::post('orders', [OrderController::class, 'store'])
+            ->middleware(['plan.orders', 'throttle:20,1']);
+
+        Route::get('orders/{order}', [OrderController::class, 'show'])
+            ->middleware(['plan.orders', 'throttle:60,1']);
     });
 
 /*
