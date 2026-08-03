@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { API_BASE, ApiError, saveSession, type Session } from '@/lib/api';
+import { Shell } from '@/pages/forgot-password';
 import {
   Turnstile,
   isTurnstileEnabled,
@@ -23,6 +24,12 @@ export function LoginPage({
   const [loading, setLoading] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
   const turnstileRef = useRef<TurnstileHandle | null>(null);
+  // Credenciais certas, e-mail ainda por confirmar: troca o formulário pelo
+  // aviso com o reenvio do link.
+  const [unverified, setUnverified] = useState<{
+    email: string;
+    tenant: string;
+  } | null>(null);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -50,6 +57,21 @@ export function LoginPage({
         // O token vale uma verificação só: sem resetar, a segunda tentativa
         // reenviaria um token gasto e falharia mesmo com a senha certa.
         turnstileRef.current?.reset();
+
+        /*
+         * Conta com e-mail pendente: a senha está certa, falta só confirmar.
+         *
+         * Tratado à parte do erro genérico porque a saída é outra — mostrar
+         * "falha ao entrar" em vermelho não diz o que fazer, e o lojista que
+         * perdeu o e-mail (ou deixou o link expirar) ficaria sem caminho
+         * nenhum. O `code` é o contrato com o backend; a mensagem pode mudar.
+         */
+        if (data?.code === 'email_unverified') {
+          setUnverified({ email: data.email ?? email, tenant: data.tenant ?? tenant });
+
+          return;
+        }
+
         throw new ApiError(data?.message ?? 'Falha ao entrar.', response.status);
       }
 
@@ -70,6 +92,16 @@ export function LoginPage({
     } finally {
       setLoading(false);
     }
+  }
+
+  if (unverified) {
+    return (
+      <UnverifiedNotice
+        email={unverified.email}
+        tenant={unverified.tenant}
+        onBack={() => setUnverified(null)}
+      />
+    );
   }
 
   return (
@@ -168,5 +200,105 @@ export function LoginPage({
         </form>
       </div>
     </div>
+  );
+}
+
+/**
+ * "Confirme seu e-mail antes de prosseguir", na tentativa de login.
+ *
+ * Aparece quando a senha confere mas a conta ainda não foi confirmada — o caso
+ * de quem se cadastrou, fechou a aba e voltou depois, ou deixou o link
+ * expirar. O reenvio é a única saída possível daqui, então é ele que ganha o
+ * botão principal.
+ */
+function UnverifiedNotice({
+  email,
+  tenant,
+  onBack,
+}: {
+  email: string;
+  tenant: string;
+  onBack: () => void;
+}) {
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleResend() {
+    setSending(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/verify-email/resend`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ email, tenant }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new ApiError(
+          data?.errors?.email?.[0] ?? data?.message ?? 'Não foi possível reenviar.',
+          response.status,
+        );
+      }
+
+      setSent(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Falha ao reenviar.');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Shell title="Confirme seu e-mail">
+      <div className="panel grid gap-3 p-5 text-sm">
+        <p>
+          Sua conta em <strong>{tenant}</strong> ainda não foi confirmada. Abra
+          o link que enviamos para <strong>{email}</strong> para liberar o
+          acesso ao painel.
+        </p>
+
+        {sent ? (
+          <p className="text-xs text-emerald-600">
+            Link reenviado. Verifique sua caixa de entrada e o spam.
+          </p>
+        ) : (
+          <p className="text-xs text-muted">
+            Se o link expirou ou não chegou, peça outro.
+          </p>
+        )}
+
+        {error && (
+          <p
+            role="alert"
+            className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300"
+          >
+            {error}
+          </p>
+        )}
+
+        {!sent && (
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={sending}
+            className="mt-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+          >
+            {sending ? 'Enviando…' : 'Reenviar o link'}
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-xs text-muted underline-offset-2 hover:underline"
+        >
+          Voltar ao login
+        </button>
+      </div>
+    </Shell>
   );
 }

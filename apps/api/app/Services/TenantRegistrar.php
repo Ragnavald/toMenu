@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Mail\WelcomeStoreOwner;
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\TenantSettings;
@@ -11,7 +10,6 @@ use App\Tenancy\TenantContext;
 use Database\Seeders\PlanSeeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 /**
@@ -29,7 +27,10 @@ class TenantRegistrar
         'cdn', 'blog', 'help', 'suporte', 'status', 'painel', 'conta', 'login',
     ];
 
-    public function __construct(private TenantContext $context) {}
+    public function __construct(
+        private TenantContext $context,
+        private EmailVerifier $verifier,
+    ) {}
 
     public function register(array $data): array
     {
@@ -85,37 +86,41 @@ class TenantRegistrar
 
             return [
                 'tenant' => $tenant,
-                'token' => $user->createToken('admin')->plainTextToken,
+                // Sem token: a sessão só nasce depois que o e-mail é
+                // confirmado, e é o EmailVerificationController que a emite.
                 'user' => $user,
             ];
         });
 
-        $this->sendWelcome($result['user'], $result['tenant']);
+        $this->sendVerification($result['user'], $result['tenant']);
 
         return $result;
     }
 
     /**
-     * Boas-vindas, depois do commit.
+     * Link de confirmação, depois do commit.
      *
      * Fora da transação de propósito. Dentro dela o e-mail sairia antes do
-     * commit e um rollback deixaria o lojista com as boas-vindas de uma loja
-     * que não existe — e, na fila, o worker poderia pegar o job antes de o
-     * tenant estar visível para outra conexão e falhar ao desserializar o
-     * model.
+     * commit e um rollback entregaria ao lojista o link de uma conta que não
+     * existe.
      *
-     * O try/catch existe porque o cadastro já está gravado neste ponto: o
-     * lojista tem loja, token e sessão, e derrubar a resposta com 500 por
-     * causa de um e-mail o mandaria de volta a um formulário que recusaria o
-     * slug agora ocupado por ele mesmo. Falha aqui vira log, não erro de
-     * cadastro.
+     * O try/catch existe porque o cadastro já está gravado neste ponto, e
+     * derrubar a resposta com 500 mandaria o lojista de volta a um formulário
+     * que agora recusaria o slug ocupado por ele mesmo. A diferença para as
+     * boas-vindas é a consequência da falha: sem este e-mail ninguém entra no
+     * painel, então o erro sobe como `error` no log (e não `warning`) e a tela
+     * de confirmação oferece o reenvio, que é a saída do lojista.
+     *
+     * As boas-vindas saem depois, no VerifyEmail: mandar "sua loja está no ar"
+     * junto do "confirme seu e-mail" poria duas chamadas para ação
+     * concorrentes na mesma caixa, e a primeira levaria a um painel trancado.
      */
-    private function sendWelcome(User $user, Tenant $tenant): void
+    private function sendVerification(User $user, Tenant $tenant): void
     {
         try {
-            Mail::to($user->email)->send(new WelcomeStoreOwner($user, $tenant));
+            $this->verifier->sendLink($user, $tenant);
         } catch (\Throwable $e) {
-            Log::warning('Falha ao enviar o e-mail de boas-vindas.', [
+            Log::error('Falha ao enviar o e-mail de confirmação do cadastro.', [
                 'tenant_id' => $tenant->id,
                 'exception' => $e,
             ]);

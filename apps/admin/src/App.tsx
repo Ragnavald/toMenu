@@ -7,6 +7,7 @@ import { useForcedLightTheme } from '@/lib/theme';
 import { LoginPage } from '@/pages/login';
 import { ForgotPasswordPage } from '@/pages/forgot-password';
 import { ResetPasswordPage } from '@/pages/reset-password';
+import { VerifyEmailPage } from '@/pages/verify-email';
 import { Shell } from '@/components/shell';
 import { OrdersPage } from '@/pages/orders';
 import { FinancePage } from '@/pages/finance';
@@ -121,8 +122,15 @@ function UnauthenticatedRoutes({
 }: {
   onAuthenticated: (session: Session) => void;
 }) {
-  const [view, setView] = useState<'login' | 'forgot' | 'reset'>(() =>
-    window.location.pathname === '/redefinir-senha' ? 'reset' : 'login',
+  const [view, setView] = useState<'login' | 'forgot' | 'reset' | 'verify'>(
+    () => {
+      if (window.location.pathname === '/redefinir-senha') return 'reset';
+      // O link do e-mail de cadastro. Como o de senha, precisa abrir para quem
+      // ainda NÃO tem sessão — é justamente o que ele vai criar.
+      if (window.location.pathname === '/confirmar-email') return 'verify';
+
+      return 'login';
+    },
   );
 
   // Limpa token e e-mail da barra de endereços ao sair da tela de redefinição:
@@ -131,6 +139,12 @@ function UnauthenticatedRoutes({
   function backToLogin() {
     window.history.replaceState(null, '', '/');
     setView('login');
+  }
+
+  if (view === 'verify') {
+    return (
+      <VerifyEmailPage onAuthenticated={onAuthenticated} onDone={backToLogin} />
+    );
   }
 
   if (view === 'reset') {

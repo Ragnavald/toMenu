@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Central;
 
 use App\Http\Controllers\Controller;
 use App\Models\Plan;
+use App\Services\EmailVerifier;
 use App\Services\TenantRegistrar;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -81,7 +82,17 @@ class RegistrationController extends Controller
         $tenant = $result['tenant'];
 
         return response()->json([
-            'token' => $result['token'],
+            /*
+             * Nenhum token aqui, de propósito.
+             *
+             * A loja nasce com o e-mail por confirmar, e a sessão só é emitida
+             * quando o link do e-mail é consumido (EmailVerificationController).
+             * Devolver a credencial junto do cadastro daria acesso ao painel
+             * sem que ninguém provasse ter a caixa de entrada — que é
+             * exatamente o que a confirmação existe para impedir.
+             */
+            'pendingVerification' => true,
+            'expiresInMinutes' => EmailVerifier::TOKEN_TTL_MINUTES,
             'user' => [
                 'name' => $result['user']->name,
                 'email' => $result['user']->email,

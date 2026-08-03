@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\OrderAdminController;
 use App\Http\Controllers\Admin\ProductAdminController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\StoreDeletionController;
+use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Central\RegistrationController;
@@ -86,6 +87,27 @@ Route::post('auth/forgot-password', [PasswordResetController::class, 'request'])
     ->middleware(['throttle:5,1', 'turnstile']);
 
 Route::post('auth/reset-password', [PasswordResetController::class, 'reset'])
+    ->middleware('throttle:5,1');
+
+/*
+ * Confirmação do e-mail do cadastro.
+ *
+ * Mesma divisão do fluxo de senha, e pelos mesmos motivos: o `resend` dispara
+ * e-mail para terceiros e soma um limite por conta (no controller) ao limite
+ * por IP daqui; o `verify` não leva Turnstile porque quem chega nele veio de um
+ * link na própria caixa de entrada, e um desafio ali só atrapalharia quem já
+ * provou ter acesso a ela.
+ *
+ * O `resend` também fica sem Turnstile, ao contrário do forgot-password: ele é
+ * chamado pela tela de confirmação logo após o cadastro, onde o widget acabou
+ * de ser resolvido e gasto no POST /register — montar um segundo desafio no
+ * mesmo minuto pediria ao lojista que provasse duas vezes ser humano. O limite
+ * por conta é o que segura o abuso aqui.
+ */
+Route::post('auth/verify-email', [EmailVerificationController::class, 'verify'])
+    ->middleware('throttle:10,1');
+
+Route::post('auth/verify-email/resend', [EmailVerificationController::class, 'resend'])
     ->middleware('throttle:5,1');
 
 /*

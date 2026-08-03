@@ -1,5 +1,6 @@
 <?php
 
+use App\Mail\VerifyEmailLink;
 use App\Mail\WelcomeStoreOwner;
 use App\Models\Plan;
 use App\Models\Tenant;
@@ -32,6 +33,40 @@ function signupPayload(array $overrides = []): array
     ], $overrides);
 }
 
+/** Token em texto puro do link de confirmação que acabou de ser enviado. */
+function capturedVerificationToken(): string
+{
+    $mail = null;
+    Mail::assertSent(VerifyEmailLink::class, function ($m) use (&$mail) {
+        $mail = $m;
+
+        return true;
+    });
+
+    return $mail->token;
+}
+
+/**
+ * Cadastra e confirma o e-mail, devolvendo o token de sessão.
+ *
+ * O cadastro sozinho já não entrega credencial: quem precisa de uma sessão
+ * para exercitar o painel tem de passar pela confirmação, como o lojista.
+ */
+function registerAndVerify(array $overrides = []): string
+{
+    Mail::fake();
+
+    $payload = signupPayload($overrides);
+
+    test()->postJson('/api/register', $payload)->assertCreated();
+
+    return test()->postJson('/api/auth/verify-email', [
+        'token' => capturedVerificationToken(),
+        'email' => $payload['email'],
+        'tenant' => $payload['slug'],
+    ])->assertOk()->json('token');
+}
+
 it('cria loja, dono e configurações padrão em um único cadastro', function () {
     $response = $this->postJson('/api/register', signupPayload());
 
@@ -39,7 +74,10 @@ it('cria loja, dono e configurações padrão em um único cadastro', function (
         ->assertJsonPath('tenant.slug', 'cantina-da-nona')
         ->assertJsonPath('tenant.onboardingStep', 1);
 
-    expect($response->json('token'))->not->toBeEmpty();
+    // Nenhuma credencial no cadastro: a loja nasce com o e-mail por confirmar,
+    // e a sessão só é emitida quando o link do e-mail é consumido.
+    expect($response->json('token'))->toBeNull()
+        ->and($response->json('pendingVerification'))->toBeTrue();
 
     $tenant = Tenant::where('slug', 'cantina-da-nona')->firstOrFail();
 
@@ -163,9 +201,8 @@ it('permite o mesmo email em lojas diferentes', function () {
     expect(User::where('email', 'ana@cantina.test')->count())->toBe(2);
 });
 
-it('o token devolvido no cadastro já acessa o admin da nova loja', function () {
-    $response = $this->postJson('/api/register', signupPayload());
-    $token = $response->json('token');
+it('o token devolvido na confirmação já acessa o admin da nova loja', function () {
+    $token = registerAndVerify();
 
     $this->withHeaders([
         'Authorization' => "Bearer {$token}",
@@ -174,7 +211,7 @@ it('o token devolvido no cadastro já acessa o admin da nova loja', function () 
 });
 
 it('o token de uma loja não acessa o admin de outra', function () {
-    $token = $this->postJson('/api/register', signupPayload())->json('token');
+    $token = registerAndVerify();
 
     $this->postJson('/api/register', signupPayload([
         'store_name' => 'Outra',
@@ -188,10 +225,30 @@ it('o token de uma loja não acessa o admin de outra', function () {
     ])->getJson('/api/admin/settings')->assertForbidden();
 });
 
-it('envia o e-mail de boas-vindas para o dono da loja criada', function () {
+/*
+ * As boas-vindas mudaram de gatilho: saem na confirmação, não no cadastro.
+ *
+ * "Sua loja está no ar" chegando antes da confirmação levaria o lojista a um
+ * painel que o login ainda recusa.
+ */
+it('não envia boas-vindas antes da confirmação do e-mail', function () {
     Mail::fake();
 
     $this->postJson('/api/register', signupPayload())->assertCreated();
+
+    Mail::assertNotQueued(WelcomeStoreOwner::class);
+});
+
+it('envia as boas-vindas quando o e-mail é confirmado', function () {
+    Mail::fake();
+
+    $this->postJson('/api/register', signupPayload())->assertCreated();
+
+    $this->postJson('/api/auth/verify-email', [
+        'token' => capturedVerificationToken(),
+        'email' => 'ana@cantina.test',
+        'tenant' => 'cantina-da-nona',
+    ])->assertOk();
 
     Mail::assertQueued(WelcomeStoreOwner::class, function ($mail) {
         return $mail->hasTo('ana@cantina.test')
@@ -203,23 +260,24 @@ it('envia o e-mail de boas-vindas para o dono da loja criada', function () {
 /*
  * O e-mail sai depois do commit, e não de dentro da transação.
  *
- * Enfileirado lá dentro, um rollback deixaria o lojista com as boas-vindas de
- * uma loja que não existe — e o worker poderia pegar o job antes de o tenant
- * estar visível para outra conexão, falhando ao desserializar o model.
+ * Enviado lá dentro, um rollback entregaria ao lojista o link de confirmação
+ * de uma conta que não existe.
  */
-it('não envia boas-vindas quando o cadastro é recusado', function () {
+it('não envia e-mail quando o cadastro é recusado', function () {
     Mail::fake();
 
     $this->postJson('/api/register', signupPayload(['accepted_terms' => false]))
         ->assertStatus(422);
 
+    Mail::assertNothingSent();
     Mail::assertNothingQueued();
 });
 
 /*
- * O cadastro já está gravado quando o e-mail sai: o lojista tem loja, token e
- * sessão. Devolver 500 por causa do e-mail o mandaria de volta a um formulário
- * que agora recusaria o slug ocupado por ele mesmo.
+ * O cadastro já está gravado quando o e-mail sai. Devolver 500 por causa dele
+ * mandaria o lojista de volta a um formulário que agora recusaria o slug
+ * ocupado por ele mesmo — e a saída, sem sessão, é o reenvio na tela de
+ * confirmação.
  */
 it('conclui o cadastro mesmo se o envio do e-mail falhar', function () {
     Mail::shouldReceive('to')->andThrow(new RuntimeException('Resend fora do ar'));

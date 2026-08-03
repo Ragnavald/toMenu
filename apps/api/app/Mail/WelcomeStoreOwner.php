@@ -14,13 +14,16 @@ use Illuminate\Queue\SerializesModels;
 /**
  * Boas-vindas ao lojista que acabou de criar a loja.
  *
- * ShouldQueue, ao contrário do PasswordResetLink: aqui o lojista já entrou no
- * painel — o cadastro devolve o token e o front loga direto. Ninguém está
- * parado esperando este e-mail, então não há motivo para pendurar centenas de
- * milissegundos de chamada ao Resend no cadastro, que é a request mais crítica
- * do funil. Se o worker estiver parado, o e-mail atrasa sem que o lojista
- * perceba; se o Resend cair, a fila tenta de novo em vez de derrubar o
- * cadastro inteiro.
+ * Enviado ao confirmar o e-mail, e não ao criar a loja: é a confirmação que
+ * abre o painel, e "sua loja está no ar" chegando antes dela levaria o lojista
+ * a uma porta trancada.
+ *
+ * ShouldQueue, ao contrário do PasswordResetLink e do VerifyEmailLink: quando
+ * este e-mail sai o lojista já está dentro do painel, com a sessão emitida na
+ * mesma resposta. Ninguém está parado esperando por ele, então não há motivo
+ * para pendurar centenas de milissegundos de chamada ao Resend na request. Se
+ * o worker estiver parado, o e-mail atrasa sem que o lojista perceba; se o
+ * Resend cair, a fila tenta de novo em vez de derrubar a confirmação.
  */
 class WelcomeStoreOwner extends Mailable implements ShouldQueue
 {

@@ -9,9 +9,16 @@ import {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'localhost';
-const ADMIN_URL = process.env.NEXT_PUBLIC_ADMIN_URL ?? 'http://localhost:5173';
 
 type SlugState = 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
+
+/** Dados da loja recém-criada que a tela de confirmação precisa mostrar. */
+type CreatedAccount = {
+  email: string;
+  tenant: string;
+  storeName: string;
+  minutes: number;
+};
 
 type PlanSlug = 'cardapio' | 'pro';
 
@@ -76,6 +83,11 @@ export function SignupForm() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
   const turnstileRef = useRef<TurnstileHandle | null>(null);
+  // Preenchido quando a loja é criada: troca o formulário pelo aviso de
+  // confirmação. A loja já existe neste ponto — não há como voltar ao
+  // formulário, e reapresentá-lo só levaria o lojista a tentar de novo com um
+  // slug agora ocupado por ele mesmo.
+  const [created, setCreated] = useState<CreatedAccount | null>(null);
 
   // Enquanto o usuário não editar o endereço manualmente, ele acompanha o nome
   // da loja — a maioria nunca vai querer que sejam diferentes.
@@ -161,21 +173,28 @@ export function SignupForm() {
         return;
       }
 
-      // O token do cadastro já autentica o painel: o dono cai direto no wizard
-      // em vez de ter que fazer login logo após criar a conta.
-      const handoff = new URLSearchParams({
-        token: data.token,
+      /*
+       * A loja foi criada, mas ninguém entra no painel ainda.
+       *
+       * O cadastro não devolve mais token: a sessão só nasce quando o link
+       * enviado por e-mail é consumido. Em vez de redirecionar, a tela troca
+       * pelo aviso de confirmação, que também oferece o reenvio.
+       */
+      setCreated({
+        email,
         tenant: data.tenant.slug,
-        name: data.tenant.name,
-        user: data.user.name,
+        storeName: data.tenant.name,
+        minutes: data.expiresInMinutes ?? 30,
       });
-
-      window.location.href = `${ADMIN_URL}/bem-vindo#${handoff.toString()}`;
     } catch {
       setErrors({ geral: ['Não foi possível falar com o servidor.'] });
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (created) {
+    return <VerifyEmailNotice account={created} />;
   }
 
   const inputClass =
@@ -438,6 +457,127 @@ export function SignupForm() {
         14 dias grátis. Você não precisa informar cartão agora.
       </p>
     </form>
+  );
+}
+
+/**
+ * "Confirme seu e-mail antes de prosseguir."
+ *
+ * Substitui o formulário assim que a loja é criada. A conta existe, mas o
+ * painel só abre depois que o link enviado por e-mail é consumido — por isso
+ * não há atalho para o painel aqui: ele responderia com a tela de login, que
+ * também recusaria a conta.
+ */
+function VerifyEmailNotice({ account }: { account: CreatedAccount }) {
+  const [resent, setResent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Segura o segundo clique impaciente: o backend limita a três reenvios por
+  // conta a cada 15 minutos, e gastar as tentativas em cliques repetidos
+  // deixaria o lojista sem saída justamente quando o e-mail demora.
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+
+    const timer = setTimeout(() => setCooldown((value) => value - 1), 1000);
+
+    return () => clearTimeout(timer);
+  }, [cooldown]);
+
+  async function handleResend() {
+    setSending(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${API_URL}/api/auth/verify-email/resend`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ email: account.email, tenant: account.tenant }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.errors?.email?.[0] ??
+            data?.message ??
+            'Não foi possível reenviar o e-mail.',
+        );
+      }
+
+      setResent(true);
+      setCooldown(60);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : 'Falha ao reenviar o e-mail.',
+      );
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div
+      className="grid gap-4 border p-5 text-center"
+      style={{
+        borderRadius: 'calc(var(--radius) * 0.6)',
+        borderColor: 'var(--hairline)',
+      }}
+    >
+      <div className="grid gap-2">
+        <h3 className="text-base font-semibold">
+          Confirme seu e-mail antes de prosseguir
+        </h3>
+
+        <p className="text-sm leading-relaxed text-muted">
+          A loja <strong>{account.storeName}</strong> foi criada. Enviamos um
+          link de confirmação para <strong>{account.email}</strong> — abra o
+          link para liberar o acesso ao painel.
+        </p>
+      </div>
+
+      <p className="text-xs text-subtle">
+        O link vale por {account.minutes} minutos. Se não encontrar o e-mail,
+        procure na caixa de spam.
+      </p>
+
+      <div className="border-t border-[var(--hairline)] pt-4">
+        {resent ? (
+          <p className="text-xs text-emerald-600">
+            Link reenviado. Verifique sua caixa de entrada.
+          </p>
+        ) : (
+          <p className="text-xs text-subtle">Não recebeu?</p>
+        )}
+
+        <button
+          type="button"
+          onClick={handleResend}
+          disabled={sending || cooldown > 0}
+          className="mt-2 border px-4 py-2 text-xs font-semibold transition-opacity hover:opacity-90 disabled:opacity-55"
+          style={{
+            borderRadius: 'calc(var(--radius) * 0.55)',
+            borderColor: 'var(--hairline)',
+          }}
+        >
+          {sending
+            ? 'Reenviando…'
+            : cooldown > 0
+              ? `Reenviar em ${cooldown}s`
+              : 'Reenviar o link'}
+        </button>
+
+        {error && (
+          <p role="alert" className="mt-2 text-xs text-red-600">
+            {error}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
