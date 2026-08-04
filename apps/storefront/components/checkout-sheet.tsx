@@ -150,6 +150,18 @@ export function CheckoutSheet({
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
+
+    // Os dois passos dividem o mesmo <form>, e no passo `cart` os campos
+    // `required` da entrega sequer existem no DOM — nada barra um submit
+    // implícito (Enter num campo, comportamento de form dentro de <dialog>).
+    // Sem esta guarda o pedido era enviado com o endereço que veio do
+    // localStorage e o cliente ia do carrinho direto para "Pedido confirmado",
+    // sem nunca ver a etapa de entrega.
+    if (step !== 'details') {
+      setStep('details');
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
 
