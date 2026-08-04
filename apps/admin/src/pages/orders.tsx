@@ -1,6 +1,10 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiFetch, formatMoney } from '@/lib/api';
+import {
+  readDeliveredByDrag,
+  writeDeliveredByDrag,
+} from '@/lib/delivery-release';
 import { connectionStore } from '@/lib/echo';
 import {
   FULFILLMENT_LABELS,
@@ -165,13 +169,54 @@ export function OrdersPage() {
    */
   const [statusError, setStatusError] = useState<string | null>(null);
 
+  /**
+   * Pedidos que chegaram em "Entregue" pelo arraste.
+   *
+   * O botão Finalizar só libera para estes: por decisão de produto, o gesto de
+   * arrastar até a coluna é o que confirma a entrega — mudar pelo select move o
+   * pedido, mas não autoriza tirá-lo do painel.
+   *
+   * Persistido no localStorage para atravessar o F5 e a troca de aba. Detalhes
+   * do armazenamento em `lib/delivery-release`.
+   */
+  const [draggedToDelivered, setDraggedToDelivered] = useState<Set<number>>(
+    readDeliveredByDrag,
+  );
+
+  /** Atualiza a liberação e grava, mantendo as duas pontas em sincronia. */
+  const updateReleased = (mutate: (current: Set<number>) => Set<number>) => {
+    setDraggedToDelivered((current) => {
+      const next = mutate(current);
+      if (next === current) {
+        return current;
+      }
+      writeDeliveredByDrag(next);
+      return next;
+    });
+  };
+
   const updateStatus = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) =>
       apiFetch(`/admin/orders/${id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status }),
       }),
-    onMutate: () => setStatusError(null),
+    onMutate: ({ id, status }) => {
+      setStatusError(null);
+
+      // Sair de "Entregue" por qualquer caminho revoga a liberação — inclusive
+      // pelo select, que não passa pelo handleDrop.
+      if (status !== 'delivered') {
+        updateReleased((current) => {
+          if (!current.has(id)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(id);
+          return next;
+        });
+      }
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['orders'] }),
     onError: (caught) =>
       setStatusError(
@@ -181,7 +226,75 @@ export function OrdersPage() {
       ),
   });
 
+  /**
+   * Tira o pedido do painel.
+   *
+   * Invalida `orders` — a lista do painel e a do histórico compartilham o
+   * prefixo da chave, então o card sai de uma tela e aparece na outra sem que
+   * nenhuma das duas precise saber da existência da outra.
+   */
+  const archiveOrder = useMutation({
+    mutationFn: (id: number) =>
+      apiFetch(`/admin/orders/${id}/archive`, { method: 'PATCH' }),
+    onMutate: () => setStatusError(null),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['orders'] }),
+    onError: (caught) =>
+      setStatusError(
+        caught instanceof ApiError
+          ? caught.message
+          : 'Não foi possível finalizar o pedido.',
+      ),
+  });
+
   const orders = data?.data ?? [];
+
+  /**
+   * Adota, uma única vez, os pedidos que já estavam entregues ao abrir a tela.
+   *
+   * Sem isto a regra do arraste prenderia no painel todo pedido entregue antes
+   * desta sessão — inclusive os entregues antes de a regra existir — e nenhum
+   * gesto os soltaria: o card já está na coluna de destino, então não há para
+   * onde arrastar. O botão ficaria travado para sempre.
+   *
+   * Roda no `useEffect`, e não durante o render, porque grava estado e escreve
+   * no localStorage: fazer isso no corpo do componente é efeito colateral em
+   * render, que o StrictMode duplica e o React pode descartar.
+   *
+   * `adoptedFrom` limita a adoção à primeira carga. Depois dela, um pedido que
+   * o lojista arrastar para fora de "Entregue" perde a liberação e não é
+   * readotado no refetch seguinte — do contrário a revogação seria desfeita
+   * sozinha, e a trava não valeria nada.
+   */
+  const [adoptedFrom, setAdoptedFrom] = useState<Paginated<Order> | null>(null);
+
+  useEffect(() => {
+    // Depende de `data` e não de `orders`: o segundo é um array novo a cada
+    // render (`data?.data ?? []`), o que reexecutaria o efeito sem necessidade.
+    if (!data || adoptedFrom === data) {
+      return;
+    }
+
+    setAdoptedFrom(data);
+
+    // Só a primeira carga adota. Nas seguintes o efeito apenas marca `data`
+    // como visto, para não readotar um pedido cuja liberação foi revogada.
+    if (adoptedFrom !== null) {
+      return;
+    }
+
+    const alreadyDelivered = data.data
+      .filter((order) => order.status === 'delivered')
+      .map((order) => order.id);
+
+    if (alreadyDelivered.length === 0) {
+      return;
+    }
+
+    updateReleased((current) => {
+      const missing = alreadyDelivered.filter((id) => !current.has(id));
+      return missing.length > 0 ? new Set([...current, ...missing]) : current;
+    });
+  }, [adoptedFrom, data]);
 
   /*
    * "Em entrega" só faz sentido para pedidos que saem da loja. Numa casa que
@@ -223,6 +336,21 @@ export function OrdersPage() {
       const targetOrder = orders.find((o) => o.id === orderId);
       if (targetOrder && targetOrder.status !== targetStatus) {
         updateStatus.mutate({ id: orderId, status: targetStatus });
+
+        /*
+         * Só o arraste até "Entregue" libera o Finalizar. Largar o card em
+         * qualquer outra coluna revoga a liberação: o pedido voltou atrás, e
+         * deixar o botão ativo permitiria arquivar algo que saiu da entrega.
+         */
+        updateReleased((current) => {
+          const next = new Set(current);
+          if (targetStatus === 'delivered') {
+            next.add(orderId);
+          } else {
+            next.delete(orderId);
+          }
+          return next;
+        });
       }
     }
   };
@@ -488,9 +616,15 @@ export function OrdersPage() {
                             </p>
                           )}
 
-                          {/* Status Select para alteração rápida sem drag */}
+                          {/*
+                            O selo mostra em que estado o pedido está; o select
+                            muda esse estado. No lugar do rótulo fixo "Status:"
+                            porque a coluna do kanban some de vista assim que o
+                            card é arrastado — e é justamente aí, com o card na
+                            mão, que o lojista precisa confirmar onde ele caiu.
+                          */}
                           <div className="mt-3 flex items-center justify-between gap-2 border-t border-line/40 pt-2">
-                            <span className="text-[10px] text-muted">Status:</span>
+                            <StatusBadge status={order.status} />
                             <select
                               value={order.status}
                               disabled={updateStatus.isPending}
@@ -509,6 +643,16 @@ export function OrdersPage() {
                               ))}
                             </select>
                           </div>
+
+                          <FinalizeButton
+                            order={order}
+                            onArchive={archiveOrder.mutate}
+                            pending={archiveOrder.isPending}
+                            released={
+                              order.status === 'delivered' &&
+                              draggedToDelivered.has(order.id)
+                            }
+                          />
                         </div>
                       );
                     })
@@ -629,6 +773,19 @@ export function OrdersPage() {
                   </select>
                 </div>
               </div>
+
+              {/*
+                No modo lista não existe coluna para arrastar, então aqui a
+                liberação segue o status. É a saída para o celular e para quem
+                filtra por status — do contrário o pedido entregue não teria
+                como sair do painel.
+              */}
+              <FinalizeButton
+                order={order}
+                onArchive={archiveOrder.mutate}
+                pending={archiveOrder.isPending}
+                released={order.status === 'delivered'}
+              />
             </li>
           ))}
         </ul>
@@ -659,6 +816,67 @@ function FulfillmentBadge({ fulfillment }: { fulfillment: Fulfillment }) {
     >
       {FULFILLMENT_LABELS[fulfillment] ?? fulfillment}
     </span>
+  );
+}
+
+/**
+ * Encerramento do pedido, abaixo do status.
+ *
+ * Quem decide a liberação é quem renderiza (`released`), não este componente:
+ * no kanban ela exige o arraste até a coluna "Entregue", e mudar pelo select
+ * não basta. Deixar a regra fora daqui é o que permite ao modo lista, que não
+ * tem para onde arrastar, liberar pelo status — sem isso o botão seria
+ * inalcançável ali e no celular, onde o drag do HTML5 não dispara em toque.
+ *
+ * O botão bloqueado continua visível em vez de sumir porque ele é a explicação
+ * de por que o pedido ainda está na tela: o lojista vê o que falta fazer antes
+ * de poder limpar o card.
+ */
+function FinalizeButton({
+  order,
+  onArchive,
+  pending,
+  released,
+}: {
+  order: Order;
+  onArchive: (id: number) => void;
+  pending: boolean;
+  released: boolean;
+}) {
+  /*
+   * Um pedido já entregue mas ainda travado só acontece no kanban, e a razão é
+   * sempre a mesma: chegou ali pelo select, sem o arraste. O aviso precisa
+   * dizer isso, e não "espere ficar entregue" — o card já está na coluna, e
+   * repetir o óbvio faria o botão parecer quebrado.
+   */
+  const awaitingDrag = order.status === 'delivered';
+
+  const hint = awaitingDrag
+    ? 'Arraste o card até a coluna Entregue para liberar'
+    : 'Disponível quando o pedido estiver em Entregue';
+
+  // O rótulo é a versão curta: o botão do kanban tem a largura da coluna, e a
+  // frase inteira quebraria em três linhas. O title carrega o texto completo.
+  const label = awaitingDrag
+    ? 'Finalizar (arraste para Entregue)'
+    : 'Finalizar pedido';
+
+  return (
+    <div className="mt-2 border-t border-line/40 pt-2">
+      <button
+        type="button"
+        disabled={!released || pending}
+        onClick={() => onArchive(order.id)}
+        title={released ? 'Arquiva o pedido e tira o card do painel' : hint}
+        className={`w-full rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+          released
+            ? 'bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60'
+            : 'cursor-not-allowed border border-dashed border-line text-muted'
+        }`}
+      >
+        {released ? 'Finalizar pedido' : label}
+      </button>
+    </div>
   );
 }
 

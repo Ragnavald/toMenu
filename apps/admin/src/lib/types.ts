@@ -85,6 +85,13 @@ export type Order = {
   total_cents: number;
   notes: string | null;
   placed_at: string | null;
+  /**
+   * Quando o pedido saiu do painel. Null = ainda no movimento corrente.
+   *
+   * Separado de `status` de propósito: um pedido arquivado continua
+   * `delivered`, e é assim que o financeiro segue contando a venda.
+   */
+  archived_at: string | null;
   items: OrderItem[];
   customer: { id: number; name: string; phone: string } | null;
 };

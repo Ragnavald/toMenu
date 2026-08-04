@@ -15,6 +15,7 @@ import { ForgotPasswordPage } from '@/pages/forgot-password';
 import { ResetPasswordPage } from '@/pages/reset-password';
 import { VerifyEmailPage } from '@/pages/verify-email';
 import { Shell } from '@/components/shell';
+import { OrdersHistoryPage } from '@/pages/orders-history';
 import { OrdersPage } from '@/pages/orders';
 import { FinancePage } from '@/pages/finance';
 import { MenuPage } from '@/pages/menu';
@@ -251,6 +252,7 @@ function StoreRoutes() {
       {allowsOrders && (
         <>
           <Route path="/pedidos" element={<OrdersPage />} />
+          <Route path="/historico" element={<OrdersHistoryPage />} />
           <Route path="/financeiro" element={<FinancePage />} />
           <Route path="/entrega" element={<DeliveryPage />} />
         </>
