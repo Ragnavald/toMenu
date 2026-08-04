@@ -36,7 +36,11 @@ class BillingController extends Controller
          * pode assinar: criar cliente para quem já assinou não adianta nada, e
          * o job confere de novo antes de chamar o Stripe.
          */
-        if (! $tenant->stripe_customer_id && $mode->isConfigured() && $plan?->stripe_price_id) {
+        $linkageMatches = $tenant->stripeLinkageMatchesMode($mode->current());
+
+        if ((! $tenant->stripe_customer_id || ! $linkageMatches)
+            && $mode->isConfigured()
+            && $plan?->stripe_price_id) {
             EnsureStripeCustomer::dispatch($tenant->id);
         }
 
@@ -46,9 +50,23 @@ class BillingController extends Controller
                 'name' => $plan?->name,
                 'priceCents' => $plan?->price_cents,
             ],
-            'status' => $tenant->subscription_status,
-            'subscribed' => $tenant->hasSubscribed(),
-            'active' => $tenant->hasActiveSubscription(),
+            /*
+             * Assinatura de outro ambiente é reportada como inexistente.
+             *
+             * A tela usa estes campos para decidir entre "assinar" e "gerenciar
+             * assinatura". Um `active` vindo do modo anterior levaria o lojista
+             * ao portal, que recusa logo abaixo — beco sem saída. Reportar como
+             * não-assinante oferece o caminho que de fato funciona: assinar de
+             * novo, agora no ambiente ativo.
+             *
+             * Isto é só a APRESENTAÇÃO: `hasActiveSubscription()` continua
+             * ignorando o modo, e é ele que os middlewares consultam para
+             * liberar o painel. Quem já paga não perde acesso por conta de um
+             * `.env` trocado.
+             */
+            'status' => $linkageMatches ? $tenant->subscription_status : null,
+            'subscribed' => $linkageMatches && $tenant->hasSubscribed(),
+            'active' => $linkageMatches && $tenant->hasActiveSubscription(),
             'trialEndsAt' => $tenant->trial_ends_at?->toIso8601String(),
             'trialDaysLeft' => $tenant->trialDaysLeft(),
             'trialExpired' => $tenant->trialHasExpired(),
@@ -92,7 +110,10 @@ class BillingController extends Controller
         // Assinar de novo com uma assinatura ativa criaria uma segunda cobrança
         // mensal para a mesma loja. Quem já assina troca de plano ou cancela
         // pelo portal.
-        if ($tenant->hasActiveSubscription()) {
+        // O modo entra na condição para não trancar quem tem assinatura ativa
+        // no ambiente ANTERIOR: aquela assinatura não vale aqui, e sem esta
+        // ressalva o lojista ficaria impedido de assinar no ambiente atual.
+        if ($tenant->hasActiveSubscription() && $tenant->stripeLinkageMatchesMode($mode->current())) {
             return response()->json([
                 'message' => 'Esta loja já tem uma assinatura ativa.',
             ], 422);
@@ -174,7 +195,7 @@ class BillingController extends Controller
     }
 
     /** Portal do Stripe: trocar cartão, ver faturas, cancelar. */
-    public function portal(TenantContext $context): JsonResponse
+    public function portal(TenantContext $context, StripeMode $mode): JsonResponse
     {
         $tenant = $context->getOrFail();
 
@@ -183,6 +204,21 @@ class BillingController extends Controller
         if (! $tenant->stripe_customer_id) {
             return response()->json([
                 'message' => 'Esta loja ainda não tem assinatura.',
+            ], 422);
+        }
+
+        /*
+         * Vínculo de outro ambiente do Stripe: o portal não abre.
+         *
+         * Diferente do checkout, aqui NÃO dá para recriar e seguir: um portal
+         * de faturamento serve para ver faturas e trocar o cartão de uma
+         * assinatura que existe. Um customer novo e vazio abriria uma tela sem
+         * histórico nenhum, o que é mais confuso que a recusa.
+         */
+        if (! $tenant->stripeLinkageMatchesMode($mode->current())) {
+            return response()->json([
+                'message' => 'A assinatura desta loja pertence a outro ambiente de cobrança. '
+                    .'Assine novamente para gerenciar o pagamento.',
             ], 422);
         }
 
