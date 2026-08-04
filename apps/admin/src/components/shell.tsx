@@ -22,6 +22,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
     section: 'Operação',
     items: [
       { to: '/pedidos', label: 'Pedidos', icon: <IconReceipt />, badge: 'orders', needsOrders: true },
+      { to: '/historico', label: 'Histórico', icon: <IconHistory />, needsOrders: true },
       { to: '/financeiro', label: 'Financeiro', icon: <IconChart />, needsOrders: true },
     ],
   },
@@ -402,6 +403,21 @@ function IconClock() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
       <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M12 7.5V12l3 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconHistory() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 5v4h4"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
       <path d="M12 7.5V12l3 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );

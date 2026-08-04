@@ -193,7 +193,35 @@ Route::prefix('platform')
 | O prefixo vem depois do grupo acima para que `/api/menu` continue resolvendo
 | pelo subdomínio no acesso do navegador.
 */
+/*
+ * O curinga não pode engolir os prefixos da própria plataforma.
+ *
+ * `{tenant}` casa com qualquer primeiro segmento, inclusive `admin` e
+ * `platform`, e por ser registrado antes daqueles grupos ganha deles no
+ * roteamento. Uma chamada a `/api/admin/orders/archived` era resolvida como
+ * `{tenant}=admin`, `{order}=archived` — e como `admin` é subdomínio reservado
+ * no IdentifyTenant, a resposta era 404 "Loja não encontrada" em vez da rota
+ * de admin pretendida.
+ *
+ * O sintoma engana: só aparece em rota de admin com DOIS segmentos depois do
+ * prefixo (`orders/archived`), a única forma que casa com `{tenant}/orders/{order}`.
+ * `/api/admin/orders` sozinho não casa com nada aqui e sempre funcionou, o que
+ * fazia o erro parecer específico da rota nova.
+ *
+ * A restrição resolve na origem, e não pela ordem de registro: nenhum slug de
+ * loja pode ser `admin` ou `platform` de qualquer forma — RESERVED no
+ * IdentifyTenant já os recusa —, então excluí-los aqui não tira nenhum tenant
+ * alcançável e protege toda rota de plataforma que venha a existir depois.
+ */
 Route::prefix('{tenant}')
+    /*
+     * O lookahead não pode usar `$`: o Laravel embute esta regex no meio do
+     * padrão da rota completa, onde o fim do segmento ainda não é o fim da
+     * string. `(?!admin$)` casaria só se `admin` fosse o path inteiro, e
+     * `/api/admin/orders/archived` passaria batido — que era exatamente a
+     * falha. `(?!(admin|platform)(/|$))` ancora no separador de segmento.
+     */
+    ->where(['tenant' => '(?!(?:admin|platform)(?:/|$))[a-z0-9-]+'])
     ->middleware(['identify.tenant'])
     ->group(function () {
         Route::get('menu', MenuController::class)->middleware('throttle:240,1');
@@ -257,7 +285,15 @@ Route::prefix('admin')
         // `plan.orders` garante que também não respondam a chamada direta.
         Route::middleware('plan.orders')->group(function () {
             Route::get('orders', [OrderAdminController::class, 'index']);
+            // Antes de `orders/{order}`: o segmento literal precisa ganhar do
+            // parâmetro, senão "archived" seria lido como id de pedido.
+            Route::get('orders/archived', [OrderAdminController::class, 'archived']);
+            // Apaga linhas em lote e não tem volta — throttle baixo pelo mesmo
+            // motivo do export: não é chamada de rajada.
+            Route::delete('orders/archived', [OrderAdminController::class, 'clearArchived'])
+                ->middleware('throttle:10,1');
             Route::patch('orders/{order}/status', [OrderAdminController::class, 'updateStatus']);
+            Route::patch('orders/{order}/archive', [OrderAdminController::class, 'archive']);
 
             Route::get('finance/overview', [FinanceAdminController::class, 'overview']);
             Route::get('finance/orders', [FinanceAdminController::class, 'orders']);
