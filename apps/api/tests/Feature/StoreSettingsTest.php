@@ -273,6 +273,35 @@ it('marca o onboarding como concluído', function () {
     expect($this->tenant->fresh()->onboarding_completed_at)->not->toBeNull();
 });
 
+// ---------------------------------------------------------------------------
+// Trial
+// ---------------------------------------------------------------------------
+
+it('expõe vencimento do trial e estado da assinatura', function () {
+    // O painel decide a faixa de trial vencido com estes dois campos: sem o
+    // estado da assinatura ele avisaria quem já cadastrou cartão.
+    $this->tenant->update([
+        'trial_ends_at' => now()->subDay(),
+        'subscription_status' => 'active',
+    ]);
+
+    $this->withHeaders(asStore())
+        ->getJson('/api/admin/settings')
+        ->assertOk()
+        ->assertJsonPath('store.subscriptionStatus', 'active')
+        ->assertJsonPath(
+            'store.trialEndsAt',
+            $this->tenant->fresh()->trial_ends_at->toIso8601String(),
+        );
+});
+
+it('deixa o estado da assinatura nulo enquanto a loja não assinou', function () {
+    $this->withHeaders(asStore())
+        ->getJson('/api/admin/settings')
+        ->assertOk()
+        ->assertJsonPath('store.subscriptionStatus', null);
+});
+
 it('não expõe configurações de uma loja para outra', function () {
     $other = Tenant::factory()->create(['slug' => 'loja-b']);
     actingAsTenant($other);

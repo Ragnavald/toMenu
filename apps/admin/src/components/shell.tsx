@@ -141,6 +141,25 @@ export function Shell({
 
   const storefrontUrl = settings?.store.storefrontUrl;
 
+  /*
+   * Trial vencido, sem assinatura encaminhada.
+   *
+   * A data é conferida aqui e não só pelo `status`: quem marca `past_due` é o
+   * `trials:expire`, que roda de madrugada — sem isto o lojista que venceu às
+   * 10h passaria o dia inteiro sem aviso. `past_due` continua valendo como
+   * gatilho porque o staff pode marcar a loja à mão.
+   *
+   * Quem tem `active`/`trialing` no Stripe nunca vê a faixa: já cadastrou
+   * cartão e a cobrança acontece sozinha.
+   */
+  const store = settings?.store;
+  const trialExpired =
+    !!store &&
+    store.status !== 'suspended' &&
+    !['active', 'trialing'].includes(store.subscriptionStatus ?? '') &&
+    (store.status === 'past_due' ||
+      (store.trialEndsAt !== null && new Date(store.trialEndsAt) < new Date()));
+
   // Alerta de pedido novo. Só onde há pedidos: no plano somente-cardápio não
   // existe operação para avisar.
   const alertEnabled = settings?.plan.allowsOrders === true;
@@ -360,13 +379,16 @@ export function Shell({
         {/* Cobrança pendente. Não é dispensável: some quando for resolvida,
             e enquanto isso a loja segue no ar — a suspensão é decisão do
             staff, não um efeito automático do vencimento. */}
-        {settings?.store.status === 'past_due' && (
-          <div className="border-b border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-900 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
-            Seu período de teste terminou.{' '}
+        {trialExpired && (
+          <div
+            role="status"
+            className="border-b border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-900 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200"
+          >
+            Seus 14 dias gratuitos terminaram. Sua conta pode ser suspensa a
+            qualquer momento.{' '}
             <NavLink to="/assinatura" className="font-medium underline">
-              Assine para manter a loja funcionando
+              Assinar agora
             </NavLink>
-            .
           </div>
         )}
 
