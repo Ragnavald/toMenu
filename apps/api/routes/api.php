@@ -352,6 +352,7 @@ Route::prefix('admin')
         Route::get('settings', [SettingsController::class, 'show']);
         Route::put('settings/profile', [SettingsController::class, 'updateProfile']);
         Route::post('settings/logo', [SettingsController::class, 'uploadLogo']);
+        Route::post('settings/cover', [SettingsController::class, 'uploadCover']);
         Route::put('settings/hours', [SettingsController::class, 'updateHours']);
         Route::put('settings/theme', [SettingsController::class, 'updateTheme']);
         Route::put('settings/onboarding', [SettingsController::class, 'updateOnboarding']);

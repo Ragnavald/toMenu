@@ -322,6 +322,104 @@ it('envia a logo para o disco remoto quando o R2 está configurado', function ()
         ->and(Storage::disk('public')->allFiles())->toBeEmpty();
 });
 
+it('faz upload da capa da loja', function () {
+    Storage::fake('public');
+
+    $this->withHeaders(asStore())
+        ->postJson('/api/admin/settings/cover', [
+            'cover' => UploadedFile::fake()->create('capa.png', 100, 'image/png'),
+        ])
+        ->assertOk()
+        ->assertJsonStructure(['url', 'message']);
+
+    expect(TenantSettings::find($this->tenant->id)->cover_url)->not->toBeNull()
+        // Prefixo próprio: o TenantAssetPurger varre por diretório, e uma capa
+        // gravada em `logos/` escaparia da limpeza de imagem por tipo.
+        ->and(Storage::disk('public')->allFiles()[0])->toStartWith('covers/');
+});
+
+/*
+ * O bucket não tem coletor de lixo: o que a troca deixa para trás fica lá para
+ * sempre, porque a URL antiga some do banco e com ela a única pista de que o
+ * objeto existia.
+ */
+it('apaga do bucket a imagem anterior ao trocar a logo', function () {
+    Storage::fake('public');
+
+    $this->withHeaders(asStore())
+        ->postJson('/api/admin/settings/logo', [
+            'logo' => UploadedFile::fake()->create('antiga.png', 100, 'image/png'),
+        ])
+        ->assertOk();
+
+    $first = TenantSettings::find($this->tenant->id)->logo_url;
+
+    // O nome do arquivo carrega o timestamp em segundos; sem avançar o relógio
+    // os dois uploads disputariam o mesmo nome e o teste não provaria nada.
+    $this->travel(2)->seconds();
+
+    $this->withHeaders(asStore())
+        ->postJson('/api/admin/settings/logo', [
+            'logo' => UploadedFile::fake()->create('nova.png', 100, 'image/png'),
+        ])
+        ->assertOk();
+
+    $second = TenantSettings::find($this->tenant->id)->logo_url;
+
+    expect($second)->not->toBe($first)
+        ->and(Storage::disk('public')->allFiles())->toHaveCount(1);
+});
+
+it('apaga do bucket a capa removida pelo formulário de perfil', function () {
+    Storage::fake('public');
+
+    $this->withHeaders(asStore())
+        ->postJson('/api/admin/settings/cover', [
+            'cover' => UploadedFile::fake()->create('capa.png', 100, 'image/png'),
+        ])
+        ->assertOk();
+
+    expect(Storage::disk('public')->allFiles())->toHaveCount(1);
+
+    // Limpar o campo é o único caminho para remover a imagem: o upload sempre
+    // substitui por outra.
+    $this->withHeaders(asStore())
+        ->putJson('/api/admin/settings/profile', [
+            'name' => 'Loja A',
+            'coverUrl' => null,
+        ])
+        ->assertOk();
+
+    expect(TenantSettings::find($this->tenant->id)->cover_url)->toBeNull()
+        ->and(Storage::disk('public')->allFiles())->toBeEmpty();
+});
+
+/*
+ * O campo aceita URL livre, então ele é um pedido de exclusão de arquivo vindo
+ * do usuário. Só o que casa com a convenção de nome desta loja pode ser apagado.
+ */
+it('não apaga arquivo de outra loja ao trocar a própria capa', function () {
+    Storage::fake('public');
+
+    $other = Tenant::factory()->create(['slug' => 'loja-b']);
+    Storage::disk('public')->put("covers/{$other->id}-cover-1.png", 'alheia');
+
+    actingAsTenant($this->tenant);
+    TenantSettings::where('tenant_id', $this->tenant->id)->update([
+        'cover_url' => Storage::disk('public')->url("covers/{$other->id}-cover-1.png"),
+    ]);
+    forgetTenant();
+
+    $this->withHeaders(asStore())
+        ->putJson('/api/admin/settings/profile', [
+            'name' => 'Loja A',
+            'coverUrl' => null,
+        ])
+        ->assertOk();
+
+    expect(Storage::disk('public')->exists("covers/{$other->id}-cover-1.png"))->toBeTrue();
+});
+
 it('envia a imagem do produto para o mesmo disco remoto que a logo', function () {
     Storage::fake('r2');
     Storage::fake('public');

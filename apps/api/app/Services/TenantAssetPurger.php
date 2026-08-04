@@ -18,10 +18,11 @@ use Illuminate\Support\Facades\Storage;
  *
  *   products/{tenantId}-{timestamp}-{random}.{ext}   (ProductAdminController)
  *   logos/{tenantId}-logo-{timestamp}.{ext}          (SettingsController)
+ *   covers/{tenantId}-cover-{timestamp}.{ext}        (SettingsController)
  *
  * Não há prefixo por tenant — os objetos de todas as lojas convivem nos mesmos
- * dois diretórios. Por isso a purga lista o prefixo e filtra pelo basename, em
- * vez de apagar um diretório inteiro.
+ * diretórios. Por isso a purga lista o prefixo e filtra pelo basename, em vez
+ * de apagar um diretório inteiro.
  *
  * O `-` depois do id é obrigatório no filtro e é a parte que mais importa:
  * `str_starts_with($base, '12')` casaria com os arquivos do tenant 12, mas
@@ -42,7 +43,7 @@ use Illuminate\Support\Facades\Storage;
 class TenantAssetPurger
 {
     /** Diretórios onde os uploads da plataforma são gravados. */
-    private const PREFIXES = ['products', 'logos'];
+    private const PREFIXES = ['products', 'logos', 'covers'];
 
     /**
      * @return array{disk: string|null, deleted: int, failed: int, reports: string}
