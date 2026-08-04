@@ -74,6 +74,23 @@ it('marca como pago ao entregar um pedido pago na entrega', function () {
     expect(revenueCentsNow($this->tenant))->toBe(10500);
 });
 
+/*
+ * Cada forma de pagamento na entrega recebe o mesmo tratamento.
+ *
+ * O teste é parametrizado, e não escrito só para `cash`, porque a falha que ele
+ * cobre foi exatamente uma forma esquecida na lista: `pix_on_delivery` estava
+ * disponível nas configurações da loja, mas fora de `isPayOnDelivery()`, então
+ * o pedido entregue nunca virava `paid` e sumia do financeiro sem erro nenhum.
+ */
+it('marca como pago ao entregar, em toda forma de pagamento na entrega', function (string $method) {
+    $order = makeOrderForStatus($this->tenant, ['payment_method' => $method]);
+
+    patchStatus($order, 'delivered')->assertOk();
+
+    expect($order->fresh()->payment_status)->toBe('paid')
+        ->and(revenueCentsNow($this->tenant))->toBe(10500);
+})->with(Order::PAY_ON_DELIVERY_METHODS);
+
 it('tira o pedido da receita quando o status volta atrás', function () {
     $order = makeOrderForStatus($this->tenant);
 
