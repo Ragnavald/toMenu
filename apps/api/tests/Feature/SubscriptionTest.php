@@ -1,12 +1,14 @@
 <?php
 
 use App\Jobs\ProcessStripeEvent;
+use App\Mail\SubscriptionConfirmed;
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Models\WebhookEvent;
 use App\Services\SubscriptionService;
 use App\Tenancy\TenantContext;
+use Illuminate\Support\Facades\Mail;
 use Stripe\StripeClient;
 
 /**
@@ -395,4 +397,76 @@ it('grava o modo ativo quando o webhook confirma a assinatura', function () {
     // outro ambiente" no clique seguinte — logo depois de o lojista pagar.
     expect($tenant->stripe_customer_id)->toBe('cus_novo')
         ->and($tenant->stripe_mode)->toBe('test');
+});
+
+/*
+ * Confirmação por e-mail da assinatura.
+ *
+ * Sai do webhook e não do `success_url`: aquela URL só diz que o navegador
+ * voltou. Quem sabe que o pagamento existe é o evento.
+ */
+it('envia a confirmacao por email quando a assinatura e criada', function () {
+    Mail::fake();
+
+    processStripe('checkout.session.completed', [
+        'id' => 'cs_email',
+        'mode' => 'subscription',
+        'subscription' => 'sub_email',
+        'customer' => 'cus_email',
+        'metadata' => ['tenant_id' => (string) $this->tenant->id],
+    ]);
+
+    Mail::assertQueued(SubscriptionConfirmed::class, function ($mail) {
+        // Vai para o dono, que é quem paga — não para todo usuário do tenant.
+        return $mail->hasTo($this->owner->email)
+            && $mail->tenant->id === $this->tenant->id;
+    });
+});
+
+it('nao envia confirmacao quando o checkout nao e de assinatura', function () {
+    Mail::fake();
+
+    processStripe('checkout.session.completed', [
+        'id' => 'cs_avulso',
+        'mode' => 'payment',
+        'subscription' => null,
+        'metadata' => ['tenant_id' => (string) $this->tenant->id],
+    ]);
+
+    Mail::assertNothingQueued();
+});
+
+it('nao envia a confirmacao para quem nao e dono da loja', function () {
+    Mail::fake();
+
+    User::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'role' => 'manager',
+    ]);
+
+    processStripe('checkout.session.completed', [
+        'id' => 'cs_so_dono',
+        'mode' => 'subscription',
+        'subscription' => 'sub_so_dono',
+        'customer' => 'cus_so_dono',
+        'metadata' => ['tenant_id' => (string) $this->tenant->id],
+    ]);
+
+    Mail::assertQueued(SubscriptionConfirmed::class, 1);
+});
+
+it('grava a assinatura mesmo se o email falhar', function () {
+    // O vínculo já está gravado quando o e-mail sai. Propagar a exceção faria o
+    // Stripe reentregar o evento em loop por causa de uma falha de cortesia.
+    Mail::shouldReceive('to')->andThrow(new RuntimeException('resend fora do ar'));
+
+    processStripe('checkout.session.completed', [
+        'id' => 'cs_falha',
+        'mode' => 'subscription',
+        'subscription' => 'sub_falha',
+        'customer' => 'cus_falha',
+        'metadata' => ['tenant_id' => (string) $this->tenant->id],
+    ]);
+
+    expect($this->tenant->refresh()->stripe_subscription_id)->toBe('sub_falha');
 });
