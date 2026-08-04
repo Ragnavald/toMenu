@@ -76,6 +76,33 @@ class SubscriptionService
         $session = $this->stripe->checkout->sessions->create(array_filter([
             'mode' => 'subscription',
             'customer' => $customerId,
+            /*
+             * Português explícito, e não `auto`.
+             *
+             * O `auto` segue o Accept-Language do navegador do lojista, que nem
+             * sempre é pt-BR — uma instalação em inglês mostraria a página de
+             * pagamento em inglês para quem só fala português. O produto é
+             * brasileiro e o preço está em BRL; a página acompanha.
+             */
+            'locale' => 'pt-BR',
+            /*
+             * Google Pay e Apple Pay NÃO entram aqui.
+             *
+             * As duas não são métodos de pagamento próprios no Stripe: são
+             * formas de entregar um cartão. Aparecem sozinhas dentro de `card`
+             * quando o dispositivo e o navegador suportam (Apple Pay no Safari
+             * com cartão na carteira, Google Pay no Chrome logado), desde que
+             * estejam ligadas no Dashboard em Settings > Payment methods.
+             * Declarar 'google_pay' ou 'apple_pay' aqui faz a criação da sessão
+             * falhar com "invalid payment method type".
+             *
+             * Pix e boleto também não entram: o Stripe não os aceita em
+             * `mode: subscription`, porque uma mensalidade precisa de um método
+             * que possa ser cobrado de novo sem o cliente presente, e ambos
+             * exigem ação do pagador a cada cobrança. Se aparecerem aqui, a
+             * sessão é recusada na criação.
+             */
+            'payment_method_types' => ['card'],
             'line_items' => [[
                 'price' => $plan->stripe_price_id,
                 'quantity' => 1,
