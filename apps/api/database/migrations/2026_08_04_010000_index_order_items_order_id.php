@@ -32,22 +32,17 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration
 {
     /**
-     * CONCURRENTLY não roda dentro de transação, e o Laravel envolve cada
-     * migration numa por padrão ("CREATE INDEX CONCURRENTLY cannot run inside a
-     * transaction block").
+     * PROPRIEDADE, não método: o Migrator lê `$migration->withinTransaction`
+     * como atributo (Migrator.php, ~linha 449). Um método com este nome não
+     * sobrescreve nada — a propriedade `true` herdada de Migration continua
+     * valendo, a transação é aberta, e o CONCURRENTLY morre com
+     * "cannot run inside a transaction block".
      *
-     * Só que desligar a transação AQUI quebra a suíte: o RefreshDatabase
-     * mantém cada teste dentro de uma transação que é revertida no fim, e uma
-     * migration que sai desse encadeamento deixa estado sujo para o teste
-     * seguinte. O sintoma não aponta para cá — quem falhava era o StreetMapTest,
-     * e só quando a suíte inteira rodava junto.
-     *
-     * Por isso a transação é desligada apenas onde o CONCURRENTLY é usado.
+     * Como é atributo, é resolvido na construção da classe e não pode depender
+     * do ambiente. Por isso a transação fica desligada SEMPRE, e é o `up()` que
+     * decide usar CONCURRENTLY ou não.
      */
-    public function withinTransaction(): bool
-    {
-        return ! $this->shouldRunConcurrently();
-    }
+    public $withinTransaction = false;
 
     public function up(): void
     {
@@ -55,10 +50,10 @@ return new class extends Migration
         // lock que segura toda escrita em order_items até terminar, e um pedido
         // novo no meio do expediente ficaria pendurado esperando o índice.
         //
-        // Nos testes a tabela está vazia e ninguém escreve em paralelo: o lock
-        // é irrelevante e o índice comum roda dentro da transação, sem
-        // contaminar o teste seguinte.
-        $concurrently = $this->shouldRunConcurrently() ? 'CONCURRENTLY' : '';
+        // Nos testes o CONCURRENTLY é dispensável (tabela vazia, sem escrita
+        // concorrente) e indesejável: ele não roda dentro da transação do
+        // RefreshDatabase.
+        $concurrently = app()->environment('testing') ? '' : 'CONCURRENTLY';
 
         DB::statement(
             "CREATE INDEX {$concurrently} IF NOT EXISTS order_items_order_id_index
@@ -68,17 +63,8 @@ return new class extends Migration
 
     public function down(): void
     {
-        $concurrently = $this->shouldRunConcurrently() ? 'CONCURRENTLY' : '';
+        $concurrently = app()->environment('testing') ? '' : 'CONCURRENTLY';
 
         DB::statement("DROP INDEX {$concurrently} IF EXISTS order_items_order_id_index");
-    }
-
-    /**
-     * Fora do ambiente de teste — onde a tabela tem tráfego real e o lock
-     * custaria pedidos parados no meio do expediente.
-     */
-    private function shouldRunConcurrently(): bool
-    {
-        return ! app()->environment('testing');
     }
 };
