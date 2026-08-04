@@ -410,7 +410,7 @@ problema é DNS: confira SPF, DKIM e DMARC (passo 4.1).
 >
 > ```bash
 > docker compose -f docker-compose.prod.yml --env-file .env.prod \
->     up -d api worker reports-worker scheduler
+>     up -d api worker scheduler reverb
 > ```
 
 <details>
@@ -1229,11 +1229,13 @@ Outros atalhos, todos rodando de `/opt/tomenu`:
 Mudou alguma `NEXT_PUBLIC_*`? O `--build` é obrigatório: elas entram no bundle
 em tempo de build.
 
-O `up -d --build` cria serviços novos do compose sozinho — é assim que o
-`reports-worker` (fila de PDFs do financeiro) sobe na primeira atualização
-depois que ele foi adicionado. Já uma extensão nova do PHP, como a `gd` que o
-dompdf exige, só entra rebuildando a imagem; se o deploy reaproveitar camada
-antiga em cache, force com:
+O `up -d --build` cria serviços novos do compose sozinho — é assim que a segunda
+réplica do `reverb` sobe na primeira atualização depois que ela foi adicionada.
+O contrário NÃO é verdade: um serviço removido do arquivo (como o antigo
+`reports-worker`) continua rodando até ser derrubado à mão — veja
+`--remove-orphans` na seção de limpeza. Já uma extensão nova do PHP só entra
+rebuildando a imagem; se o deploy reaproveitar camada antiga em cache, force
+com:
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache api
@@ -1467,16 +1469,53 @@ curl -s -o /dev/null -w 'api:   %{http_code}\n' https://api.to-menu.com/api/admi
 Esperado: `200`, `200`, `200`, `401` — o 401 da API confirma que ela responde e
 exige autenticação.
 
-O `ps` deve listar **dois** workers: `worker` (fila `default`) e
-`reports-worker` (fila `reports`). Se o segundo não aparecer, o compose do
-droplet está desatualizado — os PDFs do financeiro ficam presos na fila sem
-erro visível, porque ninguém consome aquela fila.
+O `ps` deve listar **um** worker (`worker`, fila `default`) e **duas** réplicas
+do `reverb`. Se aparecer só uma réplica, o compose do droplet está
+desatualizado. Se ainda aparecer um `reports-worker`, ele é órfão de uma versão
+anterior: aquela fila não recebe mais nada desde que a exportação financeira
+virou CSV em streaming — derrube com `--remove-orphans`.
+
+As duas réplicas só se enxergam através do Redis. Confirme com:
 
 ```bash
-# A extensão gd precisa existir na imagem, senão o logo some do PDF.
-docker compose -f docker-compose.prod.yml --env-file .env.prod \
-    run --rm api php -m | grep -x gd
+# Precisa responder 2: uma inscrição por réplica no canal de coordenação.
+# Se responder 1, REVERB_SCALING_ENABLED não chegou aos containers e metade
+# dos painéis não recebe o aviso de pedido novo — falha silenciosa, porque o
+# broadcast responde 200 do mesmo jeito.
+docker exec tomenu-prod-redis-1 redis-cli PUBSUB NUMSUB reverb
 ```
+
+### 11.1. Limpeza
+
+O `up -d` cria o que falta, mas **nunca remove** o que saiu do arquivo: um
+serviço apagado do compose continua rodando no droplet, consumindo memória, até
+ser derrubado explicitamente. Foi o caso do `reports-worker`, que ficou ~60 MB
+de processo PHP esperando uma fila que já não recebia nada.
+
+```bash
+# Derruba containers de serviços que não existem mais no compose.
+# Confira a lista antes: `--remove-orphans` não pergunta.
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+    up -d --remove-orphans
+```
+
+O build cache cresce a cada deploy e não é limpo sozinho. Num droplet de 48 GB
+ele chegou a 10 GB. Não afeta a memória, só o disco:
+
+```bash
+docker system df                    # veja o RECLAIMABLE antes
+docker builder prune -f             # recupera o cache de build
+docker image prune -f               # remove imagens órfãs de deploys antigos
+```
+
+O primeiro build depois do prune é mais lento — o cache foi embora. Rode fora do
+horário de pico, e nunca junto de um deploy que você precisa que seja rápido.
+
+> **Logs**: os containers têm rotação declarada no compose (`x-logging`, teto de
+> 30 MB cada). A configuração vale a partir da **recriação** do container, não
+> do restart: containers criados antes dela seguem com o log ilimitado até o
+> próximo `up -d --force-recreate`. Para checar o tamanho atual:
+> `du -sh /var/lib/docker/containers/*/*-json.log | sort -h | tail`
 
 ---
 

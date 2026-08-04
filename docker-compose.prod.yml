@@ -18,11 +18,28 @@
 #   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 name: tomenu-prod
 
+# Rotação de log, aplicada a todo serviço de vida longa.
+#
+# O driver json-file do Docker é o padrão e NÃO rotaciona sozinho: o arquivo de
+# log de cada container cresce até encher o disco do droplet. É uma falha lenta
+# e silenciosa — não dá sinal por meses e então derruba a stack inteira de
+# madrugada, quando o Postgres não consegue mais escrever.
+#
+# 10 MB × 3 arquivos = teto de 30 MB por container. Suficiente para investigar
+# um incidente recente; o histórico longo é problema de agregador de log, não
+# do disco da máquina.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-api: &api
   build:
     context: .
     dockerfile: docker/php/Dockerfile.prod
   restart: unless-stopped
+  logging: *logging
   # Configuração vem de arquivo, nunca embutida na imagem. APP_ENV_FILE permite
   # apontar para outro arquivo sem editar este compose.
   env_file: ["${APP_ENV_FILE:-apps/api/.env}"]
@@ -99,6 +116,9 @@ services:
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    # O access log de toda a plataforma passa por aqui: é o container que mais
+    # escreve, e o primeiro a encher o disco sem rotação.
+    logging: *logging
     # Entrada pública da stack. O TLS termina aqui, com o Origin Certificate do
     # Cloudflare (ver DEPLOY.md §4) — um wildcard de 15 anos, sem ACME nem
     # renovação automática para manter funcionando.
@@ -153,6 +173,7 @@ services:
         NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
     restart: unless-stopped
     expose: ["3000"]
+    logging: *logging
     environment:
       # Só o render no servidor usa esta: encurta o caminho até a API, sem sair
       # para a internet. O browser continua usando NEXT_PUBLIC_API_URL.
@@ -194,22 +215,16 @@ services:
       timeout: 5s
       retries: 3
 
-  # Worker dedicado às exportações de PDF.
+  # NÃO existe mais um `reports-worker`.
   #
-  # Separado do worker principal por dois motivos: isola o pico de memória do
-  # dompdf, e mantém a fila de pedidos fluindo enquanto um relatório longo é
-  # renderizado. `--memory=256` derruba o processo antes que ele chegue perto do
-  # limite do PHP, e a fila reentrega o job pendente ao próximo processo.
-  reports-worker:
-    <<: *api
-    command: >
-      php artisan queue:work --queue=reports
-      --tries=2 --backoff=30 --timeout=240 --memory=256 --max-time=3600 --sleep=5
-    healthcheck:
-      test: ["CMD-SHELL", "tr '\\0' ' ' < /proc/1/cmdline | grep -q 'queue:work' || exit 1"]
-      interval: 60s
-      timeout: 5s
-      retries: 3
+  # Ele consumia a fila `reports`, que servia à exportação financeira em PDF.
+  # Desde que a exportação virou CSV em streaming (resposta direta, sem fila e
+  # sem arquivo em disco), nenhum job é despachado para essa fila: era um
+  # processo PHP de vida longa ocupando ~60 MB para esperar o que nunca chega.
+  #
+  # Se algum dia voltar a existir trabalho pesado e assíncrono, ele merece uma
+  # fila própria de novo — o motivo original continua válido: um relatório
+  # longo não pode atrasar o aviso de pedido novo na cozinha.
 
   scheduler:
     <<: *api
@@ -255,6 +270,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *logging
     # appendonly: a fila e o cache passam por aqui. Sem persistência, um restart
     # do container descarta jobs ainda não processados.
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
