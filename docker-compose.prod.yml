@@ -202,8 +202,9 @@ services:
     # --max-time recicla o processo de hora em hora: worker de fila é um daemon
     # PHP de vida longa, e reiniciar periodicamente evita que vazamento de
     # memória acumule até o OOM.
-    # Só a fila default: relatórios têm worker próprio (reports-worker) para que
-    # um PDF de meses de pedidos nunca atrase o aviso de pedido novo na cozinha.
+    # `--queue=default` explícito, e não implícito: se algum dia voltar a
+    # existir uma fila pesada, ela precisa de worker próprio para que um job
+    # longo nunca atrase o aviso de pedido novo na cozinha.
     command: php artisan queue:work --queue=default --tries=3 --backoff=10 --max-time=3600 --sleep=3
     # Lê /proc/1/cmdline em vez de `pgrep`: a imagem PHP não traz procps, e o
     # healthcheck com pgrep falha sempre com "pgrep: not found" — o container

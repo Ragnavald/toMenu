@@ -1,5 +1,6 @@
 .PHONY: up down dev build test fresh api-shell logs \
-        deploy deploy-admin deploy-build deploy-migrate platform-admin \
+        deploy deploy-admin deploy-build deploy-migrate deploy-recreate \
+        platform-admin \
         prod-logs prod-ps
 
 COMPOSE = docker compose
@@ -77,10 +78,15 @@ down:
 #   4. purge por último — limpa do edge qualquer resposta ruim guardada na
 #      janela entre o container novo subir e o nginx reconhecê-lo.
 #
+# `--remove-orphans` porque `up -d` só CRIA o que falta: um serviço apagado do
+# compose continua rodando no droplet indefinidamente. Foi o que aconteceu com o
+# antigo `reports-worker`, que sobreviveu ao próprio deploy que o removeu do
+# arquivo e ficou consumindo ~60 MB à espera de uma fila extinta.
+#
 # `git pull` fica de fora de propósito: o deploy não deve decidir sozinho qual
 # commit vai para produção.
 deploy: deploy-build deploy-migrate
-	$(PROD) up -d --build
+	$(PROD) up -d --build --remove-orphans
 	$(PROD) restart nginx
 	@# O purge é instalado à mão no provisionamento (DEPLOY.md §12), então pode
 	@# não existir. Cache sujo é degradação passageira; abortar aqui deixaria o
@@ -129,6 +135,24 @@ deploy-admin:
 	$(PROD) up -d --build admin-build
 	$(PROD) restart nginx
 	@echo "Painéis republicados em app. e admin.{domínio}."
+
+# Recria TODOS os containers, mesmo os que não mudaram.
+#
+# Necessário quando muda uma opção que o Docker só lê na criação do container e
+# que não altera a imagem — `logging`, `ulimits`, `sysctls`. Nesses casos o
+# `make deploy` normal não recria nada e a mudança fica no arquivo sem efeito
+# nenhum, sem que nada acuse o problema.
+#
+# NÃO faz parte do `deploy` de propósito: recriar tudo a cada publicação
+# alargaria a janela de indisponibilidade sem motivo. Rode quando souber que
+# mudou uma dessas opções.
+#
+# Para conferir se a rotação de log pegou:
+#   docker inspect tomenu-prod-nginx-1 --format '{{.HostConfig.LogConfig.Config}}'
+deploy-recreate:
+	$(PROD) up -d --build --remove-orphans --force-recreate
+	$(PROD) restart nginx
+	@echo "Containers recriados."
 
 # Cria (ou atualiza a senha de) uma conta de staff da plataforma.
 #

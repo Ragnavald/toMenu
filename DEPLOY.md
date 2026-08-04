@@ -1492,6 +1492,10 @@ serviço apagado do compose continua rodando no droplet, consumindo memória, at
 ser derrubado explicitamente. Foi o caso do `reports-worker`, que ficou ~60 MB
 de processo PHP esperando uma fila que já não recebia nada.
 
+Desde que `--remove-orphans` entrou no alvo `deploy`, o `make deploy` já cuida
+disso sozinho. O comando cru serve para quando você quer só a limpeza, sem
+publicar nada:
+
 ```bash
 # Derruba containers de serviços que não existem mais no compose.
 # Confira a lista antes: `--remove-orphans` não pergunta.
@@ -1512,10 +1516,15 @@ O primeiro build depois do prune é mais lento — o cache foi embora. Rode fora
 horário de pico, e nunca junto de um deploy que você precisa que seja rápido.
 
 > **Logs**: os containers têm rotação declarada no compose (`x-logging`, teto de
-> 30 MB cada). A configuração vale a partir da **recriação** do container, não
-> do restart: containers criados antes dela seguem com o log ilimitado até o
-> próximo `up -d --force-recreate`. Para checar o tamanho atual:
-> `du -sh /var/lib/docker/containers/*/*-json.log | sort -h | tail`
+> 30 MB cada). A configuração vale a partir da **recriação** do container, não do
+> restart — e o `make deploy` normal não recria o que não mudou. Use
+> `make deploy-recreate` uma vez para aplicá-la a tudo. Confira com:
+>
+> ```bash
+> # map[max-file:3 max-size:10m] = ativa. map[] = ainda ilimitada.
+> docker inspect tomenu-prod-nginx-1 --format '{{.HostConfig.LogConfig.Config}}'
+> du -sh /var/lib/docker/containers/*/*-json.log | sort -h | tail -3
+> ```
 
 ---
 
