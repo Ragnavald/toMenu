@@ -6,6 +6,7 @@ use App\Models\PlatformAuditLog;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Tenancy\TenantContext;
+use Illuminate\Cache\RedisStore;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -234,7 +235,7 @@ class TenantPurger
         try {
             $store = Cache::getStore();
 
-            if (! $store instanceof \Illuminate\Cache\RedisStore) {
+            if (! $store instanceof RedisStore) {
                 return;
             }
 

@@ -2,6 +2,7 @@
 
 use App\Jobs\NotifyNewOrder;
 use App\Models\Category;
+use App\Models\Customer;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\Tenant;
@@ -229,7 +230,7 @@ it('não perde o pedido quando o cliente é criado por uma request concorrente',
 
     // Um cliente só, e o pedido ficou vinculado a ele.
     actingAsTenant($this->tenant);
-    expect(App\Models\Customer::where('phone', $phone)->count())->toBe(1);
+    expect(Customer::where('phone', $phone)->count())->toBe(1);
     expect(Order::first()->customer->phone)->toBe($phone);
 });
 
@@ -243,6 +244,6 @@ it('reaproveita o cliente já cadastrado em pedidos seguintes', function () {
 
     actingAsTenant($this->tenant);
 
-    expect(App\Models\Customer::where('phone', '11999998888')->count())->toBe(1)
+    expect(Customer::where('phone', '11999998888')->count())->toBe(1)
         ->and(Order::count())->toBe(2);
 });

@@ -7,6 +7,13 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "ext-bcmath": "*",
+        "ext-dom": "*",
+        "ext-gd": "*",
+        "ext-intl": "*",
+        "ext-pdo": "*",
+        "ext-xml": "*",
+        "ext-zip": "*",
         "dompdf/dompdf": "^3.1",
         "laravel/framework": "^13.8",
         "laravel/reverb": "^1.11",

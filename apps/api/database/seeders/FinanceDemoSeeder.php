@@ -28,7 +28,7 @@ class FinanceDemoSeeder extends Seeder
             return;
         }
 
-        app(TenantContext::class)->runFor($tenant, function () use ($tenant) {
+        app(TenantContext::class)->runFor($tenant, function () {
             $customers = collect(['Ana Souza', 'Bruno Lima', 'Carla Dias', 'Diego Reis', 'Elena Costa'])
                 ->map(fn (string $name, int $i) => Customer::firstOrCreate(
                     ['phone' => '1199000'.str_pad((string) $i, 4, '0', STR_PAD_LEFT)],

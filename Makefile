@@ -1,4 +1,4 @@
-.PHONY: up down dev build test fresh api-shell logs \
+.PHONY: up down dev build test lint lint-fix fresh api-shell logs \
         deploy deploy-admin deploy-build deploy-migrate deploy-recreate \
         platform-admin \
         prod-logs prod-ps
@@ -46,6 +46,17 @@ build:
 
 test:
 	$(API_TEST) ./vendor/bin/pest
+
+# Estilo do PHP. Sempre no container: o Pint depende de ext-dom, que o PHP da
+# máquina de desenvolvimento pode não ter — e sem ela o erro sai como um crash
+# do PHPUnit, sem dizer qual extensão falta.
+#
+# `lint` só verifica, para caber em CI e hook. `lint-fix` reescreve os arquivos.
+lint:
+	$(API) ./vendor/bin/pint --test
+
+lint-fix:
+	$(API) ./vendor/bin/pint
 
 api-shell:
 	$(API) bash

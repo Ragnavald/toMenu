@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Tenant;
+use App\Models\User;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -49,7 +50,7 @@ class TenantDeleter
 
     /**
      * @param  string|null  $reason  Motivo informado pelo lojista, para suporte.
-     * @return array{connect: string, subscription: string}  O que foi feito de fato.
+     * @return array{connect: string, subscription: string} O que foi feito de fato.
      */
     public function delete(Tenant $tenant, ?string $reason = null): array
     {
@@ -63,7 +64,7 @@ class TenantDeleter
             // Sanctum já emitido continua válido até expirar, e o middleware de
             // admin passaria enquanto o cache do tenant não vencesse.
             DB::table('personal_access_tokens')
-                ->where('tokenable_type', \App\Models\User::class)
+                ->where('tokenable_type', User::class)
                 ->whereIn('tokenable_id', $tenant->users()->pluck('id'))
                 ->delete();
 

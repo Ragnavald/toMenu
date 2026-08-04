@@ -24,10 +24,8 @@ class ProductAdminController extends Controller
     {
         $products = Product::query()
             ->with('category:id,name')
-            ->when($request->string('search')->toString(), fn ($q, $term) =>
-                $q->where('name', 'ilike', "%{$term}%"))
-            ->when($request->integer('category_id'), fn ($q, $id) =>
-                $q->where('category_id', $id))
+            ->when($request->string('search')->toString(), fn ($q, $term) => $q->where('name', 'ilike', "%{$term}%"))
+            ->when($request->integer('category_id'), fn ($q, $id) => $q->where('category_id', $id))
             ->orderBy('position')
             // O painel agrupa por seção e precisa do cardápio inteiro de uma
             // vez; o teto evita que um catálogo grande derrube a resposta.
@@ -131,7 +129,7 @@ class ProductAdminController extends Controller
                 // possível vincular um produto à categoria de outra loja.
                 Rule::exists('categories', 'id')->where(
                     'tenant_id',
-                    app(\App\Tenancy\TenantContext::class)->id(),
+                    app(TenantContext::class)->id(),
                 ),
             ],
             'name' => ['required', 'string', 'max:120'],

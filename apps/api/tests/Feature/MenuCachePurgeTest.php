@@ -4,9 +4,11 @@ use App\Jobs\PurgeMenuCache;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\Tenant;
+use App\Models\User;
 use App\Services\MenuCachePurger;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Laravel\Sanctum\Sanctum;
 
 beforeEach(function () {
     $this->tenant = Tenant::factory()->create(['slug' => 'loja-a']);
@@ -118,8 +120,8 @@ it('não propaga falha do storefront para quem salvou o cardápio', function () 
  * este teste existe para que ela não se perca numa refatoração.
  */
 it('invalida o cardápio ao reordenar as seções', function () {
-    $user = App\Models\User::factory()->create(['tenant_id' => $this->tenant->id]);
-    Laravel\Sanctum\Sanctum::actingAs($user);
+    $user = User::factory()->create(['tenant_id' => $this->tenant->id]);
+    Sanctum::actingAs($user);
 
     actingAsTenant($this->tenant);
     $ids = [

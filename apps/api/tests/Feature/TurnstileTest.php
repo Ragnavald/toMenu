@@ -3,6 +3,7 @@
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\User;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 
 /*
@@ -159,7 +160,7 @@ it('deixa passar quando a Cloudflare está fora do ar', function () {
     // Falha aberta de propósito: uma indisponibilidade da Cloudflare não pode
     // derrubar o login de toda a plataforma. O rate limit continua valendo.
     enableTurnstile();
-    Http::fake(fn () => throw new Illuminate\Http\Client\ConnectionException('timeout'));
+    Http::fake(fn () => throw new ConnectionException('timeout'));
 
     $this->postJson('/api/auth/login', loginPayload())->assertOk();
 });
