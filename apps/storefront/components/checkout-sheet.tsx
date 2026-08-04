@@ -531,6 +531,18 @@ export function CheckoutSheet({
 
                   {isDelivery(fulfillment) && (
                     <>
+                      {/*
+                        Endereço reaproveitado é o campo que mais cara custa
+                        errar: o pedido sai para a casa antiga. O destaque
+                        pede a conferência que o preenchimento automático,
+                        sozinho, faz o cliente pular.
+                      */}
+                      {prefilled && (
+                        <p className="text-xs font-medium" style={{ color: 'rgb(var(--brand))' }}>
+                          Confira o endereço de entrega abaixo.
+                        </p>
+                      )}
+
                       <div className="grid gap-1.5">
                         <label htmlFor="zip" className="text-xs font-medium text-muted">
                           CEP

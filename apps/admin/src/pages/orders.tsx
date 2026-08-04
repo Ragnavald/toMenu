@@ -1,6 +1,7 @@
 import { useState, useSyncExternalStore } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiFetch, formatMoney } from '@/lib/api';
+import { ApiError, apiFetch, formatMoney } from '@/lib/api';
+import { connectionStore } from '@/lib/echo';
 import {
   FULFILLMENT_LABELS,
   ORDER_STATUSES,
@@ -113,6 +114,14 @@ export function OrdersPage() {
   const fitsKanban = useMediaQuery(KANBAN_MIN_WIDTH);
   const effectiveViewMode = fitsKanban ? viewMode : 'list';
 
+  // Decide a cadência do polling abaixo: com o tempo real vivo ele é apenas
+  // reconciliação; sem ele, é o único aviso de pedido novo.
+  const socketConnected = useSyncExternalStore(
+    connectionStore.subscribe,
+    connectionStore.getSnapshot,
+    () => false, // No SSR não há socket; assume desconectado e faz polling.
+  );
+
   // Drag and drop state
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
@@ -129,8 +138,32 @@ export function OrdersPage() {
         `/admin/orders${queryString ? `?${queryString}` : ''}`,
       );
     },
-    refetchInterval: 15_000,
+    /*
+     * O polling é rede de segurança, não o mecanismo de aviso.
+     *
+     * Quem anuncia pedido novo é o WebSocket, que já invalida esta query ao
+     * receber o evento. Com o socket conectado, buscar de 15 em 15 segundos é
+     * repetir de graça uma consulta com dois `whereHas` e eager loading —
+     * multiplicada por cada painel aberto, é a chamada mais cara da plataforma
+     * e quase sempre devolve exatamente o que o cliente já tem.
+     *
+     * O intervalo longo com o socket vivo cobre o que o tempo real não cobre:
+     * status mudado por outro operador, e o evento perdido enquanto a aba
+     * dormia. Sem socket, volta à cadência antiga — aí o polling é o único
+     * aviso que a cozinha tem.
+     */
+    refetchInterval: socketConnected ? 120_000 : 15_000,
   });
+
+  /*
+   * Um erro aqui precisa aparecer na tela.
+   *
+   * O card volta sozinho para a coluna de origem quando a chamada falha (a
+   * lista é reidratada do servidor), e sem aviso isso é indistinguível de um
+   * arraste que não pegou — o lojista tenta de novo achando que errou a mira,
+   * enquanto o pedido segue no status antigo.
+   */
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   const updateStatus = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) =>
@@ -138,7 +171,14 @@ export function OrdersPage() {
         method: 'PATCH',
         body: JSON.stringify({ status }),
       }),
+    onMutate: () => setStatusError(null),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['orders'] }),
+    onError: (caught) =>
+      setStatusError(
+        caught instanceof ApiError
+          ? caught.message
+          : 'Não foi possível mudar o status do pedido.',
+      ),
   });
 
   const orders = data?.data ?? [];
@@ -305,6 +345,22 @@ export function OrdersPage() {
           )}
         </div>
       </div>
+
+      {statusError && (
+        <p
+          role="alert"
+          className="panel flex items-center justify-between gap-3 p-3 text-sm text-red-600"
+        >
+          {statusError}
+          <button
+            type="button"
+            onClick={() => setStatusError(null)}
+            className="shrink-0 text-xs font-medium text-muted hover:text-foreground"
+          >
+            Dispensar
+          </button>
+        </p>
+      )}
 
       {isLoading && <p className="text-sm text-muted">Carregando pedidos…</p>}
 
