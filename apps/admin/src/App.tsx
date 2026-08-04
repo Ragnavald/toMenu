@@ -170,10 +170,35 @@ function UnauthenticatedRoutes({
   );
 }
 
+/**
+ * Caminhos que chegam por link de e-mail e valem MAIS que a sessão salva.
+ *
+ * Os dois são abertos por quem clicou num link na própria caixa de entrada, e
+ * os dois precisam rodar mesmo com uma sessão no localStorage — celular é onde
+ * isso dói, porque o navegador guarda a sessão de um acesso anterior e o
+ * lojista não a vê. Sem esta lista, o gate abaixo entrega o painel autenticado,
+ * o BrowserRouter não casa o caminho, e o catch-all redireciona para /pedidos:
+ * a tela de confirmação nunca monta, o token nunca é consumido e a conta segue
+ * não verificada — enquanto a sessão antiga dá a impressão de que o autologin
+ * funcionou.
+ */
+const EMAIL_LINK_PATHS = ['/confirmar-email', '/redefinir-senha'];
+
 function StoreAdminApp() {
   const [session, setSession] = useState<Session | null>(
     () => consumeHandoff() ?? loadSession(),
   );
+
+  // O link do e-mail tem precedência sobre a sessão existente. Não derruba a
+  // sessão salva: quem só reabriu o link de uma conta já confirmada continua
+  // com ela intacta ao voltar para o painel.
+  if (EMAIL_LINK_PATHS.includes(window.location.pathname)) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <UnauthenticatedRoutes onAuthenticated={setSession} />
+      </QueryClientProvider>
+    );
+  }
 
   // Sessão limpa por um 401 em qualquer requisição precisa derrubar a UI
   // autenticada, senão a tela fica presa em telas vazias.
