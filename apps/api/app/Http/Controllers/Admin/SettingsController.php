@@ -50,6 +50,11 @@ class SettingsController extends Controller
                 'onboardingCompleted' => $tenant->onboarding_completed_at !== null,
                 'acceptsOnlinePayment' => $tenant->acceptsOnlinePayment(),
                 'trialEndsAt' => $tenant->trial_ends_at?->toIso8601String(),
+                // O painel avisa sobre trial vencido assim que a data passa, sem
+                // esperar o `trials:expire` da madrugada. Para isso precisa
+                // distinguir quem já tem cobrança encaminhada no Stripe — esse
+                // lojista não deve ver aviso nenhum.
+                'subscriptionStatus' => $tenant->subscription_status,
             ],
             // O painel monta a navegação a partir daqui: sem pedidos, as telas
             // de operação, financeiro, entrega e pagamento não são renderizadas.

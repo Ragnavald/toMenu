@@ -192,6 +192,8 @@ export type Settings = {
     onboardingCompleted: boolean;
     acceptsOnlinePayment: boolean;
     trialEndsAt: string | null;
+    /** Estado da assinatura no Stripe — `null` enquanto o lojista não assinou. */
+    subscriptionStatus: string | null;
   };
   plan: PlanInfo;
   profile: {
