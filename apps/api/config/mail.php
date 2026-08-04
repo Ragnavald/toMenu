@@ -110,9 +110,30 @@ return [
     |
     */
 
+    /*
+     * Remetente.
+     *
+     * O default é "ToMenu", e não o `env('APP_NAME')` que vinha do framework.
+     * O encadeamento antigo tinha DOIS pontos de falha silenciosa: sem
+     * MAIL_FROM_NAME caía no APP_NAME, e sem APP_NAME caía em "Laravel" — foi
+     * assim que o e-mail de confirmação saiu assinado como Laravel. Um default
+     * errado aqui não quebra nada em teste; só aparece na caixa do lojista.
+     */
     'from' => [
-        'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
-        'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
+        'address' => env('MAIL_FROM_ADDRESS', 'suporte@to-menu.com'),
+        'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'ToMenu')),
     ],
+
+    /*
+     * Logo do cabeçalho dos e-mails (resources/views/vendor/mail/html/header).
+     *
+     * Precisa ser URL absoluta e pública: o cliente de e-mail busca a imagem de
+     * fora, sem sessão e sem cookie. Aponta para o wordmark que o nginx já
+     * serve junto do painel, então não há host nem asset novo para manter.
+     *
+     * Vazia desativa a imagem e o cabeçalho volta a ser o nome em texto — que
+     * é o que se quer em desenvolvimento, onde `app.to-menu.com` não existe.
+     */
+    'logo_url' => env('MAIL_LOGO_URL'),
 
 ];

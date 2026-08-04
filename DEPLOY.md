@@ -217,6 +217,30 @@ e do `proxy.ts` e portanto nunca colide com slug de loja.
 > O proxy ligado não é detalhe estético: com a nuvem cinza, o IP do droplet fica
 > exposto no DNS público e o tráfego não passa por TLS de borda, cache nem WAF.
 
+#### DMARC
+
+Um registro `TXT`, **DNS only** (nuvem cinza), sem o qual o e-mail transacional
+vai para o spam mesmo com SPF e DKIM corretos:
+
+| Tipo | Nome | Conteúdo |
+|---|---|---|
+| TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:suporte@to-menu.com` |
+
+Gmail e Outlook passaram a exigir DMARC de **qualquer** remetente, não só dos
+que enviam em massa. Sem o registro, a mensagem é tratada como não autenticada
+e cai na lixeira — foi exatamente o que aconteceu com o e-mail de confirmação
+de cadastro, com o DKIM do Resend já publicado e válido.
+
+O `p=none` é de propósito: apenas monitora, sem pedir bloqueio de nada. É a
+política certa para começar, porque um `p=reject` prematuro derruba e-mail
+legítimo caso algum remetente do domínio ainda não esteja alinhado. Endureça
+para `quarantine` depois de acompanhar os relatórios do `rua=` por algumas
+semanas.
+
+```bash
+dig +short TXT _dmarc.to-menu.com   # tem de responder; vazio = spam garantido
+```
+
 ### 4.2 Origin Certificate
 
 Em **SSL/TLS → Origin Server → Create Certificate**, aceite o padrão (RSA 2048,
@@ -366,6 +390,14 @@ MAIL_MAILER=resend
 RESEND_API_KEY=re_...
 MAIL_FROM_ADDRESS=suporte@to-menu.com
 MAIL_FROM_NAME=ToMenu
+
+# Assina o rodapé dos e-mails. Sem ele o Laravel usa o próprio nome como
+# padrão, e o lojista recebe "Laravel" na confirmação de cadastro.
+APP_NAME=ToMenu
+
+# Logo do cabeçalho. URL absoluta e pública — o cliente de e-mail busca a
+# imagem de fora, sem sessão. É o wordmark que o nginx já serve com o painel.
+MAIL_LOGO_URL=https://app.to-menu.com/tomenu-wordmark.png
 
 # Onde o link do e-mail aponta. A tela de redefinição é servida pelo painel,
 # não pela API — sem isto o lojista recebe uma URL que não abre.

@@ -1,5 +1,11 @@
 import { useRef, useState } from 'react';
-import { API_BASE, ApiError, saveSession, type Session } from '@/lib/api';
+import {
+  API_BASE,
+  ApiError,
+  loadLastTenant,
+  saveSession,
+  type Session,
+} from '@/lib/api';
 import { Shell } from '@/pages/forgot-password';
 import {
   Turnstile,
@@ -14,10 +20,16 @@ export function LoginPage({
   onAuthenticated: (session: Session) => void;
   onForgotPassword: () => void;
 }) {
-  // Vazio, e não pré-preenchido com uma loja: o valor de demonstração que
-  // ficava aqui aparecia para todo lojista e sugeria que ele deveria entrar
-  // numa loja que não é a dele.
-  const [tenant, setTenant] = useState('');
+  /*
+   * Pré-preenchido com a ÚLTIMA loja que entrou neste navegador — nunca com um
+   * valor fixo. A distinção importa: o slug de demonstração que ficava aqui
+   * antes aparecia para todo mundo e mandava o lojista para uma loja que não
+   * era a dele. Este vem do próprio acesso anterior, e some em navegador novo.
+   *
+   * Lido uma vez, na inicialização do estado: como função para o localStorage
+   * não ser tocado a cada render.
+   */
+  const [tenant, setTenant] = useState(loadLastTenant);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -135,6 +147,14 @@ export function LoginPage({
               onChange={(e) => setTenant(e.target.value)}
               className="field"
               placeholder="slug-da-loja"
+              // Slug é minúsculo e sem acento; o teclado do celular
+              // capitalizaria e corrigiria a primeira letra sozinho.
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              // Só rouba o foco quando o campo está vazio: com a loja já
+              // preenchida, quem chega quer digitar o e-mail.
+              autoFocus={tenant === ''}
             />
           </div>
 
@@ -147,6 +167,7 @@ export function LoginPage({
               type="email"
               required
               autoComplete="username"
+              autoFocus={tenant !== ''}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="field"
