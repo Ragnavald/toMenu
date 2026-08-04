@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Tenant;
 use App\Models\WebhookEvent;
+use App\Services\StripeMode;
 use App\Tenancy\TenantContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -162,6 +163,16 @@ class ProcessStripeEvent implements ShouldQueue
         $tenant->update([
             'stripe_subscription_id' => $subscriptionId,
             'stripe_customer_id' => $session['customer'] ?? $tenant->stripe_customer_id,
+            /*
+             * O evento não diz de qual ambiente veio, mas o endpoint diz: o
+             * `whsec_` que validou a assinatura pertence ao modo ativo, então
+             * um evento que chegou até aqui é necessariamente dele.
+             *
+             * Gravar o modo junto é o que impede o vínculo recém-criado de ser
+             * descartado como "de outro ambiente" no próximo clique — o tenant
+             * acabou de assinar de verdade.
+             */
+            'stripe_mode' => app(StripeMode::class)->current(),
         ]);
     }
 

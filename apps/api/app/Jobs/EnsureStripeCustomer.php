@@ -60,9 +60,18 @@ class EnsureStripeCustomer implements ShouldBeUnique, ShouldQueue
 
         $tenant = Tenant::withoutGlobalScopes()->find($this->tenantId);
 
-        // Já tem cliente: nada a adiantar. É o caso comum a partir da segunda
-        // visita à tela.
-        if (! $tenant || $tenant->stripe_customer_id) {
+        /*
+         * Já tem cliente NO MODO ATIVO: nada a adiantar. É o caso comum a
+         * partir da segunda visita à tela.
+         *
+         * A checagem de modo faz este job assumir também a recriação depois de
+         * uma troca de `STRIPE_MODE`: sem ela, um customer do ambiente anterior
+         * satisfaria a condição, o job desistiria, e o conserto só aconteceria
+         * no clique em assinar — de novo na janela de espera que este job
+         * existe justamente para eliminar.
+         */
+        if (! $tenant
+            || ($tenant->stripe_customer_id && $tenant->stripeLinkageMatchesMode($mode->current()))) {
             return;
         }
 

@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
     'name', 'slug', 'plan_id', 'status', 'trial_ends_at', 'deletion_reason',
-    'stripe_customer_id', 'stripe_account_id', 'stripe_charges_enabled',
+    'stripe_customer_id', 'stripe_mode', 'stripe_account_id', 'stripe_charges_enabled',
     'stripe_subscription_id', 'subscription_status', 'current_period_ends_at',
     'onboarding_step', 'onboarding_completed_at',
     'terms_accepted_at', 'terms_version', 'terms_accepted_ip',
@@ -36,10 +36,36 @@ class Tenant extends Model
     }
 
     /**
+     * Os ids do Stripe guardados aqui valem no ambiente ativo?
+     *
+     * Falso depois de trocar `STRIPE_MODE`: o `cus_`/`sub_` gravado pertence à
+     * conta do modo anterior e não existe na atual. Quem responde não é o
+     * prefixo da chave — ids de objeto não carregam ambiente no nome —, e sim a
+     * coluna `stripe_mode`, gravada junto com o id.
+     *
+     * Sem customer não há descasamento possível: a loja ainda não tem nada no
+     * Stripe, e o vínculo será criado já no modo certo.
+     */
+    public function stripeLinkageMatchesMode(string $activeMode): bool
+    {
+        if ($this->stripe_customer_id === null) {
+            return true;
+        }
+
+        return $this->stripe_mode === $activeMode;
+    }
+
+    /**
      * A assinatura está em dia?
      *
      * `trialing` conta como em dia: o lojista tem cartão cadastrado e o Stripe
      * vai cobrar sozinho no fim do trial.
+     *
+     * O modo NÃO entra aqui de propósito. Fazer o acesso depender do
+     * `STRIPE_MODE` faria um `.env` errado em produção derrubar toda loja paga
+     * de uma vez — silenciosamente. O descasamento é tratado onde ele de fato
+     * importa (ao falar com o Stripe), e não no que decide quem entra no
+     * painel.
      */
     public function hasActiveSubscription(): bool
     {

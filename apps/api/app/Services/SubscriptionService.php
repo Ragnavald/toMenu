@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\InvalidCouponException;
 use App\Models\Tenant;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Stripe\PromotionCode;
 use Stripe\StripeClient;
@@ -303,6 +304,19 @@ class SubscriptionService
      */
     public function ensureCustomer(Tenant $tenant): string
     {
+        /*
+         * O vínculo do modo anterior é descartado ANTES de ser reaproveitado.
+         *
+         * Trocar `STRIPE_MODE` não apaga nada do banco: o `cus_` continua lá,
+         * mas a conta que a chave nova enxerga não o conhece, e o Checkout
+         * morre com "No such customer" em todo clique — sem saída pela
+         * interface, porque nada no fluxo recria o cliente. Aqui o
+         * descasamento vira recriação silenciosa, no modo certo.
+         */
+        if (! $tenant->stripeLinkageMatchesMode($this->mode->current())) {
+            $this->forgetStripeLinkage($tenant);
+        }
+
         if ($tenant->stripe_customer_id) {
             return $tenant->stripe_customer_id;
         }
@@ -318,15 +332,49 @@ class SubscriptionService
                 ->lockForUpdate()
                 ->find($tenant->id);
 
-            if ($fresh?->stripe_customer_id) {
+            // O `stripe_mode` entra na condição pelo mesmo motivo de cima: sob
+            // concorrência, o registro relido pode ser o do modo antigo, e
+            // devolvê-lo aqui reintroduziria o id que acabamos de descartar.
+            if ($fresh?->stripe_customer_id
+                && $fresh->stripeLinkageMatchesMode($this->mode->current())) {
                 // Mantém o model do chamador coerente com o banco.
                 $tenant->stripe_customer_id = $fresh->stripe_customer_id;
+                $tenant->stripe_mode = $fresh->stripe_mode;
 
                 return $fresh->stripe_customer_id;
             }
 
             return $this->createCustomer($tenant);
         });
+    }
+
+    /**
+     * Esquece os ids do Stripe de um ambiente que não é mais o ativo.
+     *
+     * Limpa a assinatura junto com o cliente, e não só o `cus_`: um `sub_` do
+     * modo antigo faria o cancelamento na exclusão da loja mirar uma assinatura
+     * inexistente, e `subscription_status` faria o painel anunciar como paga uma
+     * loja que não tem assinatura nenhuma no ambiente atual.
+     *
+     * Nada é cancelado no Stripe: a assinatura do outro ambiente continua de pé
+     * e volta a valer se o `STRIPE_MODE` for revertido. O que se perde é só a
+     * referência local, que já estava inutilizável.
+     */
+    public function forgetStripeLinkage(Tenant $tenant): void
+    {
+        Log::warning('Stripe: vínculo de outro ambiente descartado.', [
+            'tenant_id' => $tenant->id,
+            'from_mode' => $tenant->stripe_mode,
+            'to_mode' => $this->mode->current(),
+        ]);
+
+        $tenant->update([
+            'stripe_customer_id' => null,
+            'stripe_mode' => null,
+            'stripe_subscription_id' => null,
+            'subscription_status' => null,
+            'current_period_ends_at' => null,
+        ]);
     }
 
     /** Cria o cliente no Stripe e guarda o id no tenant. */
@@ -343,7 +391,12 @@ class SubscriptionService
             ],
         ]);
 
-        $tenant->update(['stripe_customer_id' => $customer->id]);
+        // O modo anda junto do id, sempre na mesma escrita: um id gravado sem
+        // o modo é indistinguível de um id de outro ambiente.
+        $tenant->update([
+            'stripe_customer_id' => $customer->id,
+            'stripe_mode' => $this->mode->current(),
+        ]);
 
         return $customer->id;
     }

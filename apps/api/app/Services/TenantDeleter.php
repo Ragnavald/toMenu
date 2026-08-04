@@ -151,6 +151,29 @@ class TenantDeleter
             return 'not_applicable';
         }
 
+        /*
+         * Customer de outro ambiente do Stripe: não há o que cancelar AQUI.
+         *
+         * A assinatura existe, mas na conta do modo anterior — a chave ativa
+         * não a enxerga, e insistir renderia "No such customer" a cada
+         * exclusão. Devolve um estado próprio em vez de 'failed' porque não é
+         * falha de comunicação: é vínculo de outro ambiente, e tratá-lo como
+         * erro mandaria o staff procurar problema onde não há.
+         *
+         * Fica o alerta: se aquele ambiente ainda for real (produção que virou
+         * teste, por exemplo), a cobrança segue de pé lá e precisa ser
+         * cancelada à mão no Dashboard correspondente.
+         */
+        if (! $tenant->stripeLinkageMatchesMode(app(StripeMode::class)->current())) {
+            Log::warning('Exclusão de loja: assinatura pertence a outro ambiente do Stripe.', [
+                'tenant_id' => $tenant->id,
+                'tenant_mode' => $tenant->stripe_mode,
+                'active_mode' => app(StripeMode::class)->current(),
+            ]);
+
+            return 'other_mode';
+        }
+
         try {
             $subscriptions = $this->stripe()->subscriptions->all([
                 'customer' => $tenant->stripe_customer_id,
