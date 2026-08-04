@@ -259,3 +259,53 @@ it('não revela conta não confirmada para quem erra a senha', function () {
         ->assertStatus(422)
         ->assertJsonValidationErrors('email');
 });
+
+/*
+ * Marca do e-mail.
+ *
+ * O layout do framework troca o nome do remetente pelo LOGO DO LARAVEL quando
+ * `config('app.name')` é exatamente "Laravel" — e como esse é o valor padrão,
+ * bastava o APP_NAME ficar em branco no servidor para o lojista receber a
+ * marca de outra empresa na confirmação de cadastro. Foi o que aconteceu em
+ * produção.
+ *
+ * O teste força o pior caso (app.name de volta ao padrão) porque a versão
+ * boa passa mesmo com o bug presente: só o valor "Laravel" dispara a regra.
+ */
+it('nunca envia o logo do Laravel, mesmo com o app.name no padrão', function () {
+    config(['app.name' => 'Laravel', 'mail.logo_url' => null]);
+
+    $html = (new VerifyEmailLink($this->user, $this->tenant, 'tok', 30))->render();
+
+    expect($html)->not->toContain('laravel.com/img');
+});
+
+it('usa o wordmark do ToMenu no cabeçalho quando há logo configurado', function () {
+    config(['mail.logo_url' => 'https://app.to-menu.com/tomenu-wordmark.png']);
+
+    $html = (new VerifyEmailLink($this->user, $this->tenant, 'tok', 30))->render();
+
+    expect($html)->toContain('https://app.to-menu.com/tomenu-wordmark.png');
+});
+
+/*
+ * Sem logo configurado o cabeçalho cai no nome em texto — o caso de
+ * desenvolvimento, onde o host público não existe. O que não pode acontecer é
+ * o cabeçalho ficar vazio.
+ */
+it('cai no nome da marca em texto quando não há logo configurado', function () {
+    config(['mail.logo_url' => null]);
+
+    $html = (new VerifyEmailLink($this->user, $this->tenant, 'tok', 30))->render();
+
+    expect($html)->toContain('ToMenu')->not->toContain('<img');
+});
+
+/*
+ * O nome do remetente é o primeiro campo lido na caixa de entrada. O default
+ * do framework encadeava MAIL_FROM_NAME → APP_NAME → "Laravel", com duas
+ * chances de cair na marca errada em silêncio.
+ */
+it('não deixa o remetente cair em "Laravel" sem configuração', function () {
+    expect(config('mail.from.name'))->not->toBe('Laravel');
+});

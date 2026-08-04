@@ -2,6 +2,36 @@ const TOKEN_KEY = 'tomenu:admin:token';
 const TENANT_KEY = 'tomenu:admin:tenant';
 
 /**
+ * Última loja que entrou neste navegador, para pré-preencher o campo "Loja".
+ *
+ * Chave separada da TENANT_KEY de propósito: aquela pertence à sessão e é
+ * apagada no logout, que é justamente quando este valor precisa sobreviver —
+ * o lojista sai e volta na mesma máquina, e não deveria digitar o slug de novo.
+ *
+ * Guarda só o slug, que é público (está na URL da loja). Nada de e-mail ou
+ * senha: são credenciais, e o navegador já tem gerenciador próprio para elas.
+ */
+const LAST_TENANT_KEY = 'tomenu:admin:last-tenant';
+
+export function loadLastTenant(): string {
+  try {
+    return localStorage.getItem(LAST_TENANT_KEY) ?? '';
+  } catch {
+    // Safari em navegação privada lança ao tocar o localStorage. O campo
+    // apenas vem vazio — não é motivo para derrubar a tela de login.
+    return '';
+  }
+}
+
+function rememberLastTenant(slug: string): void {
+  try {
+    localStorage.setItem(LAST_TENANT_KEY, slug);
+  } catch {
+    // Ignorado pelo mesmo motivo: é uma conveniência, não parte do login.
+  }
+}
+
+/**
  * Origem da API.
  *
  * Vazia em desenvolvimento: o proxy do vite.config.ts encaminha `/api` para o
@@ -47,6 +77,11 @@ export function isOwner(): boolean {
 export function saveSession(session: Session): void {
   localStorage.setItem(TOKEN_KEY, JSON.stringify(session));
   localStorage.setItem(TENANT_KEY, session.tenantSlug);
+  // Aqui, e não no formulário de login: este é o único ponto por onde passam
+  // TODAS as formas de entrar — senha, confirmação de e-mail e redefinição.
+  // Quem confirma o e-mail nunca digitou o slug, e é justamente essa pessoa
+  // que mais precisa encontrá-lo preenchido no próximo acesso.
+  rememberLastTenant(session.tenantSlug);
 }
 
 /**
