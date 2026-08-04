@@ -314,6 +314,15 @@ REVERB_HOST=reverb                   # para onde o worker CONECTA (nome do servi
 REVERB_PORT=8080
 REVERB_SCHEME=http                   # interno ao compose; o TLS termina no nginx
 
+# Escala horizontal do WebSocket. Os dois andam JUNTOS: subir réplicas sem o
+# scaling parte as cozinhas em grupos que não recebem os eventos uns dos
+# outros, e o sintoma é intermitente conforme onde o nginx pôs cada aba.
+#
+# Vai para `apps/api/.env` (o Reverb lê em runtime). REVERB_REPLICAS é a
+# exceção: fica só aqui, porque quem a interpola é o YAML do compose.
+REVERB_SCALING_ENABLED=true          # pub/sub via Redis entre as réplicas
+REVERB_REPLICAS=2                    # só no .env.prod; interpolado no compose
+
 # Host público do WebSocket, congelado no bundle do admin durante o build.
 # REVERB_APP_KEY acima é reaproveitada como VITE_REVERB_APP_KEY pelo compose.
 VITE_REVERB_HOST=ws.to-menu.com

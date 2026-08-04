@@ -49,9 +49,21 @@ export function saveSession(session: Session): void {
   localStorage.setItem(TENANT_KEY, session.tenantSlug);
 }
 
+/**
+ * Evento de sessão encerrada, para a própria aba.
+ *
+ * O `storage` do navegador só chega às OUTRAS abas — nunca à que escreveu.
+ * Sem este aviso, um 401 limpa o token e a aba atual segue renderizando a UI
+ * autenticada com dados em cache: as requisições passam a sair sem
+ * `Authorization` e falham em silêncio, e o usuário arrasta um card no kanban
+ * sem ver erro nem mudança.
+ */
+export const SESSION_CLEARED_EVENT = 'tomenu:session-cleared';
+
 export function clearSession(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(TENANT_KEY);
+  window.dispatchEvent(new Event(SESSION_CLEARED_EVENT));
 }
 
 /**

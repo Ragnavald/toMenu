@@ -222,12 +222,25 @@ services:
   # `expose` e não `ports`: quem termina o TLS é o nginx, que faz o upgrade da
   # conexão em ws.to-menu.com. Publicar a porta no host abriria o Reverb sem
   # TLS direto na internet, e o navegador recusaria o ws:// numa página https.
+  # Escala horizontalmente: REVERB_REPLICAS controla quantos processos sobem
+  # (padrão 2, para que a queda de um não deixe as cozinhas mudas).
+  #
+  # As réplicas SÓ funcionam em conjunto com REVERB_SCALING_ENABLED=true: cada
+  # processo mantém em memória a lista de quem está conectado nele, e é o
+  # pub/sub do Redis que espelha o evento entre eles. Sem isso, o pedido
+  # publicado numa réplica não chega ao painel ligado na outra — e o sintoma é
+  # intermitente, conforme onde o balanceamento pôs cada aba.
+  #
+  # O nginx precisa do `resolver` para enxergar as réplicas (docker/nginx/
+  # default.conf, bloco ws.to-menu.com); sem ele o tráfego vai todo para uma só.
   reverb:
     <<: *api
     # Endereço de escuta vem de REVERB_SERVER_HOST/PORT no .env.prod, separado
     # do REVERB_HOST que o worker usa para publicar o evento.
     command: php artisan reverb:start
     expose: ["8080"]
+    deploy:
+      replicas: ${REVERB_REPLICAS:-2}
     # Testa o socket, não o /proc/1/cmdline usado pelos workers: um processo
     # vivo com a porta fechada é exatamente a falha que interessa detectar aqui.
     #

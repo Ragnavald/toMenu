@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { apiFetch, loadSession, saveSession, type Session } from '@/lib/api';
+import {
+  apiFetch,
+  loadSession,
+  saveSession,
+  SESSION_CLEARED_EVENT,
+  type Session,
+} from '@/lib/api';
 import type { Settings } from '@/lib/types';
 import { useForcedLightTheme } from '@/lib/theme';
 import { LoginPage } from '@/pages/login';
@@ -170,13 +176,24 @@ function StoreAdminApp() {
 
   // Sessão limpa por um 401 em qualquer requisição precisa derrubar a UI
   // autenticada, senão a tela fica presa em telas vazias.
+  //
+  // Os dois eventos são necessários e cobrem casos distintos: `storage` avisa
+  // as outras abas (logout em uma derruba as demais), e o evento customizado
+  // avisa a própria aba — que o `storage` nunca alcança. Sem o segundo, o 401
+  // limpava o token e a tela continuava de pé, disparando requisições anônimas
+  // em loop pelo refetch do react-query.
   useEffect(() => {
     function handleStorage() {
       setSession(loadSession());
     }
 
     window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
+    window.addEventListener(SESSION_CLEARED_EVENT, handleStorage);
+
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener(SESSION_CLEARED_EVENT, handleStorage);
+    };
   }, []);
 
   if (!session) {
