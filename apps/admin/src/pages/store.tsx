@@ -15,48 +15,84 @@ import {
 } from '@/lib/masks';
 import { SEGMENT_OPTIONS } from '@/lib/templates';
 
-function LogoUploader({
-  logoUrl,
+const IMAGE_KINDS = {
+  logo: {
+    endpoint: '/admin/settings/logo',
+    alt: 'Logo da loja',
+    empty: 'Sem logo',
+    upload: 'Enviar logo',
+    replace: 'Alterar logo',
+    error: 'Erro ao enviar a imagem do logo.',
+    // Quadrado: o logo é exibido em avatar redondo no cardápio.
+    frame: 'size-16 rounded-xl',
+  },
+  cover: {
+    endpoint: '/admin/settings/cover',
+    alt: 'Capa da loja',
+    empty: 'Sem capa',
+    upload: 'Enviar capa',
+    replace: 'Alterar capa',
+    error: 'Erro ao enviar a imagem de capa.',
+    // Panorâmico: espelha a faixa larga que a capa ocupa no topo da loja.
+    frame: 'h-16 w-32 rounded-lg',
+  },
+} as const;
+
+/**
+ * Envia logo ou capa e devolve a URL já gravada.
+ *
+ * O upload grava no banco sozinho, sem passar pelo "Salvar" do formulário — por
+ * isso o `onUploaded` precisa atualizar o estado local também. Enquanto ele não
+ * fazia isso, o campo do formulário seguia com a URL anterior e o próximo
+ * "Salvar" reescrevia a imagem antiga por cima da recém-enviada: a troca sumia
+ * do cardápio e o painel parecia ter ignorado o upload.
+ */
+function ImageUploader({
+  kind,
+  url,
   onUploaded,
 }: {
-  logoUrl: string | null;
+  kind: keyof typeof IMAGE_KINDS;
+  url: string | null;
   onUploaded: (url: string) => void;
 }) {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const labels = IMAGE_KINDS[kind];
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const formData = new FormData();
-    formData.append('logo', file);
+    formData.append(kind, file);
 
     setUploading(true);
     try {
-      const res = await apiFetch<{ url: string }>('/admin/settings/logo', {
+      const res = await apiFetch<{ url: string }>(labels.endpoint, {
         method: 'POST',
         body: formData,
       });
       onUploaded(res.url);
     } catch {
-      alert('Erro ao enviar a imagem do logo.');
+      alert(labels.error);
     } finally {
       setUploading(false);
+      // Sem isto, reenviar o MESMO arquivo depois de um erro não dispara
+      // change algum — o valor do input não mudou.
+      e.target.value = '';
     }
   }
 
   return (
     <div className="flex items-center gap-4">
-      <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-line bg-line/20 flex items-center justify-center">
-        {logoUrl ? (
-          <img
-            src={logoUrl}
-            alt="Logo da loja"
-            className="size-full object-cover"
-          />
+      <div
+        className={`relative shrink-0 overflow-hidden border border-line bg-line/20 flex items-center justify-center ${labels.frame}`}
+      >
+        {url ? (
+          <img src={url} alt={labels.alt} className="size-full object-cover" />
         ) : (
-          <span className="text-xs text-muted">Sem logo</span>
+          <span className="text-xs text-muted">{labels.empty}</span>
         )}
       </div>
 
@@ -74,7 +110,7 @@ function LogoUploader({
           onClick={() => fileInputRef.current?.click()}
           className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold hover:bg-line/40 transition-colors disabled:opacity-50"
         >
-          {uploading ? 'Enviando...' : logoUrl ? 'Alterar logo' : 'Enviar logo'}
+          {uploading ? 'Enviando...' : url ? labels.replace : labels.upload}
         </button>
         <p className="mt-1 text-[11px] text-muted">
           PNG, JPG, WEBP ou SVG (máx. 5MB)
@@ -180,6 +216,33 @@ export function StorePage() {
     setDirty(true);
   }
 
+  /**
+   * Reflete no painel uma imagem que o upload já gravou no banco.
+   *
+   * Diferente dos outros campos, esta não é uma edição pendente: o arquivo já
+   * subiu e a coluna já mudou. Por isso o cache de `settings` é corrigido junto
+   * — é ele que alimenta o restante do painel (o topo da barra lateral, o
+   * preview do tema) e, sem esta linha, esses lugares continuavam mostrando o
+   * logo anterior até um F5.
+   *
+   * `setQueryData` em vez de `invalidateQueries`: o refetch traria a resposta
+   * certa, mas o efeito que a copia para o formulário reescreve TODOS os campos
+   * e zera o `dirty`, descartando o que o lojista tivesse digitado antes de
+   * trocar a imagem. Como já temos a URL na mão, não há o que buscar.
+   *
+   * O `dirty` fica como está de propósito: a imagem não depende do "Salvar",
+   * então o upload sozinho não deve acender a barra pedindo que se salve.
+   */
+  function applyUploadedImage(field: 'logoUrl' | 'coverUrl', url: string) {
+    setForm((current) => ({ ...current, [field]: url }));
+
+    queryClient.setQueryData<Settings>(['settings'], (current) =>
+      current
+        ? { ...current, profile: { ...current.profile, [field]: url } }
+        : current,
+    );
+  }
+
   async function handleCepChange(rawCep: string) {
     const formatted = formatCep(rawCep);
     updateAddress({ zip: formatted });
@@ -256,12 +319,10 @@ export function StorePage() {
         <Section title="Identificação">
           <div className="grid gap-3.5">
             <Field label="Logo da loja">
-              <LogoUploader
-                logoUrl={form.logoUrl || null}
-                onUploaded={(url) => {
-                  update({ logoUrl: url });
-                  queryClient.invalidateQueries({ queryKey: ['settings'] });
-                }}
+              <ImageUploader
+                kind="logo"
+                url={form.logoUrl || null}
+                onUploaded={(url) => applyUploadedImage('logoUrl', url)}
               />
             </Field>
 
@@ -428,10 +489,24 @@ export function StorePage() {
 
         <Section
           title="Imagens da Loja"
-          description="Logotipo e imagem de capa da loja."
+          description="Imagem de capa exibida no topo do seu cardápio."
         >
           <div className="grid gap-3.5">
-            <Field label="Capa (URL)">
+            <Field label="Capa da loja">
+              <ImageUploader
+                kind="cover"
+                url={form.coverUrl || null}
+                onUploaded={(url) => applyUploadedImage('coverUrl', url)}
+              />
+            </Field>
+
+            {/* O campo continua editável para quem já hospeda a capa fora
+                daqui — apagar o conteúdo é também a única forma de REMOVER a
+                capa, já que o upload sempre substitui por outra imagem. */}
+            <Field
+              label="Capa (URL)"
+              hint="Preenchido pelo envio acima. Apague para remover a capa."
+            >
               <input
                 value={form.coverUrl}
                 onChange={(e) => update({ coverUrl: e.target.value })}

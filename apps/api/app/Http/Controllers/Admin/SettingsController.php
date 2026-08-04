@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\RefreshStreetMap;
 use App\Models\Order;
 use App\Models\TenantSettings;
+use App\Services\AssetCachePurger;
 use App\Services\ImageStorage;
 use App\Services\ThemeSanitizer;
 use App\Tenancy\TenantContext;
@@ -84,8 +85,12 @@ class SettingsController extends Controller
     }
 
     /** Dados de identidade da loja: nome, contato, endereço. */
-    public function updateProfile(Request $request, TenantContext $context): JsonResponse
-    {
+    public function updateProfile(
+        Request $request,
+        TenantContext $context,
+        ImageStorage $images,
+        AssetCachePurger $cdn,
+    ): JsonResponse {
         $tenant = $context->getOrFail();
 
         $data = $request->validate([
@@ -102,6 +107,15 @@ class SettingsController extends Controller
         $tenant->update(['name' => $data['name']]);
 
         $settings = TenantSettings::firstOrNew(['tenant_id' => $tenant->id]);
+
+        // Guardados antes do fill: são eles que dizem qual arquivo deixou de ser
+        // referenciado. Este formulário é o único caminho para REMOVER uma
+        // imagem (o upload sempre substitui por outra), e sem a faxina aqui o
+        // objeto ficaria no bucket para sempre — a URL some do banco e com ela a
+        // única pista de que ele existia.
+        $previousLogo = $settings->logo_url;
+        $previousCover = $settings->cover_url;
+
         $settings->fill([
             'segment' => $data['segment'] ?? null,
             'phone' => $data['phone'] ?? null,
@@ -112,6 +126,19 @@ class SettingsController extends Controller
             'cover_url' => $data['coverUrl'] ?? null,
         ]);
         $settings->save();
+
+        // O `delete` só age sobre upload nosso desta loja: uma URL externa
+        // colada no campo de capa não casa com o prefixo e é ignorada.
+        $orphans = [];
+
+        foreach ([[$previousLogo, $settings->logo_url, 'logos'], [$previousCover, $settings->cover_url, 'covers']] as [$before, $after, $prefix]) {
+            if ($before !== null && $before !== $after) {
+                $images->delete($before, $tenant->id, $prefix);
+                $orphans[] = $before;
+            }
+        }
+
+        $cdn->purge($orphans);
 
         // O mapa do perfil é desenhado a partir do endereço; quando ele muda, o
         // traçado guardado passa a apontar para o lugar errado. Comparar com o
@@ -126,26 +153,79 @@ class SettingsController extends Controller
     }
 
     /** Upload de logo do restaurante (Cloudflare R2 em produção, disco público como fallback). */
-    public function uploadLogo(Request $request, TenantContext $context, ImageStorage $images): JsonResponse
-    {
+    public function uploadLogo(
+        Request $request,
+        TenantContext $context,
+        ImageStorage $images,
+        AssetCachePurger $cdn,
+    ): JsonResponse {
+        return $this->uploadImage($request, $context, $images, $cdn, 'logo');
+    }
+
+    /** Upload da capa da loja. Mesmo caminho do logo, outro campo e outro prefixo. */
+    public function uploadCover(
+        Request $request,
+        TenantContext $context,
+        ImageStorage $images,
+        AssetCachePurger $cdn,
+    ): JsonResponse {
+        return $this->uploadImage($request, $context, $images, $cdn, 'cover');
+    }
+
+    /**
+     * Recebe a imagem, substitui a anterior e devolve a URL nova.
+     *
+     * Os dois uploads são o mesmo fluxo com nomes diferentes, e mantê-los como
+     * um método só é o que impede que voltem a divergir — a divergência entre o
+     * upload de logo e o de produto é justamente o que originou o ImageStorage.
+     *
+     * A ordem importa: o arquivo novo sobe ANTES de o antigo ser apagado. Se o
+     * upload falhar, a loja continua com a imagem que tinha; na ordem inversa,
+     * uma falha de rede deixaria a loja sem imagem nenhuma.
+     */
+    private function uploadImage(
+        Request $request,
+        TenantContext $context,
+        ImageStorage $images,
+        AssetCachePurger $cdn,
+        string $kind,
+    ): JsonResponse {
         $tenant = $context->getOrFail();
 
+        // `logos` é o prefixo que o TenantAssetPurger já varre na exclusão da
+        // loja; `covers` foi adicionado lá junto com este upload.
+        $prefix = $kind === 'logo' ? 'logos' : 'covers';
+        $column = $kind === 'logo' ? 'logo_url' : 'cover_url';
+
         $request->validate([
-            'logo' => ['required', 'image', 'mimes:jpeg,png,jpg,gif,webp,svg', 'max:5120'],
+            $kind => ['required', 'image', 'mimes:jpeg,png,jpg,gif,webp,svg', 'max:5120'],
         ]);
 
-        $file = $request->file('logo');
-        $filename = "logos/{$tenant->id}-logo-".time().'.'.$file->getClientOriginalExtension();
+        $file = $request->file($kind);
+        // `now()` e não `time()`: o relógio do Laravel é o que os testes
+        // conseguem mover, e é a diferença de timestamp que garante nome novo a
+        // cada troca — nome repetido faria o upload substituir o objeto no
+        // lugar, e a URL cacheada na borda seguiria servindo a imagem antiga.
+        $filename = "{$prefix}/{$tenant->id}-{$kind}-".now()->timestamp.'.'.$file->getClientOriginalExtension();
 
         $url = $images->put($file, $filename);
 
         $settings = TenantSettings::firstOrNew(['tenant_id' => $tenant->id]);
-        $settings->logo_url = $url;
+        $previous = $settings->{$column};
+        $settings->{$column} = $url;
         $settings->save();
+
+        // Duas trocas dentro do mesmo segundo geram o mesmo nome (o timestamp
+        // tem resolução de segundo), e aí a URL antiga é a nova: apagar aqui
+        // removeria o arquivo recém-enviado.
+        if ($previous !== $url) {
+            $images->delete($previous, $tenant->id, $prefix);
+            $cdn->purge([$previous]);
+        }
 
         return response()->json([
             'url' => $url,
-            'message' => 'Logo enviado com sucesso.',
+            'message' => $kind === 'logo' ? 'Logo enviado com sucesso.' : 'Capa enviada com sucesso.',
         ]);
     }
 
