@@ -142,3 +142,69 @@ it('invalida o cardápio ao reordenar as seções', function () {
     expect($this->tenant->fresh()->menu_version)->toBe($before + 1);
     Queue::assertPushed(PurgeMenuCache::class, 1);
 });
+
+/*
+ * Editar um produto invalida o cardápio — a mesma lacuna do reorder, num
+ * caminho muito mais percorrido.
+ *
+ * A armadilha aqui é que o cadastro (`store`) usa Eloquent e sempre funcionou,
+ * então o observer parecia cobrir o produto inteiro. Só a edição escapava, e o
+ * painel relê do banco: o lojista trocava a foto, via a nova imagem no admin, e
+ * o cardápio publicado seguia com a antiga até o TTL vencer. Isso mandava a
+ * investigação para o CDN, que não tinha culpa nenhuma.
+ */
+it('invalida o cardápio ao editar um produto', function () {
+    $user = User::factory()->create(['tenant_id' => $this->tenant->id]);
+    Sanctum::actingAs($user);
+
+    actingAsTenant($this->tenant);
+    $category = Category::factory()->create();
+    $product = Product::factory()->create([
+        'category_id' => $category->id,
+        'image_url' => "https://cdn.example.com/products/{$this->tenant->id}-antiga.jpg",
+    ]);
+    flushMenuInvalidations();
+
+    $before = $this->tenant->fresh()->menu_version;
+    Queue::fake();
+
+    $this->withHeader('X-Tenant', 'loja-a')
+        ->putJson("/api/admin/products/{$product->id}", [
+            'category_id' => $category->id,
+            'name' => $product->name,
+            'price_cents' => $product->price_cents,
+            'image_url' => "https://cdn.example.com/products/{$this->tenant->id}-nova.jpg",
+        ])
+        ->assertOk();
+
+    flushMenuInvalidations();
+
+    expect($this->tenant->fresh()->menu_version)->toBe($before + 1);
+    Queue::assertPushed(PurgeMenuCache::class, 1);
+});
+
+/*
+ * Excluir um produto também: `Builder::delete()` não passa pelo observer, e o
+ * item continuava à venda no cardápio publicado depois de removido do painel.
+ */
+it('invalida o cardápio ao excluir um produto', function () {
+    $user = User::factory()->create(['tenant_id' => $this->tenant->id]);
+    Sanctum::actingAs($user);
+
+    actingAsTenant($this->tenant);
+    $category = Category::factory()->create();
+    $product = Product::factory()->create(['category_id' => $category->id]);
+    flushMenuInvalidations();
+
+    $before = $this->tenant->fresh()->menu_version;
+    Queue::fake();
+
+    $this->withHeader('X-Tenant', 'loja-a')
+        ->deleteJson("/api/admin/products/{$product->id}")
+        ->assertNoContent();
+
+    flushMenuInvalidations();
+
+    expect($this->tenant->fresh()->menu_version)->toBe($before + 1);
+    Queue::assertPushed(PurgeMenuCache::class, 1);
+});
