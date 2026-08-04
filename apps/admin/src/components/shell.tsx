@@ -63,6 +63,49 @@ function navFor(allowsOrders: boolean): typeof NAV {
   })).filter((group) => group.items.length > 0);
 }
 
+/**
+ * Marca da loja no topo da barra lateral.
+ *
+ * Antes daqui havia um "T" fixo — o logo da ToMenu, não o da loja. Para quem
+ * opera mais de uma loja no mesmo navegador, o painel ficava sem sinal visual
+ * de qual delas estava aberta.
+ *
+ * A inicial do nome é o fallback, não um estado de carregamento: a maioria das
+ * lojas nunca sobe logo, e um quadrado vazio seria pior do que a letra. Vale
+ * também quando a imagem falha ao carregar — URL externa que saiu do ar, ou
+ * objeto já apagado do bucket cuja URL ainda está no banco.
+ */
+function StoreAvatar({
+  logoUrl,
+  name,
+}: {
+  logoUrl: string | null;
+  name: string;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  // Sem isto, trocar o logo por um que falhe (ou voltar para um que funcione)
+  // manteria o estado de erro da imagem anterior.
+  useEffect(() => setFailed(false), [logoUrl]);
+
+  if (logoUrl && !failed) {
+    return (
+      <img
+        src={logoUrl}
+        alt=""
+        onError={() => setFailed(true)}
+        className="size-8 shrink-0 rounded-lg border border-line object-cover"
+      />
+    );
+  }
+
+  return (
+    <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent text-sm font-bold text-white">
+      {name.trim().charAt(0).toUpperCase() || 'T'}
+    </div>
+  );
+}
+
 export function Shell({
   session,
   onLogout,
@@ -138,9 +181,10 @@ export function Shell({
         }`}
       >
         <div className="flex items-center gap-2.5 border-b border-line px-4 py-4">
-          <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent text-sm font-bold text-white">
-            T
-          </div>
+          <StoreAvatar
+            logoUrl={settings?.profile.logoUrl ?? null}
+            name={settings?.store.name ?? session.tenantName}
+          />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold leading-tight">
               {settings?.store.name ?? session.tenantName}
@@ -244,6 +288,10 @@ export function Shell({
           >
             <IconBars />
           </button>
+          <StoreAvatar
+            logoUrl={settings?.profile.logoUrl ?? null}
+            name={settings?.store.name ?? session.tenantName}
+          />
           <p className="truncate text-sm font-semibold">
             {settings?.store.name ?? session.tenantName}
           </p>
