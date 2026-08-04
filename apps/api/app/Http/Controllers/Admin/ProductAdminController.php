@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Services\ImageStorage;
+use App\Tenancy\PendingMenuInvalidations;
 use App\Tenancy\TenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -49,8 +50,12 @@ class ProductAdminController extends Controller
         return response()->json($product->load('modifierGroups.modifiers'));
     }
 
-    public function update(Request $request, Product $product, ImageStorage $images): JsonResponse
-    {
+    public function update(
+        Request $request,
+        Product $product,
+        ImageStorage $images,
+        PendingMenuInvalidations $pending,
+    ): JsonResponse {
         $data = $this->validated($request, $product->id);
 
         // Lida antes da escrita: depois do update a coluna já foi sobrescrita e
@@ -81,10 +86,27 @@ class ProductAdminController extends Controller
             $images->delete($previousImage, $product->tenant_id);
         }
 
+        /*
+         * Invalidação explícita, pelo mesmo motivo do reorder de categorias:
+         * `Builder::update()` desce para o query builder e não dispara evento
+         * de model, então o InvalidatesMenuCache nunca via esta escrita.
+         *
+         * O sintoma era pior aqui do que na ordenação. O produto é criado pelo
+         * Eloquent (`store`), então o observer cobre o cadastro e o cache nasce
+         * correto — só a EDIÇÃO ficava de fora. O lojista trocava a foto ou o
+         * preço, o painel relia direto do banco e mostrava o valor novo, e o
+         * cardápio publicado seguia servindo o anterior até o TTL expirar. Como
+         * o painel confirmava a mudança, a suspeita caía no CDN e não aqui.
+         *
+         * O update em lote é mantido: ele existe para que o `=== 0` detecte a
+         * recusa do RLS, que um `save()` de model esconderia.
+         */
+        $pending->push((int) $product->tenant_id);
+
         return response()->json($product->fresh());
     }
 
-    public function destroy(Product $product, ImageStorage $images): JsonResponse
+    public function destroy(Product $product, ImageStorage $images, PendingMenuInvalidations $pending): JsonResponse
     {
         $image = $product->image_url;
         $tenantId = $product->tenant_id;
@@ -97,6 +119,10 @@ class ProductAdminController extends Controller
         );
 
         $images->delete($image, $tenantId);
+
+        // Mesma lacuna do update: `Builder::delete()` também não passa pelo
+        // observer, e um produto excluído seguia no cardápio publicado.
+        $pending->push((int) $tenantId);
 
         return response()->json(status: 204);
     }
