@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Mail\SubscriptionConfirmed;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Tenant;
@@ -13,6 +14,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 /**
  * Processamento assíncrono dos eventos do Stripe.
@@ -174,6 +176,38 @@ class ProcessStripeEvent implements ShouldQueue
              */
             'stripe_mode' => app(StripeMode::class)->current(),
         ]);
+
+        $this->sendSubscriptionConfirmation($tenant->refresh());
+    }
+
+    /**
+     * Avisa o dono da loja que a assinatura foi confirmada.
+     *
+     * Vai para o owner e não para todos os usuários do tenant: é quem paga, e
+     * um gerente não precisa receber comprovante de cobrança no cartão alheio.
+     *
+     * Em try/catch porque o webhook JÁ gravou a assinatura neste ponto. Deixar
+     * a exceção subir marcaria o evento como não processado e o Stripe
+     * reentregaria — regravando o mesmo vínculo e tentando o e-mail de novo, em
+     * loop, por causa de uma falha de cortesia. O envio é enfileirado, então o
+     * catch pega falha ao ENFILEIRAR (Redis fora), não falha de entrega.
+     */
+    private function sendSubscriptionConfirmation(Tenant $tenant): void
+    {
+        $owner = $tenant->users()->where('role', 'owner')->first();
+
+        if (! $owner) {
+            return;
+        }
+
+        try {
+            Mail::to($owner->email)->send(new SubscriptionConfirmed($owner, $tenant));
+        } catch (\Throwable $e) {
+            Log::warning('Falha ao enviar a confirmação de assinatura.', [
+                'tenant_id' => $tenant->id,
+                'exception' => $e,
+            ]);
+        }
     }
 
     /**
