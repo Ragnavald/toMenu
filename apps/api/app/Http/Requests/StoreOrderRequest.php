@@ -34,7 +34,7 @@ class StoreOrderRequest extends FormRequest
 
             'payment_method' => [
                 'required',
-                Rule::in(['stripe_card', 'stripe_pix', 'cash', 'card_on_delivery']),
+                Rule::in([...Order::PAY_ON_DELIVERY_METHODS, ...Order::ONLINE_PAYMENT_METHODS]),
             ],
 
             'items' => ['required', 'array', 'min:1', 'max:50'],

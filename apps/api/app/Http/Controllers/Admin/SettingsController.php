@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\RefreshStreetMap;
+use App\Models\Order;
 use App\Models\TenantSettings;
 use App\Services\ImageStorage;
 use App\Services\ThemeSanitizer;
@@ -16,8 +17,16 @@ class SettingsController extends Controller
 {
     private const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
+    /**
+     * O que a loja pode habilitar precisa ser exatamente o que o pedido aceita.
+     *
+     * Montada a partir do model em vez de escrita à mão: divergir das duas
+     * listas deixava o lojista ligar uma forma de pagamento que o checkout
+     * depois recusava na validação.
+     */
     private const PAYMENT_METHODS = [
-        'cash', 'card_on_delivery', 'pix_on_delivery', 'stripe_card', 'stripe_pix',
+        ...Order::PAY_ON_DELIVERY_METHODS,
+        ...Order::ONLINE_PAYMENT_METHODS,
     ];
 
     public function show(TenantContext $context, ThemeSanitizer $sanitizer): JsonResponse

@@ -85,10 +85,25 @@ class Order extends Model
         return $this->payment_status === 'paid';
     }
 
+    /**
+     * Formas em que o dinheiro troca de mãos fora da plataforma.
+     *
+     * A lista vive aqui, e não repetida em cada ponto que precisa dela, porque
+     * esquecer uma forma em um dos lugares não dá erro nenhum — só produz um
+     * comportamento errado e silencioso. Foi o que aconteceu com
+     * `pix_on_delivery`: as configurações da loja já ofereciam a opção, mas ela
+     * faltava nesta lista, então o pedido pago em Pix na entrega nunca virava
+     * `paid` e ficava fora do financeiro para sempre.
+     */
+    public const PAY_ON_DELIVERY_METHODS = ['cash', 'card_on_delivery', 'pix_on_delivery'];
+
+    /** Formas liquidadas pelo gateway, onde quem manda no pagamento é o webhook. */
+    public const ONLINE_PAYMENT_METHODS = ['stripe_card', 'stripe_pix'];
+
     /** Pagamento na entrega dispensa confirmação do gateway. */
     public function isPayOnDelivery(): bool
     {
-        return in_array($this->payment_method, ['cash', 'card_on_delivery'], true);
+        return in_array($this->payment_method, self::PAY_ON_DELIVERY_METHODS, true);
     }
 
     /**

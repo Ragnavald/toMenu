@@ -203,7 +203,7 @@ class OrderService
 
     private function isPayOnDelivery(string $method): bool
     {
-        return in_array($method, ['cash', 'card_on_delivery'], true);
+        return in_array($method, Order::PAY_ON_DELIVERY_METHODS, true);
     }
 
     /**
