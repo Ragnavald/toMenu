@@ -8,6 +8,7 @@ use Illuminate\Support\ServiceProvider;
 use Sentry\Event;
 use Sentry\EventHint;
 use Sentry\State\Scope;
+use Sentry\UserDataBag;
 
 use function Sentry\configureScope;
 
@@ -63,7 +64,7 @@ class SentryContextProvider extends ServiceProvider
          * ou um atendente, que é a pergunta operacional real.
          */
         if ($user = Auth::user()) {
-            $event->setUser(\Sentry\UserDataBag::createFromArray([
+            $event->setUser(UserDataBag::createFromArray([
                 'id' => $user->getAuthIdentifier(),
                 'role' => $user->role ?? null,
             ]));

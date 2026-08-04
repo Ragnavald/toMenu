@@ -16,15 +16,14 @@ class OrderAdminController extends Controller
 
         $orders = Order::query()
             ->with(['items:id,order_id,product_name,quantity,total_cents', 'customer:id,name,phone'])
-            ->when($request->string('status')->toString(), fn ($q, $status) =>
-                $q->where('status', $status))
+            ->when($request->string('status')->toString(), fn ($q, $status) => $q->where('status', $status))
             ->when($search !== '', function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {
                     $cleanSearch = ltrim($search, '#');
                     $sub->where('number', 'like', "%{$cleanSearch}%")
                         ->orWhereHas('customer', function ($customerQuery) use ($search) {
                             $customerQuery->where('name', 'like', "%{$search}%")
-                                         ->orWhere('phone', 'like', "%{$search}%");
+                                ->orWhere('phone', 'like', "%{$search}%");
                         })
                         ->orWhereHas('items', function ($itemQuery) use ($search) {
                             $itemQuery->where('product_name', 'like', "%{$search}%");

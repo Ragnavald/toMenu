@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\BillingController;
 use App\Http\Controllers\Admin\CategoryAdminController;
 use App\Http\Controllers\Admin\FinanceAdminController;
+use App\Http\Controllers\Admin\MenuImportController;
 use App\Http\Controllers\Admin\ModifierGroupAdminController;
 use App\Http\Controllers\Admin\OrderAdminController;
 use App\Http\Controllers\Admin\ProductAdminController;
@@ -244,6 +245,10 @@ Route::prefix('admin')
         // capturados como {category} pelo route model binding.
         Route::post('categories/reorder', [CategoryAdminController::class, 'reorder']);
         Route::post('categories/batch', [CategoryAdminController::class, 'batchStore']);
+
+        // Modelo de cardápio pronto: categorias + produtos + grupos numa
+        // transação só. O `categories/batch` acima cria apenas seções vazias.
+        Route::post('menu/import', [MenuImportController::class, 'store']);
         Route::apiResource('categories', CategoryAdminController::class)
             ->only(['index', 'store', 'update', 'destroy']);
 

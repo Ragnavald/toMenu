@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\TenantRegistrar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Stripe\Service\AccountService;
 use Stripe\StripeClient;
@@ -186,7 +187,7 @@ class StoreDeletionTest extends TestCase
             'confirmation' => 'padaria',
         ], $this->headers($tenant))->assertOk();
 
-        $registrar = app(\App\Services\TenantRegistrar::class);
+        $registrar = app(TenantRegistrar::class);
 
         $this->assertFalse($registrar->isSlugAvailable('padaria'));
         $this->assertSame('padaria-2', $registrar->uniqueSlug('padaria'));

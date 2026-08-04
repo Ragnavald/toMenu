@@ -10,9 +10,10 @@ use App\Models\TenantSettings;
 use App\Observers\InvalidatesMenuCache;
 use App\Tenancy\PendingMenuInvalidations;
 use App\Tenancy\TenantContext;
-use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobFailed;
+use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Octane\Events\RequestReceived;
 
 class TenancyServiceProvider extends ServiceProvider
 {
@@ -91,12 +92,12 @@ class TenancyServiceProvider extends ServiceProvider
      */
     private function registerOctaneReset(): void
     {
-        if (! class_exists(\Laravel\Octane\Events\RequestReceived::class)) {
+        if (! class_exists(RequestReceived::class)) {
             return;
         }
 
         $this->app['events']->listen(
-            \Laravel\Octane\Events\RequestReceived::class,
+            RequestReceived::class,
             fn () => app(TenantContext::class)->forget(),
         );
     }

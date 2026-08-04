@@ -3,6 +3,7 @@
 use App\Models\Category;
 use App\Models\Modifier;
 use App\Models\ModifierGroup;
+use App\Models\Order;
 use App\Models\Product;
 use App\Models\Tenant;
 use App\Models\TenantSettings;
@@ -385,7 +386,7 @@ it('registra o grupo de cada opção no snapshot do pedido', function () {
     actingAsTenant($this->tenant);
 
     $snapshot = collect(
-        \App\Models\Order::latest('id')->first()->items->first()->modifiers_snapshot
+        Order::latest('id')->first()->items->first()->modifiers_snapshot
     );
 
     expect($snapshot)->toHaveCount(2)

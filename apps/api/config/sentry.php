@@ -1,5 +1,14 @@
 <?php
 
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\AuthenticationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
+use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+
 /**
  * Sentry Laravel SDK configuration file.
  *
@@ -66,18 +75,18 @@ return [
      */
     'ignore_exceptions' => [
         // 404 — inclui loja inexistente e route model binding sem resultado.
-        Symfony\Component\HttpKernel\Exception\NotFoundHttpException::class,
-        Illuminate\Database\Eloquent\ModelNotFoundException::class,
+        NotFoundHttpException::class,
+        ModelNotFoundException::class,
         // 422 — formulário inválido é o usuário sendo guiado, não erro nosso.
-        Illuminate\Validation\ValidationException::class,
+        ValidationException::class,
         // 401/403 — sessão expirada e acesso negado são o sistema funcionando.
-        Illuminate\Auth\AuthenticationException::class,
-        Illuminate\Auth\Access\AuthorizationException::class,
-        Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException::class,
+        AuthenticationException::class,
+        AuthorizationException::class,
+        AccessDeniedHttpException::class,
         // 405 — método errado numa rota existente; mesma família do 404.
-        Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException::class,
+        MethodNotAllowedHttpException::class,
         // 429 — o throttle fazendo exatamente o trabalho dele.
-        Illuminate\Http\Exceptions\ThrottleRequestsException::class,
+        ThrottleRequestsException::class,
     ],
 
     // @see: https://docs.sentry.io/platforms/php/guides/laravel/configuration/options/#ignore_transactions

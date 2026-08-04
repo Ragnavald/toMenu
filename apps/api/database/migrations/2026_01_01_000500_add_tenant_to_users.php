@@ -28,10 +28,10 @@ return new class extends Migration
         });
 
         if (DB::getDriverName() === 'pgsql') {
-            DB::statement("
+            DB::statement('
                 CREATE UNIQUE INDEX users_central_email_unique
                 ON users (email) WHERE tenant_id IS NULL
-            ");
+            ');
         }
     }
 

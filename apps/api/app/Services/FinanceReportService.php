@@ -7,6 +7,7 @@ use Illuminate\Contracts\Database\Query\Builder as BuilderContract;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\LazyCollection;
 
 /**
  * Consultas do painel financeiro.
@@ -80,9 +81,9 @@ class FinanceReportService
      * precisa aparecer no relatório financeiro, senão a soma do CSV não bate
      * com o total exibido na tela.
      *
-     * @return \Illuminate\Support\LazyCollection<int, \stdClass>
+     * @return LazyCollection<int, \stdClass>
      */
-    public function exportCursor(Carbon $from, Carbon $to, string $search = ''): \Illuminate\Support\LazyCollection
+    public function exportCursor(Carbon $from, Carbon $to, string $search = ''): LazyCollection
     {
         return $this->applySearch($this->revenueQuery($from, $to), $search)
             ->leftJoin('customers', 'customers.id', '=', 'orders.customer_id')

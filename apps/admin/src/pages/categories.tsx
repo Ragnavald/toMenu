@@ -3,7 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiFetch } from '@/lib/api';
 import type { Category, Settings } from '@/lib/types';
 import { EmptyState, PageHeader } from '@/components/ui';
-import { SEGMENT_OPTIONS, templateCategorias, getSegmentLabel } from '@/lib/templates';
+import {
+  SEGMENT_OPTIONS,
+  templateCategorias,
+  menuTemplates,
+  getSegmentLabel,
+  type MenuTemplate,
+} from '@/lib/templates';
 
 export function CategoriesPage() {
   const queryClient = useQueryClient();
@@ -27,6 +33,18 @@ export function CategoriesPage() {
 
   const activeSegment = selectedSegment || settings?.profile?.segment || '';
   const activeTemplates = activeSegment ? templateCategorias[activeSegment] : null;
+  const activeMenuTemplate = activeSegment ? menuTemplates[activeSegment] : null;
+
+  // Os sabores ficam de fora da prévia: são insumos do grupo composto, não
+  // itens que o cliente vê no cardápio. Listá-los junto das pizzas faria o
+  // lojista achar que "Sabor 1" é um produto à venda.
+  const insumoRefs = new Set(
+    activeMenuTemplate?.categorias.filter((c) => c.is_option_only).map((c) => c.ref),
+  );
+  const vendaveis =
+    activeMenuTemplate?.produtos.filter((p) => !insumoRefs.has(p.categoria_ref)) ?? [];
+  const insumos =
+    activeMenuTemplate?.produtos.filter((p) => insumoRefs.has(p.categoria_ref)) ?? [];
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['categories'] });
@@ -55,6 +73,59 @@ export function CategoriesPage() {
     onSuccess: () => {
       invalidate();
       setError(null);
+    },
+  });
+
+  /**
+   * Importa um modelo de cardápio inteiro (categorias + produtos + grupos).
+   *
+   * O template usa `ref` no lugar de id porque nada disso existe no banco
+   * ainda; o backend resolve as ligações depois de criar cada entidade.
+   */
+  const importMenu = useMutation({
+    mutationFn: (template: MenuTemplate) =>
+      apiFetch('/admin/menu/import', {
+        method: 'POST',
+        body: JSON.stringify({
+          categories: template.categorias.map((c) => ({
+            ref: c.ref,
+            name: c.nome,
+            is_option_only: c.is_option_only ?? false,
+          })),
+          groups: template.grupos.map((g) => ({
+            ref: g.ref,
+            name: g.nome,
+            min_select: g.min_select,
+            max_select: g.max_select,
+            is_required: g.is_required ?? false,
+            source: g.source,
+            source_category_ref: g.source_categoria_ref ?? null,
+            pricing_rule: g.pricing_rule,
+          })),
+          products: template.produtos.map((p) => ({
+            ref: p.ref,
+            category_ref: p.categoria_ref,
+            name: p.nome,
+            description: p.descricao ?? null,
+            price_cents: p.price_cents,
+            group_refs: p.grupos_ref ?? [],
+          })),
+        }),
+      }),
+    onSuccess: () => {
+      invalidate();
+      // Só o import cria grupos de opções; as outras mutações desta tela
+      // mexem apenas em categorias. Sem isto a tela de Opções seguiria com o
+      // cache antigo e o grupo de sabores recém-criado não apareceria.
+      queryClient.invalidateQueries({ queryKey: ['modifier-groups'] });
+      setError(null);
+    },
+    onError: (caught) => {
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : 'Não foi possível importar o modelo de cardápio.',
+      );
     },
   });
 
@@ -177,6 +248,53 @@ export function CategoriesPage() {
                 >
                   + {item.icone} {item.nome}
                 </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeMenuTemplate && (
+          <div className="space-y-2 border-t border-line pt-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="space-y-0.5">
+                <span className="block text-xs font-medium text-ink">
+                  Modelo pronto: {activeMenuTemplate.label}
+                </span>
+                <span className="block text-[11px] text-muted">
+                  Cria {vendaveis.length} itens de cardápio e {insumos.length}{' '}
+                  sabores de exemplo para você renomear. Os itens de dois sabores
+                  já vêm com o grupo de sabores configurado.
+                </span>
+              </div>
+              <button
+                type="button"
+                disabled={importMenu.isPending}
+                onClick={() => {
+                  // Diferente das seções vazias acima, desfazer um import é
+                  // caro: são produtos e grupos item por item, e uma categoria
+                  // com produtos dentro nem chega a ser excluída. Importar duas
+                  // vezes duplica o cardápio inteiro.
+                  const confirmed =
+                    categories.length === 0 ||
+                    window.confirm(
+                      'Isto vai criar os itens do modelo além do que já existe no seu cardápio. Importar mesmo assim?',
+                    );
+
+                  if (confirmed) importMenu.mutate(activeMenuTemplate);
+                }}
+                className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {importMenu.isPending ? 'Importando...' : '🍕 Importar cardápio modelo'}
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {vendaveis.map((item) => (
+                <span
+                  key={item.ref}
+                  className="rounded-full border border-line bg-surface px-3 py-1 text-xs font-medium text-muted"
+                >
+                  {item.nome}
+                </span>
               ))}
             </div>
           </div>

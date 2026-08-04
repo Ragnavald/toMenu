@@ -5,6 +5,7 @@ use App\Tenancy\PendingMenuInvalidations;
 use App\Tenancy\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Redis;
 use Tests\TestCase;
 
 /*
@@ -13,10 +14,30 @@ use Tests\TestCase;
  * Sem o flush, o cache negativo da resolução de tenant ("slug não existe" → 0)
  * sobrevive de um teste para o outro e o tenant recém-criado pelo teste
  * seguinte é rejeitado com 404. Limpar aqui mantém os testes independentes.
+ *
+ * Os LOCKS precisam de uma limpeza própria, e não são detalhe: `Cache::flush()`
+ * limpa a conexão `cache` (REDIS_CACHE_DB), enquanto `Cache::lock()` grava na
+ * conexão `lock_connection`, que por padrão é a `default` — outro banco Redis,
+ * que o flush não alcança.
+ *
+ * Quem depende disso é todo job `ShouldBeUnique`. O RefreshStreetMap trava por
+ * `uniqueFor = 120` segundos usando o tenant_id como chave, e o tenant_id é
+ * quase sempre 1 num banco recém-migrado: o lock deixado por uma execução da
+ * suíte fazia a execução seguinte descartar o dispatch em silêncio, e o teste
+ * do redesenho falhava sem nada ter mudado no código. O TTL expirando sozinho
+ * é o que dava a esse erro a aparência de teste instável.
  */
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
-    ->beforeEach(fn () => Cache::flush())
+    ->beforeEach(function () {
+        Cache::flush();
+
+        if (config('cache.default') === 'redis') {
+            Redis::connection(
+                config('cache.stores.redis.lock_connection', 'default'),
+            )->flushdb();
+        }
+    })
     ->in('Feature');
 
 /** Ativa o contexto de tenant, como faria o middleware em uma request real. */

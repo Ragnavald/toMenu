@@ -1,11 +1,10 @@
 <?php
 
 use App\Models\Category;
-use App\Models\Customer;
-use App\Models\Order;
 use App\Models\Product;
 use App\Models\Tenant;
-use App\Models\User;
+use App\Tenancy\TenantContext;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -122,7 +121,7 @@ it('impede gravar registro com tenant_id de outro tenant', function () {
         'price_cents' => 100,
         'created_at' => now(),
         'updated_at' => now(),
-    ]))->toThrow(\Illuminate\Database\QueryException::class);
+    ]))->toThrow(QueryException::class);
 });
 
 it('impede update cruzado via query builder', function () {
@@ -158,11 +157,11 @@ it('impede delete cruzado via query builder', function () {
 it('restaura o contexto anterior após runFor', function () {
     actingAsTenant($this->tenantA);
 
-    app(\App\Tenancy\TenantContext::class)->runFor($this->tenantB, function () {
-        expect(app(\App\Tenancy\TenantContext::class)->id())->toBe($this->tenantB->id);
+    app(TenantContext::class)->runFor($this->tenantB, function () {
+        expect(app(TenantContext::class)->id())->toBe($this->tenantB->id);
     });
 
-    expect(app(\App\Tenancy\TenantContext::class)->id())->toBe($this->tenantA->id);
+    expect(app(TenantContext::class)->id())->toBe($this->tenantA->id);
 });
 
 it('limpa a variável de sessão do postgres ao esquecer o tenant', function () {

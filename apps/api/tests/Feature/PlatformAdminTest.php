@@ -3,13 +3,15 @@
 namespace Tests\Feature;
 
 use App\Models\Category;
-use App\Models\PlatformAuditLog;
 use App\Models\Plan;
+use App\Models\PlatformAuditLog;
 use App\Models\Product;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Tenancy\TenantContext;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Stripe\Service\AccountService;
 use Stripe\StripeClient;
@@ -119,7 +121,7 @@ class PlatformAdminTest extends TestCase
      */
     private function withTokenOnly(string $token, array $headers = []): static
     {
-        \Illuminate\Support\Facades\Auth::forgetGuards();
+        Auth::forgetGuards();
 
         return $this->flushHeaders()->withToken($token)->withHeaders($headers);
     }
@@ -599,7 +601,7 @@ class PlatformAdminTest extends TestCase
 
         // Sem isto o handler converte a exceção em 500 mas engole o corpo, e a
         // falha do teste não diria qual erro ocorreu.
-        $this->withoutExceptionHandling([\Illuminate\Database\QueryException::class]);
+        $this->withoutExceptionHandling([QueryException::class]);
 
         try {
             $this->deleteJson("/api/platform/stores/{$tenant->slug}", [

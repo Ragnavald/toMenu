@@ -5,7 +5,9 @@ use App\Models\Order;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\FinanceReportService;
+use App\Tenancy\TenantContext;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\LazyCollection;
 use Laravel\Sanctum\Sanctum;
 
 beforeEach(function () {
@@ -40,7 +42,7 @@ function makeOrder(Tenant $tenant, array $attributes = []): Order
 
 function actingAsTenantAnd(Tenant $tenant, callable $callback): mixed
 {
-    return app(App\Tenancy\TenantContext::class)->runFor($tenant, $callback);
+    return app(TenantContext::class)->runFor($tenant, $callback);
 }
 
 // ---------------------------------------------------------------------------
@@ -169,7 +171,7 @@ it('percorre a exportação sem hidratar models', function () {
     $rows = actingAsTenantAnd($this->tenant, fn () => app(FinanceReportService::class)
         ->exportCursor(Carbon::parse('2026-07-01'), Carbon::parse('2026-07-31')));
 
-    expect($rows)->toBeInstanceOf(Illuminate\Support\LazyCollection::class);
+    expect($rows)->toBeInstanceOf(LazyCollection::class);
 
     foreach ($rows as $row) {
         expect($row)->toBeInstanceOf(stdClass::class)

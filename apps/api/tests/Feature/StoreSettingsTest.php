@@ -5,6 +5,8 @@ use App\Models\Product;
 use App\Models\Tenant;
 use App\Models\TenantSettings;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 
 beforeEach(function () {
@@ -286,9 +288,9 @@ it('não expõe configurações de uma loja para outra', function () {
 });
 
 it('faz upload da logo da loja', function () {
-    Illuminate\Support\Facades\Storage::fake('public');
+    Storage::fake('public');
 
-    $file = Illuminate\Http\UploadedFile::fake()->create('logo.png', 100, 'image/png');
+    $file = UploadedFile::fake()->create('logo.png', 100, 'image/png');
 
     $this->withHeaders(asStore())
         ->postJson('/api/admin/settings/logo', [
@@ -306,31 +308,31 @@ it('faz upload da logo da loja', function () {
  * de produto na nuvem, logo no container, some no deploy seguinte.
  */
 it('envia a logo para o disco remoto quando o R2 está configurado', function () {
-    Illuminate\Support\Facades\Storage::fake('r2');
-    Illuminate\Support\Facades\Storage::fake('public');
+    Storage::fake('r2');
+    Storage::fake('public');
     config(['filesystems.disks.r2.key' => 'test-key']);
 
     $this->withHeaders(asStore())
         ->postJson('/api/admin/settings/logo', [
-            'logo' => Illuminate\Http\UploadedFile::fake()->create('logo.png', 100, 'image/png'),
+            'logo' => UploadedFile::fake()->create('logo.png', 100, 'image/png'),
         ])
         ->assertOk();
 
-    expect(Illuminate\Support\Facades\Storage::disk('r2')->allFiles())->toHaveCount(1)
-        ->and(Illuminate\Support\Facades\Storage::disk('public')->allFiles())->toBeEmpty();
+    expect(Storage::disk('r2')->allFiles())->toHaveCount(1)
+        ->and(Storage::disk('public')->allFiles())->toBeEmpty();
 });
 
 it('envia a imagem do produto para o mesmo disco remoto que a logo', function () {
-    Illuminate\Support\Facades\Storage::fake('r2');
-    Illuminate\Support\Facades\Storage::fake('public');
+    Storage::fake('r2');
+    Storage::fake('public');
     config(['filesystems.disks.r2.key' => 'test-key']);
 
     $this->withHeaders(asStore())
         ->postJson('/api/admin/products/upload-image', [
-            'image' => Illuminate\Http\UploadedFile::fake()->create('prato.png', 100, 'image/png'),
+            'image' => UploadedFile::fake()->create('prato.png', 100, 'image/png'),
         ])
         ->assertOk();
 
-    expect(Illuminate\Support\Facades\Storage::disk('r2')->allFiles())->toHaveCount(1)
-        ->and(Illuminate\Support\Facades\Storage::disk('public')->allFiles())->toBeEmpty();
+    expect(Storage::disk('r2')->allFiles())->toHaveCount(1)
+        ->and(Storage::disk('public')->allFiles())->toBeEmpty();
 });

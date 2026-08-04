@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\Category;
+use App\Models\Modifier;
+use App\Models\ModifierGroup;
 use App\Models\Product;
 use App\Models\Tenant;
 use App\Models\TenantSettings;
@@ -108,13 +110,13 @@ it('mantém arrays JSON no payload servido a partir do cache', function () {
     $category = Category::factory()->create();
     $product = Product::factory()->create(['category_id' => $category->id]);
 
-    $group = App\Models\ModifierGroup::create([
+    $group = ModifierGroup::create([
         'name' => 'Tamanho',
         'min_select' => 1,
         'max_select' => 1,
         'is_required' => true,
     ]);
-    App\Models\Modifier::create([
+    Modifier::create([
         'modifier_group_id' => $group->id,
         'name' => 'Grande',
         'price_delta_cents' => 500,

@@ -9,6 +9,7 @@ use App\Services\TenantPurger;
 use App\Tenancy\TenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -219,7 +220,7 @@ class StoreManagementController extends Controller
          * o forget a loja continuaria em 404 depois de reativada. Mesma
          * regressão coberta por StoreSuspensionTest.
          */
-        \Illuminate\Support\Facades\Cache::forget("tenant-id:slug:{$tenant->slug}");
+        Cache::forget("tenant-id:slug:{$tenant->slug}");
 
         PlatformAuditLog::record('reactivate', $tenant, $request->user(), [], $request);
 

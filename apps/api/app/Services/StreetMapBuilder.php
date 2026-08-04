@@ -149,7 +149,7 @@ class StreetMapBuilder
         $radius = self::RADIUS_M;
         $highways = self::HIGHWAYS;
 
-        $query = "[out:json][timeout:25];"
+        $query = '[out:json][timeout:25];'
             ."way(around:{$radius},{$lat},{$lng})[highway~\"^({$highways})$\"];"
             .'out geom;';
 
