@@ -59,7 +59,15 @@ export function proxy(request: NextRequest) {
    * Host para decidir o que responder (ver app/robots.ts), então basta deixá-los
    * passar sem reescrita.
    */
-  if (pathname === '/robots.txt' || pathname === '/sitemap.xml') {
+  if (
+    pathname === '/robots.txt' ||
+    pathname === '/sitemap.xml' ||
+    pathname === '/sw.js' ||
+    pathname === '/manifest.json' ||
+    pathname.startsWith('/img/') ||
+    pathname === '/cooked.webp' ||
+    pathname === '/cooked.jpg'
+  ) {
     return NextResponse.next();
   }
 
