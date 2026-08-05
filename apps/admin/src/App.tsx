@@ -189,17 +189,6 @@ function StoreAdminApp() {
     () => consumeHandoff() ?? loadSession(),
   );
 
-  // O link do e-mail tem precedência sobre a sessão existente. Não derruba a
-  // sessão salva: quem só reabriu o link de uma conta já confirmada continua
-  // com ela intacta ao voltar para o painel.
-  if (EMAIL_LINK_PATHS.includes(window.location.pathname)) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <UnauthenticatedRoutes onAuthenticated={setSession} />
-      </QueryClientProvider>
-    );
-  }
-
   // Sessão limpa por um 401 em qualquer requisição precisa derrubar a UI
   // autenticada, senão a tela fica presa em telas vazias.
   //
@@ -208,6 +197,13 @@ function StoreAdminApp() {
   // avisa a própria aba — que o `storage` nunca alcança. Sem o segundo, o 401
   // limpava o token e a tela continuava de pé, disparando requisições anônimas
   // em loop pelo refetch do react-query.
+  //
+  // IMPORTANTE: este useEffect deve ficar ANTES de qualquer return condicional.
+  // Quando a verificação de e-mail tem sucesso, o caminho muda de
+  // /confirmar-email para /bem-vindo entre renders — se o hook estivesse depois
+  // do early-return do EMAIL_LINK_PATHS, o segundo render executaria mais hooks
+  // que o primeiro (React error #310: "Rendered more hooks than during the
+  // previous render").
   useEffect(() => {
     function handleStorage() {
       setSession(loadSession());
@@ -221,6 +217,17 @@ function StoreAdminApp() {
       window.removeEventListener(SESSION_CLEARED_EVENT, handleStorage);
     };
   }, []);
+
+  // O link do e-mail tem precedência sobre a sessão existente. Não derruba a
+  // sessão salva: quem só reabriu o link de uma conta já confirmada continua
+  // com ela intacta ao voltar para o painel.
+  if (EMAIL_LINK_PATHS.includes(window.location.pathname)) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <UnauthenticatedRoutes onAuthenticated={setSession} />
+      </QueryClientProvider>
+    );
+  }
 
   if (!session) {
     return (
