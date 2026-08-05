@@ -45,6 +45,89 @@ function emptyDraft(categoryId: number | null): Draft {
   };
 }
 
+export function MenuDisclaimer() {
+  const [dismissed, setDismissed] = useState(() => {
+    return localStorage.getItem('tomenu_menu_disclaimer_dismissed') === 'true';
+  });
+
+  if (dismissed) {
+    return (
+      <div className="mb-4 flex justify-end">
+        <button
+          type="button"
+          onClick={() => {
+            localStorage.setItem('tomenu_menu_disclaimer_dismissed', 'false');
+            setDismissed(false);
+          }}
+          className="text-xs text-muted hover:text-accent flex items-center gap-1 font-medium transition-colors cursor-pointer"
+        >
+          💡 Ver dicas de organização do cardápio
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="panel mb-4 overflow-hidden border border-line bg-panel p-4 sm:p-5 relative transition-all duration-300">
+      <button
+        type="button"
+        onClick={() => {
+          localStorage.setItem('tomenu_menu_disclaimer_dismissed', 'true');
+          setDismissed(true);
+        }}
+        className="absolute top-3 right-3 text-muted hover:text-ink text-xs transition-colors p-1 cursor-pointer"
+        title="Ocultar dicas"
+      >
+        ✕ Ocultar
+      </button>
+
+      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+        <span>💡 Entendendo seu Cardápio</span>
+      </h3>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col justify-between p-3.5 rounded-lg bg-bg/50 border border-line/60">
+          <div>
+            <h4 className="text-xs font-semibold text-ink flex items-center gap-1.5 mb-1.5">
+              📂 Categorias (Seções)
+            </h4>
+            <p className="text-xs text-muted leading-relaxed">
+              Seus produtos são organizados em categorias (como <em>Entradas</em>, <em>Pratos Principais</em> ou <em>Bebidas</em>). Isso ajuda seus clientes a navegar de forma rápida e organizada pela sua loja.
+            </p>
+          </div>
+          <div className="mt-3.5">
+            <Link
+              to="/categorias"
+              className="inline-flex items-center text-xs font-semibold text-accent hover:underline gap-1"
+            >
+              Adicionar Categoria →
+            </Link>
+          </div>
+        </div>
+
+        <div className="flex flex-col justify-between p-3.5 rounded-lg bg-bg/50 border border-line/60">
+          <div>
+            <h4 className="text-xs font-semibold text-ink flex items-center gap-1.5 mb-1.5">
+              ⚙️ Opções, Adicionais e Variações
+            </h4>
+            <p className="text-xs text-muted leading-relaxed">
+              Você pode oferecer adicionais (como <em>borda recheada</em> ou <em>queijo extra</em>) e variações (como <em>tamanho do item</em>). Para casos especiais como <strong>pizzas de dois sabores (meio a meio)</strong>, o cliente pode combinar sabores de uma categoria inteira e o sistema cobra automaticamente pelo sabor mais caro.
+            </p>
+          </div>
+          <div className="mt-3.5">
+            <Link
+              to="/opcoes"
+              className="inline-flex items-center text-xs font-semibold text-accent hover:underline gap-1"
+            >
+              Cadastrar opções →
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function MenuPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
@@ -275,6 +358,7 @@ export function MenuPage() {
     return (
       <div>
         <PageHeader title="Cardápio" />
+        <MenuDisclaimer />
         <EmptyState
           title="Crie uma seção primeiro"
           description="Os itens do cardápio ficam dentro de seções como Entradas, Pratos principais ou Bebidas."
@@ -309,6 +393,8 @@ export function MenuPage() {
           </button>
         }
       />
+
+      <MenuDisclaimer />
 
       <input
         value={search}
