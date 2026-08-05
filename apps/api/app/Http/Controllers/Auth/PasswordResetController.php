@@ -130,7 +130,7 @@ class PasswordResetController extends Controller
             // O token é de uso único: quem já trocou a senha não deve poder
             // trocar de novo com o mesmo link, e um e-mail encaminhado por
             // engano perde o valor.
-            $this->forgetToken($email, $tenant->id);
+            $this->forgetToken($user->email, $tenant->id);
 
             /*
              * Revoga as sessões abertas.
