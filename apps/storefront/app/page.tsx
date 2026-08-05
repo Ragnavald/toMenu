@@ -254,23 +254,25 @@ export default function LandingPage() {
           responder "quanto custa" sem abrir a página. */}
       <JsonLd data={platformSchema(SITE_URL)} />
 
-      <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
+      <header className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6 sm:py-5">
         {/* A landing é sempre clara — `auto` traria a arte clara no aparelho
             em modo escuro, deixando "ToMenu" branco sobre fundo branco. */}
-        <BrandLogo priority scheme="light" className="h-8 w-auto sm:h-9" />
+        <BrandLogo priority scheme="light" className="h-7 w-auto sm:h-9" />
 
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-3 sm:gap-5">
           <a
             href={ADMIN_URL}
-            className="text-sm font-medium text-muted hover:text-[rgb(var(--ink))] transition-colors"
+            className="text-xs sm:text-sm font-medium text-muted hover:text-[rgb(var(--ink))] transition-colors whitespace-nowrap"
           >
-            Acessar painel
+            <span className="sm:hidden">Acessar</span>
+            <span className="hidden sm:inline">Acessar painel</span>
           </a>
           <Link
             href="#comecar"
-            className="rounded-lg px-4 py-2 text-sm font-medium text-muted transition-colors hover:text-[rgb(var(--ink))]"
+            className="rounded-lg px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium text-muted transition-colors hover:text-[rgb(var(--ink))] whitespace-nowrap"
           >
-            Criar minha loja
+            <span className="sm:hidden">Criar loja</span>
+            <span className="hidden sm:inline">Criar minha loja</span>
           </Link>
         </div>
       </header>
