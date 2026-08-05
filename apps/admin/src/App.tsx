@@ -28,6 +28,7 @@ import { AppearancePage } from '@/pages/appearance';
 import { SubscriptionPage } from '@/pages/subscription';
 import { OnboardingPage } from '@/pages/onboarding';
 import { PlatformApp } from '@/pages/platform/app';
+import { PwaBanner } from '@/components/pwa-banner';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -310,6 +311,7 @@ function OnboardingShell() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
+      <PwaBanner />
       <OnboardingPage />
     </div>
   );

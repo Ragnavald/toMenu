@@ -11,6 +11,12 @@ const SITE_URL =
     ? 'http://localhost:3000'
     : `https://${process.env.NEXT_PUBLIC_ROOT_DOMAIN}`;
 
+const ADMIN_URL =
+  process.env.NEXT_PUBLIC_ADMIN_URL ??
+  ((process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'localhost') === 'localhost'
+    ? 'http://localhost:5173'
+    : `https://app.${process.env.NEXT_PUBLIC_ROOT_DOMAIN}`);
+
 /*
  * Atendimento da ToMenu para montar o cardápio no lugar do lojista.
  *
@@ -253,12 +259,20 @@ export default function LandingPage() {
             em modo escuro, deixando "ToMenu" branco sobre fundo branco. */}
         <BrandLogo priority scheme="light" className="h-8 w-auto sm:h-9" />
 
-        <Link
-          href="#comecar"
-          className="rounded-lg px-4 py-2 text-sm font-medium text-muted transition-colors hover:text-[rgb(var(--ink))]"
-        >
-          Criar minha loja
-        </Link>
+        <div className="flex items-center gap-5">
+          <a
+            href={ADMIN_URL}
+            className="text-sm font-medium text-muted hover:text-[rgb(var(--ink))] transition-colors"
+          >
+            Acessar painel
+          </a>
+          <Link
+            href="#comecar"
+            className="rounded-lg px-4 py-2 text-sm font-medium text-muted transition-colors hover:text-[rgb(var(--ink))]"
+          >
+            Criar minha loja
+          </Link>
+        </div>
       </header>
 
       <main>
@@ -319,8 +333,13 @@ export default function LandingPage() {
                 clicar, e é aqui que a dúvida "vou ter que pagar agora?"
                 aparece. */}
             <p className="mt-3 text-sm text-muted">
-              Grátis por 14 dias. Sem cartão de crédito, sem fidelidade —
-              cancele quando quiser.
+              Grátis por 14 dias. Sem cartão de crédito, sem fidelidade. Ou se{' '}
+              <a
+                href={ADMIN_URL}
+                className="font-semibold text-[rgb(var(--ink))] underline decoration-[var(--hairline)] underline-offset-4 hover:decoration-[rgb(var(--ink))] transition-colors"
+              >
+                já tem uma loja, acesse o painel aqui
+              </a>.
             </p>
 
             {/* Uma loja de cada plano. Os dois links juntos são o argumento:

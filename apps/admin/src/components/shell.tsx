@@ -7,6 +7,7 @@ import { isUnlocked, unlock } from '@/lib/alert-sound';
 import { disconnectEcho } from '@/lib/echo';
 import { useOrderAlert } from '@/lib/use-order-alert';
 import type { Settings } from '@/lib/types';
+import { PwaBanner } from './pwa-banner';
 
 type NavItem = {
   to: string;
@@ -475,6 +476,7 @@ export function Shell({
         )}
 
         <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6 sm:px-6">
+          <PwaBanner />
           {children}
         </main>
       </div>
