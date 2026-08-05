@@ -143,7 +143,7 @@ class EmailVerificationController extends Controller
         $tenant = Tenant::where('slug', Str::lower($tenantSlug))->first();
 
         return $tenant
-            ? User::where('tenant_id', $tenant->id)->where('email', $email)->first()
+            ? User::where('tenant_id', $tenant->id)->where('email', Str::lower($email))->first()
             : null;
     }
 }

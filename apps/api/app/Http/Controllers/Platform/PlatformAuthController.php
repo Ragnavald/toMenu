@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -31,7 +32,7 @@ class PlatformAuthController extends Controller
 
         $user = User::whereNull('tenant_id')
             ->where('is_platform_admin', true)
-            ->where('email', $data['email'])
+            ->where('email', Str::lower($data['email']))
             ->first();
 
         /*

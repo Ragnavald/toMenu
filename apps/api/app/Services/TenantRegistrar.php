@@ -57,7 +57,7 @@ class TenantRegistrar
             $user = User::create([
                 'tenant_id' => $tenant->id,
                 'name' => $data['owner_name'],
-                'email' => $data['email'],
+                'email' => Str::lower($data['email']),
                 'password' => $data['password'],
                 'role' => 'owner',
             ]);

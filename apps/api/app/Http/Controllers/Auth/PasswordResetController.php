@@ -56,7 +56,9 @@ class PasswordResetController extends Controller
          * terceiros: basta repetir o POST para encher a caixa de um lojista.
          * A chave inclui a loja porque o par é o que identifica a conta.
          */
-        $key = 'pwd-reset:'.Str::lower($data['email']).':'.Str::lower($data['tenant']);
+        $email = Str::lower($data['email']);
+        $tenantSlug = Str::lower($data['tenant']);
+        $key = 'pwd-reset:'.$email.':'.$tenantSlug;
 
         if (RateLimiter::tooManyAttempts($key, maxAttempts: 3)) {
             throw ValidationException::withMessages([
@@ -66,10 +68,10 @@ class PasswordResetController extends Controller
 
         RateLimiter::hit($key, decaySeconds: 900);
 
-        $tenant = Tenant::where('slug', Str::lower($data['tenant']))->first();
+        $tenant = Tenant::where('slug', $tenantSlug)->first();
 
         $user = $tenant
-            ? User::where('tenant_id', $tenant->id)->where('email', $data['email'])->first()
+            ? User::where('tenant_id', $tenant->id)->where('email', $email)->first()
             : null;
 
         if ($user) {
@@ -95,13 +97,15 @@ class PasswordResetController extends Controller
             'password' => ['required', 'string', 'min:8', 'confirmed'],
         ]);
 
-        $tenant = Tenant::where('slug', Str::lower($data['tenant']))->first();
+        $email = Str::lower($data['email']);
+        $tenantSlug = Str::lower($data['tenant']);
+        $tenant = Tenant::where('slug', $tenantSlug)->first();
 
         $user = $tenant
-            ? User::where('tenant_id', $tenant->id)->where('email', $data['email'])->first()
+            ? User::where('tenant_id', $tenant->id)->where('email', $email)->first()
             : null;
 
-        $record = $user ? $this->findToken($data['email'], $tenant->id) : null;
+        $record = $user ? $this->findToken($email, $tenant->id) : null;
 
         // Mensagem única para token ausente, expirado ou de outra conta: os três
         // casos são indistinguíveis para quem tem direito ao link, e separá-los
@@ -126,7 +130,7 @@ class PasswordResetController extends Controller
             // O token é de uso único: quem já trocou a senha não deve poder
             // trocar de novo com o mesmo link, e um e-mail encaminhado por
             // engano perde o valor.
-            $this->forgetToken($data['email'], $tenant->id);
+            $this->forgetToken($email, $tenant->id);
 
             /*
              * Revoga as sessões abertas.
