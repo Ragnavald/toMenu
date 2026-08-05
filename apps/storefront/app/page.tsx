@@ -108,6 +108,29 @@ const PLANS = [
 ];
 
 /**
+ * Os três pontos da seção de identidade digital.
+ *
+ * São deliberadamente os únicos itens da landing escritos por oposição — o que
+ * a loja própria tem e o perfil num marketplace não tem. Em BENEFITS esse tom
+ * ficaria fora de lugar, porque lá o leitor ainda está entendendo o produto;
+ * aqui ele já está olhando para a tela pronta e comparando com o que conhece.
+ */
+const IDENTITY_POINTS = [
+  {
+    title: 'Endereço que é seu.',
+    body: 'sualoja.tomenu.app, ou o domínio que você já tem. O cliente salva o link e volta direto, sem passar por vitrine de concorrente.',
+  },
+  {
+    title: 'Sem comissão por pedido.',
+    body: 'Você paga a mensalidade e pronto. O que o cliente gasta é seu — não uma fatia do que sobra depois da taxa da plataforma.',
+  },
+  {
+    title: 'Abre em qualquer celular.',
+    body: 'Um link ou um QR code na mesa. Sem instalar aplicativo, sem criar conta, sem barreira entre a fome e o pedido.',
+  },
+];
+
+/**
  * O argumento de valor, em benefício e não em funcionalidade.
  *
  * FEATURES abaixo responde "o que o sistema faz"; esta seção responde "o que
@@ -287,7 +310,93 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="border-y border-[var(--hairline)] bg-[var(--elevated)]">
+        {/* A identidade digital da loja, mostrada em vez de descrita.
+
+            As seções seguintes são todas texto: capacidades, planos, vantagens.
+            Nenhuma responde "com o que a minha loja vai parecer", que é o que
+            trava quem nunca viu o produto. Um aparelho com a loja aberta na
+            tela responde isso antes do primeiro parágrafo — e por isso vem
+            logo depois do herói, ainda na altura em que a pessoa decide se
+            continua rolando. */}
+        <section className="relative overflow-hidden border-y border-[var(--hairline)]">
+          {/* O halo é o que separa o aparelho do branco da página: sem fundo
+              na imagem, o celular recortado flutuaria sobre nada e a sombra
+              própria dele não teria onde cair. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[42rem] w-[42rem] -translate-x-1/2 -translate-y-1/2 rounded-full blur-3xl lg:left-[72%]"
+            style={{
+              background:
+                'radial-gradient(circle, rgb(var(--brand) / 0.16) 0%, rgb(var(--brand) / 0.05) 45%, transparent 70%)',
+            }}
+          />
+
+          <div className="mx-auto grid max-w-5xl items-center gap-12 px-6 py-20 lg:grid-cols-[1fr_auto] lg:gap-16">
+            <div className="max-w-xl">
+              <p
+                className="text-sm font-semibold uppercase tracking-wide"
+                style={{ color: 'rgb(var(--brand))' }}
+              >
+                Identidade digital
+              </p>
+
+              <h2 className="mt-3 text-3xl font-semibold leading-[1.15] tracking-tight sm:text-4xl">
+                A sua loja no bolso do cliente — com a cara da sua marca
+              </h2>
+
+              <p className="mt-5 text-lg leading-relaxed text-muted">
+                Não é um perfil dentro do aplicativo de outra empresa, dividindo
+                a tela com o concorrente ao lado. É um endereço seu, com as suas
+                cores, a sua tipografia e as suas fotos — aberto direto no
+                navegador, sem download e sem cadastro para quem vai pedir.
+              </p>
+
+              <ul className="mt-8 grid gap-4">
+                {IDENTITY_POINTS.map((point) => (
+                  <li key={point.title} className="flex gap-3">
+                    <span
+                      aria-hidden
+                      className="mt-1 grid size-5 shrink-0 place-items-center rounded-full text-[11px]"
+                      style={{
+                        background: 'rgb(var(--brand-soft))',
+                        color: 'rgb(var(--brand))',
+                      }}
+                    >
+                      ✓
+                    </span>
+                    <span className="text-sm leading-relaxed">
+                      <strong className="font-semibold">{point.title}</strong>{' '}
+                      <span className="text-muted">{point.body}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              <Link
+                href="/to-menu-loja"
+                className="mt-8 inline-flex items-center gap-2 text-sm font-semibold underline decoration-[var(--hairline)] underline-offset-4 transition-colors hover:decoration-[rgb(var(--ink))]"
+              >
+                Abrir uma loja de exemplo no seu celular
+              </Link>
+            </div>
+
+            {/* `priority` fica de fora: a imagem é pesada e está abaixo da
+                dobra, então disputar banda com o herói atrasaria o LCP da
+                página em troca de nada. */}
+            <div className="relative mx-auto w-[16rem] sm:w-[19rem] lg:w-[21rem]">
+              <Image
+                src="/flating-device.png"
+                alt="Celular dobrável exibindo uma loja ToMenu, com o cardápio, as categorias e os preços na identidade visual do restaurante."
+                width={475}
+                height={1024}
+                sizes="(min-width: 1024px) 21rem, (min-width: 640px) 19rem, 16rem"
+                className="animate-float-device h-auto w-full drop-shadow-[0_35px_60px_rgb(23_23_23_/_0.28)]"
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="border-b border-[var(--hairline)] bg-[var(--elevated)]">
           <div className="mx-auto grid max-w-5xl gap-x-10 gap-y-8 px-6 py-14 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map((feature) => (
               <div key={feature.title}>
