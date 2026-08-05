@@ -19,24 +19,30 @@ export function PwaInstallPrompt() {
 
   useEffect(() => {
     // 1. Registro do Service Worker
+    const registerSW = () => {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((reg) => console.log('PWA: Service Worker registrado com sucesso:', reg.scope))
+        .catch((err) => console.error('PWA: Falha ao registrar Service Worker:', err));
+    };
+
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker
-          .register('/sw.js')
-          .then((reg) => console.log('PWA: Service Worker registrado com sucesso:', reg.scope))
-          .catch((err) => console.error('PWA: Falha ao registrar Service Worker:', err));
-      });
+      if (document.readyState === 'complete') {
+        registerSW();
+      } else {
+        window.addEventListener('load', registerSW);
+      }
     }
 
     // 2. Interceptação do prompt de instalação nativo (Chrome/Android)
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       deferredPromptRef.current = e as BeforeInstallPromptEvent;
+      setPromptType('beforeinstallprompt');
 
       // Verifica se o usuário já dispensou o prompt recentemente
       const dismissed = localStorage.getItem('pwa-install-dismissed');
       if (!dismissed) {
-        setPromptType('beforeinstallprompt');
         setShowPrompt(true);
       }
     };
@@ -55,11 +61,12 @@ export function PwaInstallPrompt() {
       const isStandalone = (window.navigator as any).standalone === true || 
                             window.matchMedia('(display-mode: standalone)').matches;
 
-      const dismissed = localStorage.getItem('pwa-install-dismissed');
-
-      if (isIOS && isSafari && !isStandalone && !dismissed) {
+      if (isIOS && isSafari && !isStandalone) {
         setPromptType('ios');
-        setShowPrompt(true);
+        const dismissed = localStorage.getItem('pwa-install-dismissed');
+        if (!dismissed) {
+          setShowPrompt(true);
+        }
       }
     };
 
@@ -68,6 +75,9 @@ export function PwaInstallPrompt() {
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('load', registerSW);
+      }
       clearTimeout(timeoutId);
     };
   }, []);
@@ -103,8 +113,8 @@ export function PwaInstallPrompt() {
         }}
         aria-label="Instalar aplicativo"
       >
-        <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+        <svg className="size-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
         </svg>
         <span className="text-[11px] font-semibold pr-1 hidden md:inline">Instalar App</span>
       </button>

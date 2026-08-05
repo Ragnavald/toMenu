@@ -65,6 +65,26 @@ describe('PwaInstallPrompt Component', () => {
     expect(mockRegister).toHaveBeenCalledWith('/sw.js');
   });
 
+  it('deve registrar o Service Worker imediatamente se a página já estiver carregada', () => {
+    const originalReadyState = document.readyState;
+    Object.defineProperty(document, 'readyState', {
+      writable: true,
+      configurable: true,
+      value: 'complete',
+    });
+
+    render(<PwaInstallPrompt />);
+
+    expect(mockRegister).toHaveBeenCalledWith('/sw.js');
+
+    // Restaurar readyState original
+    Object.defineProperty(document, 'readyState', {
+      writable: true,
+      configurable: true,
+      value: originalReadyState,
+    });
+  });
+
   it('não deve mostrar o banner por padrão', () => {
     render(<PwaInstallPrompt />);
     expect(screen.queryByText('Instalar ToMenu')).not.toBeInTheDocument();
