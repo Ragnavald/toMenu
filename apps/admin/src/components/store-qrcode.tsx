@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE, ApiError, apiDownload, loadSession } from '@/lib/api';
+import { CustomCardModal } from './custom-card-modal';
 
 /**
  * Tamanhos ofertados no download, espelhando a lista fechada do backend
@@ -26,12 +27,13 @@ const DEFAULT_SIZE = 1024;
  * buscada como blob e exibida por object URL, o mesmo motivo que fez o
  * `apiDownload` existir para o CSV.
  */
-export function StoreQrCode({ storefrontUrl }: { storefrontUrl: string }) {
+export function StoreQrCode({ storefrontUrl, logoUrl }: { storefrontUrl: string; logoUrl: string | null }) {
   const [size, setSize] = useState(DEFAULT_SIZE);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [isCardModalOpen, setIsCardModalOpen] = useState(false);
 
   /*
    * Guarda o object URL vigente para revogá-lo.
@@ -183,14 +185,24 @@ export function StoreQrCode({ storefrontUrl }: { storefrontUrl: string }) {
           </span>
         </div>
 
-        <button
-          type="button"
-          onClick={download}
-          disabled={downloading || loading}
-          className="mt-3 rounded-lg border border-line px-3 py-2 text-xs font-semibold transition-colors hover:bg-line/50 disabled:opacity-50"
-        >
-          {downloading ? 'Baixando…' : 'Baixar PNG'}
-        </button>
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={download}
+            disabled={downloading || loading}
+            className="rounded-lg border border-line px-3 py-2 text-xs font-semibold transition-colors hover:bg-line/50 disabled:opacity-50"
+          >
+            {downloading ? 'Baixando…' : 'Baixar PNG'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsCardModalOpen(true)}
+            disabled={loading}
+            className="rounded-lg border border-transparent px-3 py-2 text-xs font-semibold text-accent transition-colors hover:underline disabled:opacity-50 cursor-pointer"
+          >
+            Criar cartão personalizado
+          </button>
+        </div>
 
         {error && (
           <p role="alert" className="mt-2 text-xs text-red-600">
@@ -198,6 +210,13 @@ export function StoreQrCode({ storefrontUrl }: { storefrontUrl: string }) {
           </p>
         )}
       </div>
+
+      <CustomCardModal
+        open={isCardModalOpen}
+        onClose={() => setIsCardModalOpen(false)}
+        previewUrl={previewUrl}
+        logoUrl={logoUrl}
+      />
     </div>
   );
 }

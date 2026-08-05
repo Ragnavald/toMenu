@@ -127,6 +127,30 @@ describe('PwaInstallPrompt Component', () => {
       expect(screen.queryByText('Instalar ToMenu')).not.toBeInTheDocument();
     });
 
+    it('deve mostrar a setinha de reabrir após fechar e reabrir o popup ao clicar nela', () => {
+      render(<PwaInstallPrompt />);
+      
+      act(() => {
+        window.dispatchEvent(mockEvent);
+      });
+
+      const dismissButton = screen.getByText('Agora não');
+      act(() => {
+        fireEvent.click(dismissButton);
+      });
+
+      expect(screen.queryByText('Instalar ToMenu')).not.toBeInTheDocument();
+      
+      const reopenButton = screen.getByLabelText('Instalar aplicativo');
+      expect(reopenButton).toBeInTheDocument();
+
+      act(() => {
+        fireEvent.click(reopenButton);
+      });
+
+      expect(screen.getByText('Instalar ToMenu')).toBeInTheDocument();
+    });
+
     it('não deve exibir o banner se já foi dispensado anteriormente', () => {
       localStorage.setItem('pwa-install-dismissed', 'true');
       render(<PwaInstallPrompt />);

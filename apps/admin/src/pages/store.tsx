@@ -313,7 +313,7 @@ export function StorePage() {
           title="QR Code do cardápio"
           description="Leva direto para o endereço acima."
         >
-          <StoreQrCode storefrontUrl={settings.store.storefrontUrl} />
+          <StoreQrCode storefrontUrl={settings.store.storefrontUrl} logoUrl={form.logoUrl || null} />
         </Section>
 
         <Section title="Identificação">

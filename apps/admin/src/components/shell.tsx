@@ -118,6 +118,60 @@ export function Shell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const { theme, toggle: toggleTheme } = useTheme();
 
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+  const [showIosModal, setShowIosModal] = useState(false);
+
+  useEffect(() => {
+    // Registro do Service Worker do painel admin
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker
+          .register('/sw.js')
+          .then((reg) => console.log('Admin PWA: Service Worker registrado:', reg.scope))
+          .catch((err) => console.error('Admin PWA: Falha ao registrar Service Worker:', err));
+      });
+    }
+
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+
+    // Detecção de iOS Safari
+    const checkIosSafari = () => {
+      const ua = window.navigator.userAgent;
+      const isIOS = /iPad|iPhone|iPod/.test(ua);
+      const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+      const isStandalone = (window.navigator as any).standalone === true || 
+                            window.matchMedia('(display-mode: standalone)').matches;
+
+      if (isIOS && isSafari && !isStandalone) {
+        setIsInstallable(true);
+      }
+    };
+    checkIosSafari();
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      await deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log(`Admin PWA: Escolha do usuário: ${outcome}`);
+      setDeferredPrompt(null);
+      setIsInstallable(false);
+    } else {
+      setShowIosModal(true);
+    }
+  };
+
   const { data: settings } = useQuery({
     queryKey: ['settings'],
     queryFn: () => apiFetch<Settings>('/admin/settings'),
@@ -254,6 +308,17 @@ export function Shell({
         </nav>
 
         <div className="border-t border-line p-3">
+          {isInstallable && (
+            <button
+              type="button"
+              onClick={handleInstallClick}
+              className="mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-accent transition-colors hover:bg-line/60 cursor-pointer"
+            >
+              <IconDownload />
+              Instalar app
+            </button>
+          )}
+
           {storefrontUrl && (
             <a
               href={storefrontUrl}
@@ -396,6 +461,51 @@ export function Shell({
           {children}
         </main>
       </div>
+
+      {showIosModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-panel max-w-sm w-full rounded-2xl border border-line p-6 shadow-xl">
+            <div className="flex items-start gap-4">
+              <div className="grid size-12 place-items-center rounded-xl bg-accent/10 text-accent shrink-0">
+                <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-semibold text-ink">
+                  Instalar Painel ToMenu
+                </h3>
+                <p className="mt-2 text-xs text-muted leading-relaxed">
+                  Para instalar o painel de controle em seu iPhone:
+                </p>
+                <ol className="mt-2 text-xs text-muted list-decimal list-inside space-y-1.5 bg-bg/50 rounded-lg p-3 border border-line">
+                  <li>
+                    Toque no botão de <strong>Compartilhar</strong> 
+                    <span className="inline-flex items-center mx-1 align-middle">
+                      <svg className="size-3.5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                    </span> 
+                    na barra inferior do Safari.
+                  </li>
+                  <li>
+                    Role para baixo e selecione <strong>Adicionar à Tela de Início (+)</strong>.
+                  </li>
+                </ol>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowIosModal(false)}
+                className="rounded-lg bg-accent text-white px-4 py-2 text-xs font-semibold shadow-sm hover:opacity-90 transition-opacity cursor-pointer"
+              >
+                Entendi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -549,6 +659,14 @@ function IconMoon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
       <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconDownload() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path d="M4 16v1a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1M12 4v12m0 0l-4-4m4 4l4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
