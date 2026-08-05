@@ -16,6 +16,7 @@ export function CategoriesPage() {
   const [name, setName] = useState('');
   const [editing, setEditing] = useState<{ id: number; name: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
 
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -425,62 +426,154 @@ export function CategoriesPage() {
             </div>
 
             {editing?.id !== category.id && (
-              <div className="flex shrink-0 gap-1">
-                <button
-                  type="button"
-                  onClick={() =>
-                    update.mutate({
-                      id: category.id,
-                      is_active: !category.is_active,
-                    })
-                  }
-                  className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted hover:bg-line"
-                >
-                  {category.is_active ? 'Ocultar' : 'Mostrar'}
-                </button>
-                {/*
-                  Marca a seção como insumo de grupos compostos: os sabores de
-                  pizza precisam existir como produtos, mas não como uma seção
-                  vendável logo abaixo dos tamanhos.
-                */}
-                <button
-                  type="button"
-                  onClick={() =>
-                    update.mutate({
-                      id: category.id,
-                      is_option_only: !category.is_option_only,
-                    })
-                  }
-                  title={
-                    category.is_option_only
-                      ? 'Voltar a exibir esta seção no cardápio'
-                      : 'Usar apenas como opção (sabores), sem aparecer no cardápio'
-                  }
-                  className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted hover:bg-line"
-                >
-                  {category.is_option_only ? 'Usar no cardápio' : 'Só opção'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setEditing({ id: category.id, name: category.name })
-                  }
-                  className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted hover:bg-line"
-                >
-                  Renomear
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm(`Remover a seção "${category.name}"?`)) {
-                      remove.mutate(category.id);
+              <>
+                {/* Desktop Buttons */}
+                <div className="hidden sm:flex shrink-0 gap-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      update.mutate({
+                        id: category.id,
+                        is_active: !category.is_active,
+                      })
                     }
-                  }}
-                  className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
-                >
-                  Remover
-                </button>
-              </div>
+                    className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted hover:bg-line"
+                  >
+                    {category.is_active ? 'Ocultar' : 'Mostrar'}
+                  </button>
+                  {/*
+                    Marca a seção como insumo de grupos compostos: os sabores de
+                    pizza precisam existir como produtos, mas não como uma seção
+                    vendável logo abaixo dos tamanhos.
+                  */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      update.mutate({
+                        id: category.id,
+                        is_option_only: !category.is_option_only,
+                      })
+                    }
+                    title={
+                      category.is_option_only
+                        ? 'Voltar a exibir esta seção no cardápio'
+                        : 'Usar apenas como opção (sabores), sem aparecer no cardápio'
+                    }
+                    className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted hover:bg-line"
+                  >
+                    {category.is_option_only ? 'Usar no cardápio' : 'Só opção'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditing({ id: category.id, name: category.name })
+                    }
+                    className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted hover:bg-line"
+                  >
+                    Renomear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(`Remover a seção "${category.name}"?`)) {
+                        remove.mutate(category.id);
+                      }
+                    }}
+                    className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                  >
+                    Remover
+                  </button>
+                </div>
+
+                {/* Mobile Dropdown Options */}
+                <div className="sm:hidden relative">
+                  <button
+                    type="button"
+                    onClick={() => setOpenMenuId(category.id)}
+                    className="grid size-8 place-items-center rounded-lg text-muted hover:bg-line"
+                    aria-label="Opções"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="20"
+                      height="20"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      fill="none"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="size-5"
+                    >
+                      <circle cx="12" cy="12" r="1.25" fill="currentColor"></circle>
+                      <circle cx="12" cy="5" r="1.25" fill="currentColor"></circle>
+                      <circle cx="12" cy="19" r="1.25" fill="currentColor"></circle>
+                    </svg>
+                  </button>
+
+                  {openMenuId === category.id && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuId(null);
+                        }}
+                      />
+                      <div className="absolute right-0 mt-1 z-20 w-48 rounded-lg border border-line bg-panel py-1 shadow-lg">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenMenuId(null);
+                            update.mutate({
+                              id: category.id,
+                              is_active: !category.is_active,
+                            });
+                          }}
+                          className="flex w-full items-center px-4 py-2.5 text-left text-xs font-medium text-ink hover:bg-line/40 transition-colors"
+                        >
+                          {category.is_active ? 'Ocultar' : 'Mostrar'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenMenuId(null);
+                            update.mutate({
+                              id: category.id,
+                              is_option_only: !category.is_option_only,
+                            });
+                          }}
+                          className="flex w-full items-center px-4 py-2.5 text-left text-xs font-medium text-ink hover:bg-line/40 transition-colors"
+                        >
+                          {category.is_option_only ? 'Usar no cardápio' : 'Só opção'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenMenuId(null);
+                            setEditing({ id: category.id, name: category.name });
+                          }}
+                          className="flex w-full items-center px-4 py-2.5 text-left text-xs font-medium text-ink hover:bg-line/40 transition-colors"
+                        >
+                          Renomear
+                        </button>
+                        <div className="my-1 border-t border-line" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenMenuId(null);
+                            if (confirm(`Remover a seção "${category.name}"?`)) {
+                              remove.mutate(category.id);
+                            }
+                          }}
+                          className="flex w-full items-center px-4 py-2.5 text-left text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
             )}
           </li>
         ))}
