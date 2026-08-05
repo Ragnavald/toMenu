@@ -66,6 +66,7 @@ export const metadata: Metadata = {
  */
 const CAPABILITIES = [
   { label: 'Cardápio digital com fotos, categorias e preços', menu: true, pro: true },
+  { label: 'Gerador de cartão com QR Code para sua mesa', menu: true, pro: true },
   { label: 'Endereço próprio (sualoja.tomenu.app)', menu: true, pro: true },
   { label: 'Cores, tipografia e layout da sua marca', menu: true, pro: true },
   { label: 'Atualização do cardápio na hora, por você', menu: true, pro: true },

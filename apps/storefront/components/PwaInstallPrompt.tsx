@@ -90,7 +90,26 @@ export function PwaInstallPrompt() {
     localStorage.setItem('pwa-install-dismissed', 'true');
   };
 
-  if (!showPrompt) return null;
+  if (!showPrompt) {
+    if (promptType === null) return null;
+
+    return (
+      <button
+        onClick={() => setShowPrompt(true)}
+        className="fixed right-0 top-1/2 -translate-y-1/2 bg-orange-600 hover:bg-orange-700 text-white rounded-l-xl p-2.5 shadow-lg z-[9998] flex items-center gap-1.5 transition-all duration-300 transform translate-x-1 hover:translate-x-0 cursor-pointer border border-r-0 border-white/10"
+        style={{
+          backgroundColor: 'rgb(var(--brand, 234 88 12))',
+          color: 'rgb(var(--brand-ink, 255 255 255))',
+        }}
+        aria-label="Instalar aplicativo"
+      >
+        <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+        </svg>
+        <span className="text-[11px] font-semibold pr-1 hidden md:inline">Instalar App</span>
+      </button>
+    );
+  }
 
   return (
     <div 
