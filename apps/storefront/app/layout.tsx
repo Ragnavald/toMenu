@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { PwaInstallPrompt } from '@/components/PwaInstallPrompt';
 import './globals.css';
 
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'localhost';
@@ -14,6 +15,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: 'ToMenu',
   description: 'Cardápios digitais para o seu estabelecimento.',
+  manifest: '/manifest.json',
 };
 
 export default function RootLayout({
@@ -21,7 +23,10 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="pt-BR" className="h-full">
-      <body className="min-h-full">{children}</body>
+      <body className="min-h-full">
+        {children}
+        <PwaInstallPrompt />
+      </body>
     </html>
   );
 }

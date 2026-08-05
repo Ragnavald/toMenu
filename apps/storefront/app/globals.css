@@ -216,3 +216,24 @@ body {
 @utility animate-slide-up {
   animation: slide-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+@keyframes float-organic {
+  0% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-15px) rotate(2deg);
+  }
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+}
+
+@utility animate-float-organic {
+  animation: float-organic 6s ease-in-out infinite;
+}
+
+@utility cooked-shape {
+  border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+}
+

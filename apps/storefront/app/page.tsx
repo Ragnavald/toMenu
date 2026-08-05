@@ -190,6 +190,39 @@ const FEATURES = [
   },
 ];
 
+/**
+ * Perguntas frequentes (FAQ) da landing page.
+ *
+ * Responde às principais dúvidas que impedem o cadastro imediato,
+ * principalmente sobre custos, infraestrutura necessária e funcionamento.
+ */
+const FAQS = [
+  {
+    question: 'Preciso de um computador para usar o sistema?',
+    answer: 'Não. Você pode gerenciar toda a sua loja, cadastrar produtos e receber pedidos diretamente pelo celular, tablet ou computador. O painel do restaurante e a página do cliente são totalmente responsivos.',
+  },
+  {
+    question: 'Como os clientes acessam o meu cardápio?',
+    answer: 'Através de um link exclusivo da sua loja (ex: sualoja.tomenu.app) ou lendo um QR Code que você pode imprimir e colocar nas mesas, balcão ou em panfletos. O cliente não precisa instalar nenhum aplicativo nem criar conta para ver o cardápio ou fazer o pedido.',
+  },
+  {
+    question: 'Existe taxa ou comissão por pedido?',
+    answer: 'Não. Ao contrário de plataformas e marketplaces de delivery, o ToMenu não cobra nenhuma taxa ou comissão sobre as suas vendas. O valor da assinatura mensal é fixo e 100% do faturamento das vendas é seu.',
+  },
+  {
+    question: 'Como funciona o teste grátis de 14 dias?',
+    answer: 'Você pode criar sua conta e experimentar todos os recursos do plano escolhido por 14 dias sem pagar nada e sem precisar cadastrar cartão de crédito. Se decidir não continuar, nenhum valor será cobrado.',
+  },
+  {
+    question: 'Como recebo os pedidos no plano Pro?',
+    answer: 'No plano Pro, os pedidos chegam em tempo real no seu Painel de Pedidos com um aviso sonoro. Você visualiza todos os detalhes (itens, adicionais, observações, forma de entrega e dados do cliente) e pode gerenciar todo o fluxo até o envio.',
+  },
+  {
+    question: 'Posso cadastrar complementos e variações de produtos?',
+    answer: 'Sim! É possível configurar opções de tamanhos (ex: pizza broto/grande), adicionais (ex: queijo duplo, bacon) e observações dos clientes para deixar o cardápio exatamente com as regras e dinâmica do seu negócio.',
+  },
+];
+
 /** Glifo do WhatsApp: uma dependência inteira por um ícone não se paga. */
 function IconWhatsApp() {
   return (
@@ -228,7 +261,7 @@ export default function LandingPage() {
       </header>
 
       <main>
-        <section className="mx-auto max-w-5xl px-6 pb-16 pt-10 sm:pt-16">
+        <section className="mx-auto max-w-5xl px-6 pb-16 pt-10 sm:pt-16 lg:grid lg:grid-cols-[1.2fr_0.8fr] lg:items-center lg:gap-12">
           <div className="max-w-2xl">
             {/* O teste grátis é o que derruba a objeção de quem chega: some
                 o risco de assinar antes de ver funcionando. Estava como chip
@@ -306,6 +339,29 @@ export default function LandingPage() {
               >
                 Ver loja somente com cardápio digital
               </Link>
+            </div>
+          </div>
+
+          {/* Imagem Cooked Assimétrica e Flutuante */}
+          <div className="relative mx-auto mt-12 lg:mt-0 w-[18rem] sm:w-[22rem] lg:w-[24rem] flex justify-center items-center animate-float-organic">
+            {/* Brilho de fundo (Halo) */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[26rem] w-[26rem] -translate-x-1/2 -translate-y-1/2 rounded-full blur-3xl"
+              style={{
+                background:
+                  'radial-gradient(circle, rgb(var(--brand) / 0.12) 0%, rgb(var(--brand) / 0.03) 50%, transparent 75%)',
+              }}
+            />
+            <div className="relative overflow-hidden cooked-shape border-2 border-[var(--hairline)] shadow-[0_20px_50px_rgba(0,0,0,0.15)] bg-neutral-100">
+              <Image
+                src="/cooked.webp"
+                alt="Prato de comida preparado com capricho, simbolizando a qualidade gastronômica dos restaurantes que usam ToMenu."
+                width={1200}
+                height={1200}
+                unoptimized
+                className="h-auto w-full object-cover aspect-square hover:scale-105 transition-transform duration-700"
+              />
             </div>
           </div>
         </section>
@@ -393,6 +449,106 @@ export default function LandingPage() {
                 className="animate-float-device h-auto w-full drop-shadow-[0_35px_60px_rgb(23_23_23_/_0.28)]"
               />
             </div>
+          </div>
+        </section>
+
+        {/* Nova seção do QR Code */}
+        <section className="relative overflow-hidden border-b border-[var(--hairline)]">
+          {/* Brilho de fundo (Halo) */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[42rem] w-[42rem] -translate-x-1/2 -translate-y-1/2 rounded-full blur-3xl lg:left-[28%]"
+            style={{
+              background:
+                'radial-gradient(circle, rgb(var(--brand) / 0.12) 0%, rgb(var(--brand) / 0.04) 45%, transparent 70%)',
+            }}
+          />
+
+          <div className="mx-auto grid max-w-5xl items-center gap-12 px-6 py-20 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+            
+            {/* Imagem do QR Code (Esquerda no desktop) */}
+            <div className="relative mx-auto w-full max-w-md lg:max-w-none flex justify-center items-center animate-float-organic">
+              <div className="relative overflow-hidden cooked-shape border-2 border-[var(--hairline)] shadow-[0_20px_50px_rgba(0,0,0,0.12)] bg-neutral-100">
+                <Image
+                  src="/qrcode.webp"
+                  alt="Cliente escaneando o QR Code na mesa com o celular para acessar o cardápio digital ToMenu."
+                  width={1000}
+                  height={545}
+                  unoptimized
+                  className="h-auto w-full object-cover hover:scale-105 transition-transform duration-700"
+                />
+              </div>
+            </div>
+
+            {/* Texto explicativo (Direita no desktop) */}
+            <div className="max-w-xl">
+              <p
+                className="text-sm font-semibold uppercase tracking-wide"
+                style={{ color: 'rgb(var(--brand))' }}
+              >
+                QR Code Inteligente
+              </p>
+
+              <h2 className="mt-3 text-3xl font-semibold leading-[1.15] tracking-tight sm:text-4xl">
+                Aponte, escolha e peça. Simples assim.
+              </h2>
+
+              <p className="mt-5 text-lg leading-relaxed text-muted">
+                Substitua o cardápio de papel ou crie um novo canal de atendimento rápido para o salão e mesas. O cliente aponta a câmera do celular, navega pelos pratos e fecha o pedido na hora, economizando tempo da equipe.
+              </p>
+
+              <ul className="mt-8 grid gap-5">
+                <li className="flex gap-3">
+                  <span
+                    aria-hidden
+                    className="mt-1 grid size-5 shrink-0 place-items-center rounded-full text-[11px]"
+                    style={{
+                      background: 'rgb(var(--brand-soft))',
+                      color: 'rgb(var(--brand))',
+                    }}
+                  >
+                    ✓
+                  </span>
+                  <span className="text-sm leading-relaxed">
+                    <strong className="font-semibold text-[rgb(var(--ink))]">Leitura instantânea:</strong>{' '}
+                    <span className="text-muted">Funciona diretamente pela câmera de qualquer celular moderno, sem aplicativos.</span>
+                  </span>
+                </li>
+                <li className="flex gap-3">
+                  <span
+                    aria-hidden
+                    className="mt-1 grid size-5 shrink-0 place-items-center rounded-full text-[11px]"
+                    style={{
+                      background: 'rgb(var(--brand-soft))',
+                      color: 'rgb(var(--brand))',
+                    }}
+                  >
+                    ✓
+                  </span>
+                  <span className="text-sm leading-relaxed">
+                    <strong className="font-semibold text-[rgb(var(--ink))]">Zero atrito:</strong>{' '}
+                    <span className="text-muted">O cliente não precisa criar conta ou digitar dados de login para consultar o menu ou pedir.</span>
+                  </span>
+                </li>
+                <li className="flex gap-3">
+                  <span
+                    aria-hidden
+                    className="mt-1 grid size-5 shrink-0 place-items-center rounded-full text-[11px]"
+                    style={{
+                      background: 'rgb(var(--brand-soft))',
+                      color: 'rgb(var(--brand))',
+                    }}
+                  >
+                    ✓
+                  </span>
+                  <span className="text-sm leading-relaxed">
+                    <strong className="font-semibold text-[rgb(var(--ink))]">Sempre atualizado:</strong>{' '}
+                    <span className="text-muted">Fez alteração de preços ou pausou algum produto esgotado? O cardápio digital atualiza na hora, sem precisar reimprimir nada.</span>
+                  </span>
+                </li>
+              </ul>
+            </div>
+
           </div>
         </section>
 
@@ -637,6 +793,49 @@ export default function LandingPage() {
               <IconWhatsApp />
               Falar com a equipe no WhatsApp
             </a>
+          </div>
+        </section>
+
+        {/* Sessão de dúvidas frequentes (FAQ) */}
+        <section className="border-t border-[var(--hairline)] bg-[var(--elevated)]">
+          <div className="mx-auto max-w-3xl px-6 py-16">
+            <div className="text-center mb-10">
+              <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                Perguntas Frequentes
+              </h2>
+              <p className="mt-2 text-sm text-muted">
+                Tire suas dúvidas sobre o funcionamento do ToMenu e escolha o melhor plano para o seu negócio.
+              </p>
+            </div>
+
+            <div className="grid gap-3">
+              {FAQS.map((faq, index) => (
+                <details
+                  key={index}
+                  className="group overflow-hidden border border-[var(--hairline)] transition-all duration-200"
+                  style={{
+                    borderRadius: 'calc(var(--radius) * 0.75)',
+                  }}
+                >
+                  <summary className="flex cursor-pointer items-center justify-between gap-4 px-6 py-5 text-sm font-semibold select-none list-none text-[rgb(var(--ink))] hover:bg-[rgb(var(--ink)/0.02)] transition-colors [&::-webkit-details-marker]:hidden">
+                    <span>{faq.question}</span>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={2.5}
+                      stroke="currentColor"
+                      className="size-4 shrink-0 transition-transform duration-200 group-open:rotate-180 text-muted"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                    </svg>
+                  </summary>
+                  <div className="border-t border-[var(--hairline)] px-6 py-5 text-sm leading-relaxed text-muted bg-[rgb(var(--surface))]">
+                    {faq.answer}
+                  </div>
+                </details>
+              ))}
+            </div>
           </div>
         </section>
 
