@@ -123,14 +123,20 @@ export function Shell({
   const [showIosModal, setShowIosModal] = useState(false);
 
   useEffect(() => {
+    const registerSW = () => {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((reg) => console.log('Admin PWA: Service Worker registrado:', reg.scope))
+        .catch((err) => console.error('Admin PWA: Falha ao registrar Service Worker:', err));
+    };
+
     // Registro do Service Worker do painel admin
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker
-          .register('/sw.js')
-          .then((reg) => console.log('Admin PWA: Service Worker registrado:', reg.scope))
-          .catch((err) => console.error('Admin PWA: Falha ao registrar Service Worker:', err));
-      });
+      if (document.readyState === 'complete') {
+        registerSW();
+      } else {
+        window.addEventListener('load', registerSW);
+      }
     }
 
     const handleBeforeInstall = (e: Event) => {
@@ -157,6 +163,7 @@ export function Shell({
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('load', registerSW);
     };
   }, []);
 
@@ -376,9 +383,19 @@ export function Shell({
             logoUrl={settings?.profile.logoUrl ?? null}
             name={settings?.store.name ?? session.tenantName}
           />
-          <p className="truncate text-sm font-semibold">
+          <p className="truncate text-sm font-semibold flex-1">
             {settings?.store.name ?? session.tenantName}
           </p>
+          {isInstallable && (
+            <button
+              type="button"
+              onClick={handleInstallClick}
+              aria-label="Instalar aplicativo"
+              className="grid size-9 place-items-center rounded-lg text-accent hover:bg-line cursor-pointer shrink-0"
+            >
+              <IconDownload />
+            </button>
+          )}
         </header>
 
         {/* O alerta sonoro depende de um gesto do usuário para poder tocar.
