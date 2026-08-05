@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class LoginController extends Controller
@@ -20,10 +21,10 @@ class LoginController extends Controller
             'tenant' => ['required', 'string'], // slug da loja
         ]);
 
-        $tenant = Tenant::where('slug', $data['tenant'])->first();
+        $tenant = Tenant::where('slug', Str::lower($data['tenant']))->first();
 
         $user = $tenant
-            ? User::where('tenant_id', $tenant->id)->where('email', $data['email'])->first()
+            ? User::where('tenant_id', $tenant->id)->where('email', Str::lower($data['email']))->first()
             : null;
 
         // Comparação executada mesmo sem usuário encontrado, para que o tempo de
