@@ -186,8 +186,31 @@ body {
   }
 }
 
+/*
+ * Flutuação do aparelho na landing.
+ *
+ * O deslocamento é pequeno de propósito: o que se quer é a sensação de objeto
+ * suspenso, não um elemento que se move. Amplitude maior chama atenção para a
+ * animação e tira o foco da tela do celular, que é o argumento da seção.
+ *
+ * A regra global de `prefers-reduced-motion` acima já congela isto — o aparelho
+ * fica parado na posição de repouso, que é a composição correta.
+ */
+@keyframes float-device {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-18px);
+  }
+}
+
 @utility animate-rise {
   animation: rise 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@utility animate-float-device {
+  animation: float-device 5s ease-in-out infinite alternate;
 }
 
 @utility animate-slide-up {
