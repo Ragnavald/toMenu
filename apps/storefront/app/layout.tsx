@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { PwaInstallPrompt } from '@/components/PwaInstallPrompt';
 import './globals.css';
 
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'localhost';
@@ -25,7 +24,6 @@ export default function RootLayout({
     <html lang="pt-BR" className="h-full">
       <body className="min-h-full">
         {children}
-        <PwaInstallPrompt />
       </body>
     </html>
   );

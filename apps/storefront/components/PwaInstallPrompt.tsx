@@ -12,7 +12,13 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
-export function PwaInstallPrompt() {
+export function PwaInstallPrompt({
+  storeName = 'ToMenu',
+  storeLogo,
+}: {
+  storeName?: string;
+  storeLogo?: string;
+} = {}) {
   const [showPrompt, setShowPrompt] = useState(false);
   const [promptType, setPromptType] = useState<'beforeinstallprompt' | 'ios' | null>(null);
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
@@ -132,12 +138,13 @@ export function PwaInstallPrompt() {
       <div className="flex items-start gap-4">
         {/* Ícone do App */}
         <div className="relative size-12 rounded-xl overflow-hidden shrink-0 border border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 flex items-center justify-center">
-          <Image
-            src="/img/icon-192x192.png"
-            alt="ToMenu Logo"
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={storeLogo || "/img/icon-192x192.png"}
+            alt={`${storeName} Logo`}
             width={48}
             height={48}
-            className="object-contain"
+            className="object-contain size-12"
           />
         </div>
 
@@ -145,7 +152,7 @@ export function PwaInstallPrompt() {
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between">
             <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">
-              Instalar ToMenu
+              Instalar {storeName}
             </h3>
             <button 
               onClick={handleDismiss}
@@ -158,7 +165,7 @@ export function PwaInstallPrompt() {
             </button>
           </div>
           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
-            Adicione nosso app na tela inicial para acesso mais rápido e prático!
+            Adicione o app de {storeName} na tela inicial para acesso mais rápido e prático!
           </p>
         </div>
       </div>

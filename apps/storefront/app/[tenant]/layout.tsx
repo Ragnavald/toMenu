@@ -7,6 +7,7 @@ import { getContrastInk } from '@/lib/contrast';
 import { CartProvider } from '@/components/cart-provider';
 import { FulfillmentProvider } from '@/components/fulfillment-provider';
 import { StoreSuspended } from '@/components/store-suspended';
+import { PwaInstallPrompt } from '@/components/PwaInstallPrompt';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -64,6 +65,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title,
     description: summary,
+    manifest: `/manifest.json?tenant=${tenant}`,
     // Canônica absoluta: a loja responde em dois endereços (subdomínio e
     // caminho) e sem isto o buscador trata os dois como páginas concorrentes.
     alternates: { canonical },
@@ -165,6 +167,10 @@ export default async function TenantLayout({ params, children }: Props) {
           {children}
         </FulfillmentProvider>
       </CartProvider>
+      <PwaInstallPrompt
+        storeName={menu.tenant.name}
+        storeLogo={menu.tenant.logoUrl ?? undefined}
+      />
     </div>
   );
 }
