@@ -52,7 +52,7 @@ export function proxy(request: NextRequest) {
   }
 
   /*
-   * robots.txt e sitemap.xml pertencem ao host, não à loja.
+   * robots.txt, sitemap.xml e llms.txt pertencem ao host, não à loja.
    *
    * Sem esta saída eles viram /pizzaria/robots.txt — rota inexistente — e o
    * buscador recebe a página 404 no lugar das diretivas. Os handlers já leem o
@@ -62,6 +62,7 @@ export function proxy(request: NextRequest) {
   if (
     pathname === '/robots.txt' ||
     pathname === '/sitemap.xml' ||
+    pathname === '/llms.txt' ||
     pathname === '/sw.js' ||
     pathname === '/manifest.json' ||
     pathname.startsWith('/img/') ||

@@ -1,2 +1,5 @@
+# Este host serve a API (JSON) e o painel da plataforma, ambos autenticados.
+# Não há página de conteúdo aqui: o que é para ser encontrado está no
+# storefront, que tem o seu próprio robots.txt e sitemap por host.
 User-agent: *
-Disallow:
+Disallow: /

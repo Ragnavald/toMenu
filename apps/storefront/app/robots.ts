@@ -15,6 +15,11 @@ const RESERVED = new Set(['www', 'app', 'api', 'admin', 'central']);
  * Hoje quem responde /robots.txt em produção é o arquivo automático da
  * Cloudflare, que não declara sitemap nenhum. Este arquivo assume o caminho e
  * passa a declarar — sem ele o buscador só encontra as páginas por link.
+ *
+ * O llms.txt (app/llms.txt/route.ts) decide por host da mesma forma, mas não é
+ * declarado aqui: o robots.txt não tem diretiva para ele, e a convenção do
+ * llmstxt.org é o caminho fixo /llms.txt na raiz do host. Quem procura já sabe
+ * onde olhar.
  */
 export default async function robots(): Promise<MetadataRoute.Robots> {
   const host = (await headers()).get('host')?.split(':')[0].toLowerCase() ?? '';

@@ -1,0 +1,5 @@
+# O painel do lojista é inteiro atrás de login e não tem nada a indexar.
+# Sem este arquivo o buscador segue os links do storefront até aqui e gasta
+# orçamento de crawl na tela de entrada — que é o que ele consegue ver.
+User-agent: *
+Disallow: /
